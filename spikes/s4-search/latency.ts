@@ -7,7 +7,9 @@ import { topK } from './topk.ts';
 const DIMS = 1024, K = 8, WARM = 5, TIMED = 50, ROW = DIMS * 4;
 const MiB = 1024 * 1024;
 const rss = () => process.memoryUsage().rss / MiB;
+const peakRss = () => process.resourceUsage().maxRSS / 1024; // high-water mark of the whole process, kB -> MiB
 const now = () => performance.now();
+const rssStart = rss();
 const gc = (globalThis as { gc?: () => void }).gc;
 if (!gc) throw new Error('run with --expose-gc (pnpm --filter s4-search latency does)');
 const settle = () => { gc(); gc(); };
@@ -70,57 +72,63 @@ if (fts5 !== 1) throw new Error('FTS5 is not compiled into this better-sqlite3')
 
 // --- latency ---
 type Row = { n: number; p50: number; p95: number; max: number; rssDelta: number };
-const rows: Row[] = [];
-let big: Float32Array | null = null;
-let bigQueries: Float32Array | null = null;
-for (const n of [600, 10_000, 100_000]) {
-  settle();
-  const rss0 = rss();
-  const rand = mulberry32(n);
-  const vectors = unitRows(n, DIMS, rand);
-  const queries = unitRows(WARM + TIMED, DIMS, rand);
-  const q = (i: number) => queries.subarray(i * DIMS, (i + 1) * DIMS);
-  for (let i = 0; i < WARM; i++) topK(vectors, DIMS, q(i), K);
-  const ms: number[] = [];
-  for (let i = WARM; i < WARM + TIMED; i++) {
-    const t = now();
-    topK(vectors, DIMS, q(i), K);
-    ms.push(now() - t);
-  }
-  const rssDelta = rss() - rss0; // vectors + queries, measured after the last query
-  ms.sort((a, b) => a - b);
-  rows.push({ n, p50: pct(ms, 50), p95: pct(ms, 95), max: ms[ms.length - 1], rssDelta });
-  console.log(`N=${n}: p50 ${f(pct(ms, 50), 3)} ms, p95 ${f(pct(ms, 95), 3)} ms, max ${f(ms[ms.length - 1], 3)} ms, rss delta ${f(rssDelta, 1)} MiB (vectors alone ${f(vectors.byteLength / MiB, 1)} MiB)`);
-  if (n === 100_000) { big = vectors; bigQueries = queries; }
-}
-
-// --- cold start: 100,000 x 4 KB BLOB rows in one transaction, then load them into one Float32Array ---
 const N = 100_000;
 const dbPath = fileURLToPath(new URL('./data/synthetic.db', import.meta.url));
-mkdirSync(fileURLToPath(new URL('./data/', import.meta.url)), { recursive: true });
-for (const s of ['', '-wal', '-shm']) rmSync(dbPath + s, { force: true });
-const probe = bigQueries!.subarray(0, DIMS);
-const expected = topK(big!, DIMS, probe, K);
 
-let t = now();
-const wdb = new Database(dbPath);
-wdb.pragma('journal_mode = WAL');
-wdb.pragma('synchronous = NORMAL');
-wdb.exec('create table chunks (id integer primary key, embedding blob not null)');
-const ins = wdb.prepare('insert into chunks (embedding) values (?)');
-const bulk = big!;
-wdb.transaction(() => {
-  for (let i = 0; i < N; i++) ins.run(Buffer.from(bulk.buffer, bulk.byteOffset + i * ROW, ROW));
-})();
-wdb.close(); // checkpoints the WAL
-const writeMs = now() - t;
-const dbMiB = statSync(dbPath).size / MiB;
-console.log(`wrote ${N} x ${ROW} B rows in one transaction: ${f(writeMs, 0)} ms, ${f(dbMiB, 1)} MiB on disk`);
+// Latency for each N, then (reusing the 100k vectors) the DB write. A function, so that when it returns nothing is left
+// holding the 390 MiB array: a long-lived top-level frame keeps the last loop iteration's locals reachable.
+function latencyAndWrite() {
+  const rows: Row[] = [];
+  let big: Float32Array | undefined, bigQueries: Float32Array | undefined;
+  for (const n of [600, 10_000, 100_000]) {
+    settle();
+    const rss0 = rss();
+    const rand = mulberry32(n);
+    const vectors = unitRows(n, DIMS, rand);
+    const queries = unitRows(WARM + TIMED, DIMS, rand);
+    const q = (i: number) => queries.subarray(i * DIMS, (i + 1) * DIMS);
+    for (let i = 0; i < WARM; i++) topK(vectors, DIMS, q(i), K);
+    const ms: number[] = [];
+    for (let i = WARM; i < WARM + TIMED; i++) {
+      const t = now();
+      topK(vectors, DIMS, q(i), K);
+      ms.push(now() - t);
+    }
+    const rssDelta = rss() - rss0; // vectors + queries, measured after the last query
+    ms.sort((a, b) => a - b);
+    rows.push({ n, p50: pct(ms, 50), p95: pct(ms, 95), max: ms[ms.length - 1], rssDelta });
+    console.log(`N=${n}: p50 ${f(pct(ms, 50), 3)} ms, p95 ${f(pct(ms, 95), 3)} ms, max ${f(ms[ms.length - 1], 3)} ms, rss delta ${f(rssDelta, 1)} MiB (vectors alone ${f(vectors.byteLength / MiB, 1)} MiB)`);
+    if (n === N) { big = vectors; bigQueries = queries; }
+  }
 
-big = null; bigQueries = null;
+  // --- cold start: 100,000 x 4 KB BLOB rows in one transaction, then (below) load them into one Float32Array ---
+  mkdirSync(fileURLToPath(new URL('./data/', import.meta.url)), { recursive: true });
+  for (const s of ['', '-wal', '-shm']) rmSync(dbPath + s, { force: true });
+  const probe = Float32Array.from(bigQueries!.subarray(0, DIMS));
+  const expected = topK(big!, DIMS, probe, K);
+
+  const t = now();
+  const wdb = new Database(dbPath);
+  wdb.pragma('journal_mode = WAL');
+  wdb.pragma('synchronous = NORMAL');
+  wdb.exec('create table chunks (id integer primary key, embedding blob not null)');
+  const ins = wdb.prepare('insert into chunks (embedding) values (?)');
+  wdb.transaction(() => {
+    for (let i = 0; i < N; i++) ins.run(Buffer.from(big!.buffer, big!.byteOffset + i * ROW, ROW));
+  })();
+  wdb.close(); // checkpoints the WAL
+  const writeMs = now() - t;
+  console.log(`wrote ${N} x ${ROW} B rows in one transaction: ${f(writeMs, 0)} ms, ${f(statSync(dbPath).size / MiB, 1)} MiB on disk`);
+  return { rows, probe, expected };
+}
+const { rows, probe, expected } = latencyAndWrite();
+
 settle();
+const abBefore = process.memoryUsage().arrayBuffers / MiB;
+if (abBefore > 64) throw new Error(`the 100k write array is still alive: ${f(abBefore, 1)} MiB of ArrayBuffers before the load`);
+const peakBefore = peakRss();
 const rssBefore = rss();
-t = now();
+const loadStart = now();
 const rdb = new Database(dbPath, { readonly: true });
 const all = new Float32Array(N * DIMS);
 const bytes = new Uint8Array(all.buffer);
@@ -130,13 +138,14 @@ for (const [blob] of rdb.prepare('select embedding from chunks order by id').raw
   bytes.set(blob, off);
   off += ROW;
 }
-const loadMs = now() - t;
+const loadMs = now() - loadStart;
 rdb.close();
 const loadRss = rss() - rssBefore;
 if (off !== bytes.length) throw new Error('loaded fewer rows than written');
 const got = topK(all, DIMS, probe, K);
 if (JSON.stringify(got) !== JSON.stringify(expected)) throw new Error('top-8 after DB round trip differs from the in-memory one');
-console.log(`cold-start load of ${N} rows into one Float32Array: ${f(loadMs, 0)} ms, rss delta ${f(loadRss, 1)} MiB (OS page cache warm: file was just written; round trip checked against topK of the original)`);
+console.log(`cold-start load of ${N} rows into one Float32Array: ${f(loadMs, 0)} ms, rss ${f(rssBefore, 1)} -> ${f(rssBefore + loadRss, 1)} MiB (delta ${f(loadRss, 1)}; macOS keeps freed pages in RSS, so the delta can be near zero or negative there), ArrayBuffers before the load ${f(abBefore, 1)} MiB (OS page cache warm: file was just written; round trip checked against topK of the original)`);
+console.log(`peak RSS (process high-water mark): ${f(peakBefore, 1)} MiB before the load, ${f(peakRss(), 1)} MiB at the end; RSS at start ${f(rssStart, 1)} MiB, now ${f(rss(), 1)} MiB`);
 
 // --- thresholds ---
 const r600 = rows.find((r) => r.n === 600)!, r100k = rows.find((r) => r.n === 100_000)!;
