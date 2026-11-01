@@ -72,7 +72,11 @@ function trace(p: CanvasPath, el: El) {
   }
 }
 
+// Anchors the text box's top-left at (x, y) on any context. 'left' is absolute: with direction 'rtl' the default
+// 'start' would put the right edge at x, which leaves a bitmap drawn at x = 0 blank.
 function drawText(g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, el: El, x: number, y: number) {
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
   g.font = `${el.data.size}px sans-serif`;
   g.direction = el.data.dir;
   g.fillStyle = el.style.stroke;
@@ -91,10 +95,8 @@ function bitmapOf(el: El, m: Map<string, BitmapEntry>, k: number): ImageBitmap |
     const c = new OffscreenCanvas(w, h);
     const g = c.getContext('2d')!;
     g.scale(k, k);
-    if (el.type === 'text') {
-      g.textBaseline = 'top';
-      drawText(g, el, 0, 0);
-    } else {
+    if (el.type === 'text') drawText(g, el, 0, 0);
+    else {
       g.imageSmoothingQuality = 'high';
       g.drawImage(sourceOf(el), 0, 0, el.w, el.h);
     }
@@ -112,8 +114,6 @@ export function renderScene(ctx: CanvasRenderingContext2D, els: El[], cam: Camer
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
   ctx.setTransform(s, 0, 0, s, W / 2 - cam.x * s, H / 2 - cam.y * s);
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
@@ -162,6 +162,7 @@ export function renderScene(ctx: CanvasRenderingContext2D, els: El[], cam: Camer
       drawn++;
     }
   }
+  lastPaint = performance.now();
   return drawn;
 }
 
@@ -180,7 +181,13 @@ export const view = {
   onFrame: (_t: number) => {}, // runs at the start of each frame, before painting
 };
 let sctx: CanvasRenderingContext2D, octx: CanvasRenderingContext2D, pending = false;
+let lastPaint = 0; // performance.now() after the last scene or overlay paint; cold bitmap fills happen inside scene paints
 const ends: ((t: number) => void)[] = [];
+
+/** Resolves once nothing has been painted on this thread for `ms`. */
+export async function settle(ms: number) {
+  while (performance.now() - lastPaint < ms) await new Promise((r) => setTimeout(r, 50));
+}
 
 /** The worker variant mounts its OffscreenCanvas as the scene and the page mounts only the overlay. */
 export function mount(scene: HTMLCanvasElement | OffscreenCanvas | null, overlay?: HTMLCanvasElement) {
@@ -217,7 +224,8 @@ function frame(t: number) {
     o.forEach(([x, y], i) => (i ? octx.lineTo(x, y) : octx.moveTo(x, y)));
     octx.fillStyle = '#1e1e1e';
     octx.fill();
-    view.inkMs = performance.now() - t0;
+    lastPaint = performance.now();
+    view.inkMs = lastPaint - t0;
   }
   const now = performance.now();
   for (const r of ends.splice(0)) r(now);

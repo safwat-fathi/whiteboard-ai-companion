@@ -1,7 +1,7 @@
 import RBush from 'rbush';
 import { getStroke } from 'perfect-freehand';
 import { makeScene, bbox, type El } from './scene';
-import { view, mount, invalidate, frameEnd, measureFrames, checkExtremes, show, open, PEN, type Camera, type Variant } from './render';
+import { view, mount, invalidate, frameEnd, measureFrames, checkExtremes, show, open, settle, PEN, type Camera, type Variant } from './render';
 
 const q = new URLSearchParams(location.search);
 const variant = (q.get('variant') ?? 'direct') as Variant;
@@ -102,9 +102,13 @@ async function run() {
   // Zoom extremes (render.ts checkExtremes): renderScene's count vs a fresh R-tree query and a brute-force scan.
   const extremes: { ok: boolean }[] = worker ? await ask({ extremes: true, cssW: W, cssH: H }) : checkExtremes(home, W, H);
 
-  // First ink: 20 synthetic pointerdowns at times independent of rAF, 5,000-element scene on the (static) scene canvas.
-  if (worker) await ask({ show: true });
-  else await show(home);
+  // First ink: 20 synthetic pointerdowns at times independent of rAF, 5,000-element scene on the (static) scene canvas,
+  // starting once the render loop has been idle for 500 ms (no dirty frame, no cold bitmap fill) on every thread.
+  if (worker) {
+    await ask({ show: true });
+    await ask({ settle: 500 });
+  } else await show(home);
+  await settle(500);
   const ink: { lat: number; wait: number; paint: number }[] = [];
   for (let i = 0; i < 20; i++) {
     await sleep(50 + Math.random() * 50);

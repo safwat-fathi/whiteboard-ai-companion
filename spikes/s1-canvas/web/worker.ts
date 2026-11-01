@@ -1,6 +1,6 @@
 // Step 6 `worker` variant: the scene canvas is an OffscreenCanvas painted here with the `cached` text strategy.
 import { makeScene } from './scene';
-import { mount, view, measureFrames, checkExtremes, show, open, type Camera } from './render';
+import { mount, view, measureFrames, checkExtremes, show, open, settle, type Camera } from './render';
 
 let home: Camera;
 onmessage = async ({ data }) => {
@@ -11,5 +11,6 @@ onmessage = async ({ data }) => {
     postMessage(await measureFrames(home));
   } else if (data.extremes) postMessage(checkExtremes(home, data.cssW, data.cssH));
   else if (data.show) postMessage(await show(home));
+  else if (data.settle) postMessage(await settle(data.settle));
   else if (data.json) postMessage(await open(data.json, data.cam));
 };
