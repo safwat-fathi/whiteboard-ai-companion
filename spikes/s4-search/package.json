@@ -1,0 +1,14 @@
+{
+  "name": "s4-search",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "latency": "tsx --expose-gc latency.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
+}

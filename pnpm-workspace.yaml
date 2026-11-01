@@ -1,3 +1,4 @@
 packages: ["spikes/*"]
 allowBuilds:
+  better-sqlite3: true
   esbuild: false
