@@ -1,0 +1,99 @@
+# Whiteboard AI
+
+A personal **study companion**. Upload a book, choose what to study (a topic, a chapter, the whole book) and **chat with an AI tutor inside the app**. The tutor explains on a shared infinite whiteboard with text, LaTeX equations, diagrams, charts and figures from your book, and cites the pages. You can draw and write on the same board, select anything and ask about it, and jump to wherever the AI worked.
+
+> **Status: planning.** No code yet. The full plan is in [`docs/PLAN.md`](docs/PLAN.md); nothing below is runnable until milestone M1.
+
+## What it does (v1)
+
+- **Chat with the AI from the app UI.** A chat dock beside the board: streaming answers, tool-call chips, page citations, Stop, Undo response.
+- **The whiteboard is the AI's context.** Every message carries a digest of the board. Attach the **selection**, the **viewport** or the **whole board** as structure, a picture, or both, and see exactly what will be sent.
+- **Books with page citations.** Upload a PDF, get hybrid search (keywords + embeddings) scoped to a topic, chapter or the whole book. Answers say what is from your book and what is general explanation.
+- **Jump to the AI's work.** Follow the AI live, get an off-screen indicator, or click any chat chip or activity row to fly to where it drew, now or weeks ago.
+- **A from-scratch canvas.** Freehand, shapes, text (Arabic/RTL), LaTeX math (MathJax), charts, images, select/move/resize.
+- **Simple to run.** No login, no Docker, no database server: Node, one SQLite file, and an [OpenRouter](https://openrouter.ai) key. Runs on a laptop and on a small VPS.
+
+## How it fits together
+
+```
+Browser (Next.js) ── canvas · chat dock · library · source panel
+   │ WebSocket (board ops)   │ SSE (tutor stream)   │ REST
+   ▼                         ▼                      ▼
+NestJS server ── Board service · Tutor (AI SDK tool loop) · Context builder · Library · Snapshot render
+   │                                              │
+SQLite (WAL, FTS5) + blobs on disk           OpenRouter (chat, vision, embeddings, PDF parser)
+```
+
+## Documentation
+
+Start with the master plan, then the aspect you care about.
+
+| Doc | Covers |
+|---|---|
+| [`docs/PLAN.md`](docs/PLAN.md) | Validation of the design doc, resolutions, product, milestones, decisions |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Phases M0–M7: scope, dependencies, gates, status |
+| [`tech-stack`](docs/plans/tech-stack.md) | Languages, libraries, versions, repo layout, scripts |
+| [`deployment`](docs/plans/deployment.md) | Run locally and on a VPS without Docker; config, systemd, Caddy, backups |
+| [`whiteboard-engine`](docs/plans/whiteboard-engine.md) | Elements, ops, undo, renderer, tools, sync |
+| [`math-renderer`](docs/plans/math-renderer.md) | LaTeX with MathJax, caching, security, Arabic |
+| [`ai-integration`](docs/plans/ai-integration.md) | OpenRouter, tutor loop, tool registry, models, caps |
+| [`chat-ui`](docs/plans/chat-ui.md) | The in-app chat dock and composer |
+| [`board-context`](docs/plans/board-context.md) | How the board and a selection become AI context |
+| [`library-ingestion`](docs/plans/library-ingestion.md) | PDF → text, structure, chunks, embeddings, summaries |
+| [`rag-context-engineering`](docs/plans/rag-context-engineering.md) | Scope packs, retrieval, citations, caching, memory |
+| [`jump-to-ai`](docs/plans/jump-to-ai.md) | Locate, Follow AI, Activity, undo |
+| [`database`](docs/plans/database.md) | SQLite schema, search, migrations, backups |
+| [`api`](docs/plans/api.md) | REST, WebSocket and chat-stream contracts |
+| [`auth-security`](docs/plans/auth-security.md) | The access gate, secrets, limits, prompt injection |
+| [`testing-spikes`](docs/plans/testing-spikes.md) | M0 spikes, risks, test strategy, acceptance scripts |
+
+## Quick start (planned; not runnable yet)
+
+Prerequisites: **Node 22+**, **pnpm 12** (`corepack enable`), an **OpenRouter API key**. Nothing else.
+
+```
+pnpm install
+cp deploy/.env.example .env      # set OPENROUTER_API_KEY
+pnpm dev                         # web http://localhost:3000, server :4000, data in ./data
+```
+
+Deploying to a VPS (Node + systemd + Caddy, no Docker): [`docs/plans/deployment.md`](docs/plans/deployment.md).
+
+## Configuration
+
+Set in `.env` (server) — the full list is in [`deployment`](docs/plans/deployment.md):
+
+| Key | Purpose |
+|---|---|
+| `OPENROUTER_API_KEY` | The only secret. Server-side only |
+| `TUTOR_MODEL` · `CHEAP_MODEL` · `VISION_MODEL` · `EMBED_MODEL` | OpenRouter model ids; every one is configurable |
+| `DATA_DIR` | Where the SQLite file and blobs live (`./data` by default) |
+| `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD` | Spending and loop caps |
+
+## Repo layout (planned)
+
+```
+packages/core    schemas, scene store, ops/undo, renderer, math, tool registry
+apps/web         Next.js editor, chat dock, library
+apps/server      NestJS: WebSocket, REST, tutor, library, SQLite
+deploy/          Caddyfile, systemd units, env example, backup script
+eval/            retrieval questions per book
+docs/            PLAN.md and docs/plans/*.md
+```
+
+## Roadmap
+
+| Milestone | What |
+|---|---|
+| M0 | Spikes: canvas performance, ingestion on real books, OpenRouter loop, embeddings, deploy dry-run |
+| M1–M2 | Core editor, math and images |
+| M3 | Server, sync, persistence, first VPS deploy |
+| M4 | Library: upload, extraction, hybrid search |
+| **M5** | **Tutor slice: in-app chat, board context, citations, jump-to-AI** |
+| M6–M7 | Ink and charts, hardening, optional MCP adapter |
+
+About 19.5 full-time-engineer weeks in total; a usable tutor at about week 15. Scope, gates and status per phase: [`ROADMAP.md`](docs/ROADMAP.md).
+
+## License
+
+Not decided yet.
