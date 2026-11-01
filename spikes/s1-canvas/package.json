@@ -1,0 +1,15 @@
+{
+  "name": "s1-canvas",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite web"
+  },
+  "dependencies": {
+    "perfect-freehand": "1.2.3",
+    "rbush": "4.0.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
+  }
+}
