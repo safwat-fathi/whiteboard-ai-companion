@@ -1,0 +1,22 @@
+[
+  { "id": 1, "cat": "fraction", "latex": "\\frac{a+b}{c+d}" },
+  { "id": 2, "cat": "fraction", "latex": "\\cfrac{1}{1+\\cfrac{1}{x}}" },
+  { "id": 3, "cat": "root", "latex": "\\sqrt{x^2+y^2}" },
+  { "id": 4, "cat": "root", "latex": "x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}" },
+  { "id": 5, "cat": "matrix", "latex": "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}" },
+  { "id": 6, "cat": "matrix", "latex": "\\det\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}=-2" },
+  { "id": 7, "cat": "aligned", "latex": "\\begin{aligned}x+y&=10\\\\x-y&=2\\end{aligned}" },
+  { "id": 8, "cat": "aligned", "latex": "\\begin{aligned}(a+b)^2&=a^2+2ab+b^2\\\\&\\ge 4ab\\end{aligned}" },
+  { "id": 9, "cat": "sum", "latex": "\\sum_{i=1}^{n} i=\\frac{n(n+1)}{2}" },
+  { "id": 10, "cat": "integral", "latex": "\\int_0^\\infty e^{-x^2}\\,dx=\\frac{\\sqrt{\\pi}}{2}" },
+  { "id": 11, "cat": "limit", "latex": "\\lim_{x\\to 0}\\frac{\\sin x}{x}=1" },
+  { "id": 12, "cat": "mathbb", "latex": "\\mathbb{N}\\subset\\mathbb{Z}\\subset\\mathbb{Q}\\subset\\mathbb{R}^n" },
+  { "id": 13, "cat": "mhchem", "latex": "\\ce{2H2 + O2 -> 2H2O}" },
+  { "id": 14, "cat": "mhchem", "latex": "\\ce{SO4^2- + Ba^2+ -> BaSO4 v}" },
+  { "id": 15, "cat": "boldsymbol", "latex": "\\boldsymbol{\\alpha}+\\boldsymbol{\\beta}=\\boldsymbol{\\gamma}" },
+  { "id": 16, "cat": "cancel", "latex": "\\frac{\\cancel{x}\\,y}{\\cancel{x}}=y" },
+  { "id": 17, "cat": "mathtools", "latex": "f(x)\\coloneqq\\begin{dcases}x&x\\ge 0\\\\-x&x<0\\end{dcases}" },
+  { "id": 18, "cat": "text-latin", "latex": "v=\\frac{d}{t}\\quad\\text{where } t>0" },
+  { "id": 19, "cat": "text-arabic", "latex": "\\text{مساحة الدائرة} = \\pi r^2" },
+  { "id": 20, "cat": "text-arabic", "latex": "\\text{السرعة}=\\frac{\\text{المسافة}}{\\text{الزمن}}" }
+]
