@@ -8,14 +8,50 @@ import {
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
+  type AllowedMime,
   BlobError,
   type BlobStore,
   hashBytes,
+  parseImageHeader,
   sniffMime,
 } from '@whiteboard/core'
 import type { BlobsDb } from './db'
 
 export const MAX_BLOB_BYTES = 10 * 2 ** 20 // 10 MB
+/** The image element schema's naturalW/H limit; the web downscales every import to 4096 on the long edge. */
+export const MAX_IMAGE_SIDE = 8192
+/** Decoded RGBA is 4 bytes a pixel, so this bounds a decode at 160 MB however small the file is. */
+export const MAX_IMAGE_PIXELS = 40_000_000
+
+/**
+ * What is wrong with the size an image's header declares, read without decoding (a 10 MB PNG can declare gigapixels).
+ * 'too-large' is over a limit; 'unsupported' is a header that cannot be read or declares no pixels.
+ */
+export function checkImageSize(
+  bytes: Uint8Array,
+  mime: AllowedMime,
+):
+  | { ok: true }
+  | { ok: false; code: 'unsupported' | 'too-large'; message: string } {
+  const h = parseImageHeader(bytes, mime)
+  if (!h || h.width < 1 || h.height < 1)
+    return {
+      ok: false,
+      code: 'unsupported',
+      message: 'the image header cannot be read',
+    }
+  if (
+    h.width > MAX_IMAGE_SIDE ||
+    h.height > MAX_IMAGE_SIDE ||
+    h.width * h.height > MAX_IMAGE_PIXELS
+  )
+    return {
+      ok: false,
+      code: 'too-large',
+      message: `the image is ${h.width} x ${h.height} px; the limits are ${MAX_IMAGE_SIDE} px a side and ${MAX_IMAGE_PIXELS / 1e6} megapixels`,
+    }
+  return { ok: true }
+}
 
 /** A SHA-256 hex id. Every store method checks this first, so an id can never become a path outside blobs/. */
 export const isBlobId = (s: string): boolean => /^[0-9a-f]{64}$/.test(s)
@@ -50,6 +86,8 @@ export function createDiskBlobStore(o: {
           'unsupported',
           'only PNG, JPEG, WebP and GIF images are accepted',
         )
+      const size = checkImageSize(bytes, mime)
+      if (!size.ok) throw new BlobError(size.code, size.message)
       const id = await hashBytes(bytes)
       const file = path(id)
       if (!existsSync(file)) {

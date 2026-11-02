@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { BlobError, hashBytes, sniffMime } from './blob'
+import { BlobError, hashBytes, parseImageHeader, sniffMime } from './blob'
+import { gif, jpeg, png, webp, webpLossless, webpLossy } from './test-images'
 
 describe('blob utilities', () => {
   it('hashes bytes to a 64-char lowercase SHA-256 hex string', async () => {
@@ -47,5 +48,70 @@ describe('sniffMime', () => {
     expect(sniffMime(ascii('hello'))).toBeNull()
     expect(sniffMime(bytes(0x89, 0x50, 0x4e))).toBeNull()
     expect(sniffMime(new Uint8Array(0))).toBeNull()
+  })
+})
+
+describe('parseImageHeader', () => {
+  it('reads the size of each allowed type from the header alone', () => {
+    expect(parseImageHeader(png(120, 80, 10), 'image/png')).toEqual({
+      width: 120,
+      height: 80,
+      exifOrientation: 1,
+    })
+    expect(parseImageHeader(gif(300, 200), 'image/gif')).toEqual({
+      width: 300,
+      height: 200,
+      exifOrientation: 1,
+    })
+    expect(parseImageHeader(jpeg(1000, 750, 5), 'image/jpeg')).toEqual({
+      width: 1000,
+      height: 750,
+      exifOrientation: 1,
+    })
+    expect(parseImageHeader(webp(640, 480), 'image/webp')).toEqual({
+      width: 640,
+      height: 480,
+      exifOrientation: 1,
+    })
+    expect(parseImageHeader(webpLossy(321, 123), 'image/webp')).toEqual({
+      width: 321,
+      height: 123,
+      exifOrientation: 1,
+    })
+    expect(parseImageHeader(webpLossless(4000, 3001), 'image/webp')).toEqual({
+      width: 4000,
+      height: 3001,
+      exifOrientation: 1,
+    })
+  })
+
+  it('reads a huge claimed size without allocating anything', () => {
+    expect(parseImageHeader(png(100_000, 100_000), 'image/png')).toMatchObject({
+      width: 100_000,
+      height: 100_000,
+    })
+    expect(parseImageHeader(jpeg(65_535, 65_535), 'image/jpeg')).toMatchObject({
+      width: 65_535,
+      height: 65_535,
+    })
+  })
+
+  it('returns null for a truncated or unrecognised header', () => {
+    expect(parseImageHeader(png(10, 10).slice(0, 12), 'image/png')).toBeNull()
+    expect(parseImageHeader(gif(10, 10).slice(0, 8), 'image/gif')).toBeNull()
+    expect(
+      parseImageHeader(
+        new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 2]),
+        'image/jpeg',
+      ),
+    ).toBeNull()
+    expect(parseImageHeader(webp(10, 10).slice(0, 20), 'image/webp')).toBeNull()
+    expect(parseImageHeader(new Uint8Array(40), 'image/webp')).toBeNull()
+  })
+
+  it('fixtures are recognised by sniffMime', () => {
+    expect(
+      [png(1, 1), jpeg(1, 1), gif(1, 1), webp(1, 1)].map(sniffMime),
+    ).toEqual(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
   })
 })

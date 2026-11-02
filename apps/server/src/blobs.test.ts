@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { BlobError, hashBytes } from '@whiteboard/core'
 import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
+import { gif, jpeg, png, webp } from '../../../packages/core/src/test-images'
 import { createDiskBlobStore, isBlobId } from './blobs'
 import { createBlobsDb, openDatabase } from './db'
 
@@ -35,15 +36,12 @@ afterEach(() => {
 })
 
 const ascii = (s: string) => new TextEncoder().encode(s)
-const withTail = (head: number[] | Uint8Array, n = 32, fill = 7) => {
-  const out = new Uint8Array(head.length + n).fill(fill)
-  out.set(head, 0)
-  return out
-}
-const PNG = withTail([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-const JPEG = withTail([0xff, 0xd8, 0xff, 0xe0])
-const GIF = withTail(ascii('GIF89a'))
-const WEBP = withTail([...ascii('RIFF'), 0, 0, 0, 0, ...ascii('WEBP')])
+const PNG = png(10, 10, 32, 7)
+const JPEG = jpeg(10, 10, 32, 7)
+const GIF = gif(10, 10, 32, 7)
+const WEBP = webp(10, 10, 32, 7)
+/** A PNG with a valid header and exactly `n` bytes in all. */
+const pngOfSize = (n: number) => png(10, 10, n - png(10, 10).length, 7)
 
 describe('disk blob store', () => {
   it.each([
@@ -113,19 +111,69 @@ describe('disk blob store', () => {
 
   it('refuses more than maxBytes as too-large and writes nothing', async () => {
     const { store, db, dataDir } = setup(100)
-    await expect(
-      store.put(withTail(PNG, 100 - PNG.length + 1), 'image/png'),
-    ).rejects.toBeInstanceOf(BlobError)
-    await expect(
-      store.put(withTail(PNG, 100 - PNG.length + 1), 'image/png'),
-    ).rejects.toMatchObject({ code: 'too-large' })
-    expect(
-      await store.put(withTail(PNG, 100 - PNG.length), 'image/png'),
-    ).toMatch(/^[0-9a-f]{64}$/)
+    await expect(store.put(pngOfSize(101), 'image/png')).rejects.toBeInstanceOf(
+      BlobError,
+    )
+    await expect(store.put(pngOfSize(101), 'image/png')).rejects.toMatchObject({
+      code: 'too-large',
+    })
+    expect(await store.put(pngOfSize(100), 'image/png')).toMatch(
+      /^[0-9a-f]{64}$/,
+    )
     expect(db.prepare('SELECT count(*) AS n FROM blobs').get()).toEqual({
       n: 1,
     })
     expect(existsSync(dataDir)).toBe(true)
+  })
+
+  it.each([
+    ['PNG wider than 8192', png(8193, 10)],
+    ['JPEG taller than 8192', jpeg(10, 9000)],
+    ['GIF wider than 8192', gif(10_000, 10)],
+    ['WebP over both sides', webp(9000, 9000)],
+    ['PNG over 40 megapixels within the side limit', png(7000, 7000)],
+    ['PNG at 8192 x 8192', png(8192, 8192)],
+    [
+      'a decompression bomb: 100000 x 100000 in a tiny file',
+      png(100_000, 100_000),
+    ],
+  ])(
+    'refuses %s as too-large from its header and stores nothing',
+    async (_n, bytes) => {
+      const { store, db, dataDir } = setup()
+      await expect(store.put(bytes, 'image/png')).rejects.toMatchObject({
+        name: 'BlobError',
+        code: 'too-large',
+      })
+      expect(db.prepare('SELECT count(*) AS n FROM blobs').get()).toEqual({
+        n: 0,
+      })
+      expect(existsSync(join(dataDir, 'blobs'))).toBe(false)
+    },
+  )
+
+  it.each([
+    ['a truncated PNG header', png(10, 10).slice(0, 20)],
+    ['a PNG of zero width', png(0, 10)],
+    [
+      'a JPEG with no size segment',
+      new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 2, 0, 0, 0, 0]),
+    ],
+  ])('refuses %s as unsupported', async (_n, bytes) => {
+    const { store } = setup()
+    await expect(store.put(bytes, 'image/png')).rejects.toMatchObject({
+      code: 'unsupported',
+    })
+  })
+
+  it('accepts the largest allowed sizes: 8192 x 4096 and 4096 x 4096', async () => {
+    const { store } = setup()
+    expect(await store.put(png(8192, 4096, 8, 1), 'image/png')).toMatch(
+      /^[0-9a-f]{64}$/,
+    )
+    expect(await store.put(png(4096, 4096, 8, 2), 'image/png')).toMatch(
+      /^[0-9a-f]{64}$/,
+    )
   })
 
   it('never reads outside blobs/: traversal-shaped ids are plain misses', async () => {

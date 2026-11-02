@@ -2,14 +2,16 @@ import { existsSync, readdirSync } from 'node:fs'
 import http from 'node:http'
 import { dirname } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import {
+  jpeg as coreJpeg,
+  png as corePng,
+} from '../../../packages/core/src/test-images'
 import { boot, ORIGIN } from './http-test-utils'
 
 const ascii = (s: string) => Buffer.from(s, 'utf8')
-const png = (extra = 64, fill = 7) =>
-  Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    Buffer.alloc(extra, fill),
-  ])
+const HEAD = corePng(10, 10).length
+/** A PNG with a valid header followed by `extra` filler bytes (the filler is not image data). */
+const png = (extra = 64, fill = 7) => Buffer.from(corePng(10, 10, extra, fill))
 const upload = (
   call: Awaited<ReturnType<typeof boot>>['call'],
   body: Buffer,
@@ -57,10 +59,7 @@ describe('POST /api/blobs and GET /api/blobs/:id', () => {
 
   it('ignores the claimed Content-Type: the sniffed type wins, and no header at all works', async () => {
     const { call } = await boot()
-    const jpeg = Buffer.concat([
-      Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
-      Buffer.alloc(32, 1),
-    ])
+    const jpeg = Buffer.from(coreJpeg(10, 10, 32, 1))
     const up = await upload(call, jpeg, 'text/html')
     expect(up.json.mime).toBe('image/jpeg')
     const bare = await call('POST', '/api/blobs', {
@@ -89,12 +88,22 @@ describe('POST /api/blobs and GET /api/blobs/:id', () => {
     })
   })
 
+  it('refuses an image whose header claims an oversized picture with 413, whatever its byte size', async () => {
+    const { call, db } = await boot()
+    const r = await upload(call, Buffer.from(corePng(100_000, 100_000, 64)))
+    expect(r.status).toBe(413)
+    expect(r.json.error.code).toBe('payload_too_large')
+    expect(db.prepare('SELECT count(*) AS n FROM blobs').get()).toEqual({
+      n: 0,
+    })
+  })
+
   it('accepts exactly 10 MB and refuses one byte more with 413', async () => {
     const { call } = await boot()
     const tenMB = 10 * 2 ** 20
-    const ok = await upload(call, png(tenMB - 8))
+    const ok = await upload(call, png(tenMB - HEAD))
     expect(ok.status).toBe(201)
-    const tooBig = await upload(call, png(tenMB - 8 + 1, 9))
+    const tooBig = await upload(call, png(tenMB - HEAD + 1, 9))
     expect(tooBig.status).toBe(413)
     expect(tooBig.json.error.code).toBe('payload_too_large')
   })

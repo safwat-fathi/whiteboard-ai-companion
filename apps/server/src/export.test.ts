@@ -14,7 +14,7 @@ import type Database from 'better-sqlite3'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createDiskBlobStore } from './blobs'
 import { createBlobsDb, openDatabase } from './db'
-import { renderBoardPng } from './export'
+import { mapLimit, renderBoardPng } from './export'
 
 const roots: string[] = []
 const dbs: Database.Database[] = []
@@ -201,6 +201,53 @@ describe('renderBoardPng', () => {
     expect(px.count(0, 0, 200, 140, red)).toBe(0)
   })
 
+  it('never decodes an image the upload rule would refuse: a real PNG over 8192 px is a placeholder', async () => {
+    // 8193 x 4 is a genuine, tiny-to-decode PNG, so only the header check stands between it and the canvas.
+    const wide = createCanvas(8193, 4)
+    const g = wide.getContext('2d')
+    g.fillStyle = '#ff0000'
+    g.fillRect(0, 0, 8193, 4)
+    const bytes = await wide.encode('png')
+    const stub: BlobStore = {
+      put: async () => '',
+      has: async () => true,
+      get: async () => ({ bytes: new Uint8Array(bytes), mime: 'image/png' }),
+    }
+    const png = await renderBoardPng(
+      [imageEl('img', 'a'.repeat(64), 20, 20)],
+      { x: 0, y: 0, w: 200, h: 140 },
+      200,
+      { blobs: stub },
+    )
+    const px = await pixels(png)
+    expect(px.count(0, 0, 200, 140, red)).toBe(0)
+    expect(px.count(0, 0, 200, 140, nonWhite)).toBeGreaterThan(20) // the placeholder
+  })
+
+  it('reads at most two blobs at a time however many images the board has', async () => {
+    let running = 0
+    let peak = 0
+    const slow: BlobStore = {
+      put: async () => '',
+      has: async () => true,
+      get: async () => {
+        running++
+        peak = Math.max(peak, running)
+        await new Promise((r) => setTimeout(r, 15))
+        running--
+        return undefined
+      },
+    }
+    const scene = Array.from({ length: 8 }, (_, i) =>
+      imageEl(`i${i}`, String(i).repeat(64).slice(0, 64), 10 + i * 20, 10),
+    )
+    await renderBoardPng(scene, { x: 0, y: 0, w: 200, h: 60 }, 200, {
+      blobs: slow,
+    })
+    expect(peak).toBeGreaterThan(0)
+    expect(peak).toBeLessThanOrEqual(2) // a literal, so raising the constant fails this test instead of moving it
+  })
+
   it('renders an empty board as a blank image of the requested size', async () => {
     const px = await pixels(
       await renderBoardPng([], { x: 0, y: 0, w: 100, h: 50 }, 200, {
@@ -270,5 +317,25 @@ describe('renderBoardPng', () => {
     expect([pb.width, pb.height]).toEqual([400, 100])
     expect(pa.count(18, 18, 124, 124, dark)).toBeGreaterThan(100)
     expect(pb.count(0, 0, 400, 100, dark)).toBeGreaterThan(40) // the equation, not the rectangle
+  })
+})
+
+describe('mapLimit', () => {
+  it('runs every item, never more than the limit at once, and handles an empty list', async () => {
+    let running = 0
+    let peak = 0
+    const seen: number[] = []
+    await mapLimit([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+      running++
+      peak = Math.max(peak, running)
+      await new Promise((r) => setTimeout(r, 5))
+      seen.push(n)
+      running--
+    })
+    expect(peak).toBe(3)
+    expect(seen.sort()).toEqual([1, 2, 3, 4, 5, 6, 7])
+    await mapLimit([], 3, async () => {
+      throw new Error('never called')
+    })
   })
 })

@@ -10,14 +10,33 @@ import {
   type Platform,
   RenderCache,
   render,
+  sniffMime,
 } from '@whiteboard/core'
 import { nodePlatform, registerBundledFonts } from '@whiteboard/core/node'
+import { checkImageSize } from './blobs'
 import type { Bounds } from './db'
 import { apiError } from './errors'
 
 export const EXPORT_WIDTH = { min: 16, max: 4096 } as const
 export const EXPORT_MAX_HEIGHT = 8192
 const PAD = 24 // world units around the content of a default export
+/** Images decoded at once: each can be up to 160 MB of pixels, so a board of many images must not decode them all together. */
+export const DECODE_CONCURRENCY = 2
+
+/** Runs `fn` over `items` with at most `limit` in flight. */
+export async function mapLimit<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) await fn(items[next++] as T)
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  )
+}
 
 let ready: Promise<{ platform: Platform; math: MathProvider }> | undefined
 /** Fonts, the Node platform and MathJax are set up once, on the first export, so the server itself starts fast. */
@@ -104,26 +123,29 @@ export async function renderBoardPng(
   )
 
   const decoded = new Map<string, ImageBitmapEntry | 'missing'>()
-  await Promise.all(
-    [
-      ...new Set(
-        visible.flatMap((el) => (el.type === 'image' ? [el.data.blobId] : [])),
-      ),
-    ].map(async (blobId) => {
-      const rec = await deps.blobs.get(blobId)
-      if (!rec) return void decoded.set(blobId, 'missing')
-      try {
-        const img = await loadImage(Buffer.from(rec.bytes))
-        decoded.set(blobId, {
-          bitmap: img as unknown as CanvasImageSource,
-          w: img.width,
-          h: img.height,
-        })
-      } catch {
-        decoded.set(blobId, 'missing')
-      }
-    }),
-  )
+  const blobIds = [
+    ...new Set(
+      visible.flatMap((el) => (el.type === 'image' ? [el.data.blobId] : [])),
+    ),
+  ]
+  await mapLimit(blobIds, DECODE_CONCURRENCY, async (blobId) => {
+    const rec = await deps.blobs.get(blobId)
+    if (!rec) return void decoded.set(blobId, 'missing')
+    // Never decode what an upload would have refused: the declared size is read from the header first.
+    const mime = sniffMime(rec.bytes)
+    if (!mime || !checkImageSize(rec.bytes, mime).ok)
+      return void decoded.set(blobId, 'missing')
+    try {
+      const img = await loadImage(Buffer.from(rec.bytes))
+      decoded.set(blobId, {
+        bitmap: img as unknown as CanvasImageSource,
+        w: img.width,
+        h: img.height,
+      })
+    } catch {
+      decoded.set(blobId, 'missing')
+    }
+  })
   const images: ImageProvider = {
     peek: (id) => decoded.get(id),
     request: () => {},
