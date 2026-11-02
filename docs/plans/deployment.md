@@ -6,29 +6,29 @@ Everything runs natively. Locally it is Node + pnpm. On a VPS it is Node + syste
 
 ## Processes and ports
 
-| Process | Port | Binds | Notes |
-|---|---|---|---|
+| Process                | Port          | Binds     | Notes                                                                                      |
+| ---------------------- | ------------- | --------- | ------------------------------------------------------------------------------------------ |
 | `apps/server` (NestJS) | 4000 (`PORT`) | 127.0.0.1 | REST, WebSocket `/ws`, SSE `/api/chat`; owns the SQLite file; ingestion in a worker thread |
-| `apps/web` (Next.js) | 3000 | 127.0.0.1 | Client-only editor |
-| Caddy (VPS only) | 80 / 443 | public | TLS, basic auth, routes `/ws*` and `/api/*` to :4000, everything else to :3000 |
+| `apps/web` (Next.js)   | 3000          | 127.0.0.1 | Client-only editor                                                                         |
+| Caddy (VPS only)       | 80 / 443      | public    | TLS, basic auth, routes `/ws*` and `/api/*` to :4000, everything else to :3000             |
 
 Dev: the browser at `http://localhost:3000` calls the server at `NEXT_PUBLIC_API_BASE=http://localhost:4000` (cross-origin; the server allows `PUBLIC_ORIGIN`). Production: one origin through Caddy, `NEXT_PUBLIC_API_BASE` empty.
 
 ## Configuration (`deploy/.env.example`)
 
-| Key | Default | Meaning |
-|---|---|---|
-| `OPENROUTER_API_KEY` | – | Server only. Never in the browser, repo, logs or chat |
-| `TUTOR_MODEL` · `TUTOR_FALLBACK_MODEL` | `anthropic/claude-sonnet-5.5` · `google/gemini-3.8-flash` | Candidates; S3 confirms |
-| `CHEAP_MODEL` | `anthropic/claude-haiku-5.5` | Summaries, rolling memory, TOC inference |
-| `VISION_MODEL` | `google/gemini-3.8-flash` | Page transcription (rung R4) |
-| `EMBED_MODEL` · `EMBED_DIMS` | `baai/bge-m3` · `1024` | Fixed per book once indexed |
-| `DATA_DIR` | `./data` (VPS: `/var/lib/whiteboard`) | SQLite file, blobs, backups |
-| `PORT` | `4000` | Server port |
-| `PUBLIC_ORIGIN` | `http://localhost:3000` (VPS: `https://<domain>`) | Allowed Origin for WebSocket and non-GET requests |
-| `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD` | `12` · `0.50` · `5` | Tutor caps |
-| `CHAPTER_STUFF_MAX_TOKENS` | `60000` | Whole-chapter scope pack limit |
-| `TUTOR_STUB` | `0` | `1` replays scripted tool calls (tests) |
+| Key                                                    | Default                                                   | Meaning                                               |
+| ------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------- |
+| `OPENROUTER_API_KEY`                                   | –                                                         | Server only. Never in the browser, repo, logs or chat |
+| `TUTOR_MODEL` · `TUTOR_FALLBACK_MODEL`                 | `anthropic/claude-sonnet-5.5` · `google/gemini-3.8-flash` | Candidates; S3 confirms                               |
+| `CHEAP_MODEL`                                          | `anthropic/claude-haiku-5.5`                              | Summaries, rolling memory, TOC inference              |
+| `VISION_MODEL`                                         | `google/gemini-3.8-flash`                                 | Page transcription (rung R4)                          |
+| `EMBED_MODEL` · `EMBED_DIMS`                           | `baai/bge-m3` · `1024`                                    | Fixed per book once indexed                           |
+| `DATA_DIR`                                             | `./data` (VPS: `/var/lib/whiteboard`)                     | SQLite file, blobs, backups                           |
+| `PORT`                                                 | `4000`                                                    | Server port                                           |
+| `PUBLIC_ORIGIN`                                        | `http://localhost:3000` (VPS: `https://<domain>`)         | Allowed Origin for WebSocket and non-GET requests     |
+| `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD` | `12` · `0.50` · `5`                                       | Tutor caps                                            |
+| `CHAPTER_STUFF_MAX_TOKENS`                             | `60000`                                                   | Whole-chapter scope pack limit                        |
+| `TUTOR_STUB`                                           | `0`                                                       | `1` replays scripted tool calls (tests)               |
 
 Web-only: `NEXT_PUBLIC_API_BASE` (in `apps/web/.env.local`).
 

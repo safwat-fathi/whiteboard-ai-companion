@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Status:** draft 1 · 2026-11-01 · nothing started; Kickoff is open.
+> **Status:** draft 1 · 2026-11-01 · Kickoff in progress (M0 plan written, waiting on your review and the inputs below).
 > **What this is:** the execution view of [PLAN.md](./PLAN.md) §17: phases M0–M7 with scope, dependencies, gates, acceptance scripts, risks and status. Aspect details stay in [`plans/`](./plans/); this file links to them instead of restating them.
 > **Weeks and gates mirror PLAN §17.** If they ever differ, §17 wins until both are updated. Everything not in §17 is tagged **[my call]**; override any.
 > **Time** is full-time-engineer weeks, ±30%, **re-estimated after M0**. There are no dates here on purpose (conversion row in §1).
@@ -14,7 +14,7 @@ M0–M7 keep the labels used across the docs. **Kickoff (K)** comes first and is
 
 | Stage | Phase | Wks | Ends wk | Headline | Status |
 |---|---|---|---|---|---|
-| 0 Kickoff | **K** Kickoff | – | – | Approve PLAN rev 2, hand over inputs, write M0's task plan | ☐ |
+| 0 Kickoff | **K** Kickoff | – | – | Approve PLAN rev 2, hand over inputs, write M0's task plan | ◐ |
 | 1 De-risk | **M0** Spikes | 2 | 2 | S1–S5 turn guesses into measurements | ☐ |
 | 2 Foundation | **M1** Core editor | 2.5 | 4.5 | Canvas, shapes, Arabic/Latin text, undo, local save | ☐ |
 | | **M2** Math and images | 1.5 | 6 | LaTeX (MathJax), images, camera `flyTo` + pulse | ☐ |
@@ -44,14 +44,14 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 
 - **Goal:** M0 can start without waiting on anyone.
 - **Do:**
-  1. Review and approve PLAN rev 2 (its header says "awaiting your review").
+  1. Review and approve PLAN rev 2 (its header says "awaiting your review"). **Done 2026-11-01:** taken as approved when you asked to commit and start.
   2. Hand over the three inputs from PLAN §19. **(a)** 2–3 real PDFs (one text-heavy, one math/diagram-heavy, an Arabic one if relevant) plus ~10 questions per book with the page where each answer lives; this is also the retrieval eval set. Say if any book is EPUB (§5, D). **(b)** The VPS plan: provider, a Debian or Ubuntu LTS image (not Alpine), and a domain or Tailscale. **(c)** Your OpenRouter key in the server `.env` only, with a credit limit set in OpenRouter.
-  3. Write M0's task-level plan (superpowers:writing-plans), PLAN §20 step 3.
+  3. Write M0's task-level plan (superpowers:writing-plans), PLAN §20 step 3. **Written 2026-11-01:** [2026-11-01-m0-spikes.md](./superpowers/plans/2026-11-01-m0-spikes.md), awaiting your review.
   4. Optional (PLAN §20 step 2): export the Claude Doc to `docs/engine-design.md` and record your five answers in its Open questions.
-  5. **[my call]** Commit the docs when you are ready; nothing is committed yet.
+  5. Commit the docs. **Done 2026-11-01** (`1c6abfb` on `main`; M0 work is on branch `m0-spikes`).
 - **Gate:** PLAN rev 2 approved and M0's task plan written. S1 needs nothing, S3 needs the key, S5 needs the VPS. S2 and S4 need the books and can arrive during M0.
 - **Risks:** books arrive late → S2 and S4 slip and M4 inherits the risk; S1, S3, S5 still run.
-- **Status:** ☐
+- **Status:** ◐ Open: the plan review, and inputs (a), (b), (c) above.
 
 ### M0 · Spikes *(2 wks · ends wk 2)*
 
@@ -250,3 +250,4 @@ Gathered from the docs; none of it is scheduled. Non-goals stay in PLAN §2.3.
 | Date | Phase | Note |
 |---|---|---|
 | 2026-11-01 | – | Roadmap drafted from PLAN rev 2 and the 14 aspect files. Nothing started. |
+| 2026-11-01 | K | Docs committed (`1c6abfb`). PLAN rev 2 taken as approved. M0 task plan written, awaiting review. Open inputs: OpenRouter key (S3), VPS (S5), books and questions (S2, S4b); S1 and S4a need none. |

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>S1 Arabic parity</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; background: #fff; }
+      canvas { display: block; }
+      pre { margin: 8px 24px; font: 12px/1.4 monospace; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <pre id="out"></pre>
+    <script type="module">
+      // F5 parity check: the chosen font (plex) as a web font, same family names, stack and geometry as server/arabic.ts.
+      import arabicUrl from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-400-normal.woff2?url';
+      import latinUrl from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-400-normal.woff2?url';
+      import fixtures from '../fixtures/arabic.json';
+
+      const SIZE = 40, W = 1000, PAD = 24, ROW = 92, BASE = 62;
+      const IDS = [2, 9, 11]; // plain, harakat with shadda, mixed with parentheses and digits
+      const font = `${SIZE}px S1-Plex, S1-Plex-Latin`;
+      const GHOST = `${SIZE}px NoSuchFamilyS1`;
+
+      const style = document.createElement('style');
+      style.textContent = `@font-face{font-family:S1-Plex;src:url(${arabicUrl}) format('woff2')}@font-face{font-family:S1-Plex-Latin;src:url(${latinUrl}) format('woff2')}`;
+      document.head.append(style);
+      // A canvas never triggers a web-font load: without this, Chrome would silently draw a system Arabic font.
+      await Promise.all([document.fonts.load(`${SIZE}px S1-Plex`, 'مرحبا'), document.fonts.load(`${SIZE}px S1-Plex-Latin`, 'abc')]);
+
+      const canvas = document.getElementById('c');
+      canvas.width = W;
+      canvas.height = IDS.length * ROW;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, canvas.height);
+      const rows = IDS.map((id) => fixtures.find((f) => f.id === id));
+      rows.forEach((f, i) => {
+        const y = i * ROW;
+        ctx.fillStyle = '#888';
+        ctx.font = '14px S1-Plex-Latin';
+        ctx.direction = 'ltr';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${String(f.id).padStart(2, '0')} ${f.kind}`, PAD, y + BASE);
+        ctx.fillStyle = '#000';
+        ctx.font = font;
+        ctx.direction = 'rtl';
+        ctx.textAlign = 'right';
+        ctx.fillText(f.text, W - PAD, y + BASE);
+        ctx.fillStyle = '#ddd';
+        ctx.fillRect(0, y + ROW - 1, W, 1);
+      });
+
+      const width = (f, t) => ((ctx.font = f), ctx.measureText(t).width);
+      const result = {
+        faces: [...document.fonts].map((f) => `${f.family} ${f.status}`),
+        checks: [document.fonts.check(`${SIZE}px S1-Plex`, 'مرحبا'), document.fonts.check(`${SIZE}px S1-Plex-Latin`, 'abc')],
+        widths: rows.map((f) => ({ id: f.id, bundled: +width(font, f.text).toFixed(2), nonexistent: +width(GHOST, f.text).toFixed(2) })),
+        ua: navigator.userAgent,
+        dpr: devicePixelRatio,
+      };
+      window.__arabic = result;
+      document.getElementById('out').textContent = JSON.stringify(result, null, 1);
+    </script>
+  </body>
+</html>
