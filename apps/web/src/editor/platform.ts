@@ -24,10 +24,13 @@ export function browserPlatform(): Platform {
       if (!measure) return null
       measure.font = font
       const m = measure.measureText('x')
-      return {
-        ascent: m.fontBoundingBoxAscent,
-        descent: m.fontBoundingBoxDescent,
-      }
+      // Older browsers lack fontBoundingBox*: null makes the layout use its non-metrics baseline (as the node platform does).
+      return m.fontBoundingBoxAscent === undefined
+        ? null
+        : {
+            ascent: m.fontBoundingBoxAscent,
+            descent: m.fontBoundingBoxDescent,
+          }
     },
     // Fonts are loaded via CSS/document.fonts (see fonts.ts).
     registerFont: () => {},
