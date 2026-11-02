@@ -51,6 +51,7 @@ export class Editor {
   private cache = new RenderCache()
   readonly platform: Platform
   private listeners = new Set<() => void>()
+  private camListeners = new Set<() => void>()
   private sceneCanvas = canvas(0)
   private overlay = canvas(1)
   private ro?: ResizeObserver
@@ -188,6 +189,12 @@ export class Editor {
     return () => this.listeners.delete(fn)
   }
 
+  /** Fires on pan/zoom (not on commits); autosave needs it because the camera is part of the saved board. */
+  onCameraChange(fn: () => void): () => void {
+    this.camListeners.add(fn)
+    return () => this.camListeners.delete(fn)
+  }
+
   /** Replaces the board contents; undo history is reset unless `undo` JSON is given. */
   setScene(elements: Element[], camera?: Camera, undo?: UndoJSON): void {
     this.scene.els = createScene(elements).els
@@ -227,7 +234,7 @@ export class Editor {
   panBy(dx: number, dy: number): void {
     const { x, y, zoom } = this.camera
     this.camera = { x: x - dx / zoom, y: y - dy / zoom, zoom }
-    this.invalidate()
+    this.cameraChanged()
   }
 
   dispose(): void {
@@ -241,6 +248,12 @@ export class Editor {
     this.sceneCanvas.remove()
     this.overlay.remove()
     this.listeners.clear()
+    this.camListeners.clear()
+  }
+
+  private cameraChanged() {
+    this.invalidate()
+    for (const fn of this.camListeners) fn()
   }
 
   private changed() {
@@ -326,7 +339,7 @@ export class Editor {
       this.panBy(-dx, -dy)
       return
     }
-    this.invalidate()
+    this.cameraChanged()
   }
 
   private onPointer(kind: 'down' | 'move' | 'up', e: PointerEvent) {
