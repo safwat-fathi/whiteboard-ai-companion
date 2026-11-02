@@ -196,6 +196,78 @@ describe('parseImageHeader refuses structures a decoder could read differently',
     expect(size(gif(7, 7), 'image/gif')).toMatchObject({ width: 7, height: 7 })
   })
 
+  it('GIF: refuses a file with more than 200,000 extension blocks followed by an oversized frame', () => {
+    const blockCount = 200_005
+    const head = [
+      0x47,
+      0x49,
+      0x46,
+      0x38,
+      0x39,
+      0x61, // GIF89a
+      100,
+      0,
+      100,
+      0, // sw=100, sh=100
+      0,
+      0,
+      0,
+    ]
+    const validFrame = [
+      0x2c,
+      0,
+      0,
+      0,
+      0,
+      10,
+      0,
+      10,
+      0, // left=0, top=0, w=10, h=10
+      0,
+      2,
+      0, // flags, min code size, empty sub-blocks
+    ]
+    const oversizedFrame = [
+      0x2c,
+      0,
+      0,
+      0,
+      0,
+      200,
+      0,
+      200,
+      0, // left=0, top=0, w=200, h=200
+      0,
+      2,
+      0,
+    ]
+    const trailer = [0x3b]
+    const totalLen =
+      head.length +
+      validFrame.length +
+      blockCount * 3 +
+      oversizedFrame.length +
+      trailer.length
+    const buf = new Uint8Array(totalLen)
+    let p = 0
+    buf.set(head, p)
+    p += head.length
+    buf.set(validFrame, p)
+    p += validFrame.length
+    for (let i = 0; i < blockCount; i++) {
+      buf[p++] = 0x21
+      buf[p++] = 0x01
+      buf[p++] = 0x00
+    }
+    buf.set(oversizedFrame, p)
+    p += oversizedFrame.length
+    buf.set(trailer, p)
+    p += trailer.length
+    expect(p).toBe(totalLen)
+
+    expect(size(buf, 'image/gif')).toBeNull()
+  })
+
   it('JPEG: a second SOF marker is ambiguous and refused, whichever comes first', () => {
     expect(size(jpegSofs([[40, 30]]), 'image/jpeg')).toMatchObject({
       width: 40,

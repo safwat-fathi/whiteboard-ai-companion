@@ -107,7 +107,8 @@ function gifSize(bytes: Uint8Array, dv: DataView) {
       if (n === 0) return
     }
   }
-  for (let blocks = 0; blocks < 200_000 && pos < bytes.length; blocks++) {
+  let blocks = 0
+  for (; blocks < 200_000 && pos < bytes.length; blocks++) {
     const b = bytes[pos]
     if (b === 0x3b) break // trailer
     if (b === 0x21) {
@@ -127,6 +128,7 @@ function gifSize(bytes: Uint8Array, dv: DataView) {
       frames++
     } else return null
   }
+  if (blocks >= 200_000) return null
   return frames > 0 ? { width: sw, height: sh, exifOrientation: 1 } : null
 }
 
