@@ -17,7 +17,7 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 
 ## Hackathon & Meta AI Integration
 
-Whiteboard AI is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (October 26 – November 5, 2026), hosted by **Meta** and **Cerebral Valley**.
+Whiteboard AI is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (October 26 – November 4, 2026), hosted by **Meta** and **Cerebral Valley**.
 
 The project re-imagines how learners interact with textbooks and technical subjects by uniting Meta's open foundation models with an interactive visual workspace via the **Meta Model API**:
 
