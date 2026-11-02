@@ -79,7 +79,7 @@ Set in `.env` (server) — the full list is in [`deployment`](docs/plans/deploym
 | Key | Purpose |
 |---|---|
 | `OPENROUTER_API_KEY` | The only secret. Server-side only |
-| `TUTOR_MODEL` · `CHEAP_MODEL` · `VISION_MODEL` · `EMBED_MODEL` | OpenRouter model ids; every one is configurable |
+| `TUTOR_MODEL` · `CHEAP_MODEL` · `VISION_MODEL` · `EMBED_MODEL` | OpenRouter model ids; configurable for Meta Llama models (e.g. Llama 3.3 70B, Llama 3.2 Vision) |
 | `DATA_DIR` | Where the SQLite file and blobs live (`./data` by default) |
 | `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD` | Spending and loop caps |
 

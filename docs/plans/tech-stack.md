@@ -31,7 +31,7 @@ Versions are the latest seen on npm on **2026-11-01**. Pin exact versions at ins
 | Server | NestJS 12.3 | WebSocket gateway (`ws` adapter), REST, SSE, services |
 | Database | SQLite via `better-sqlite3` 13.0 (WAL) + FTS5 | [database](./database.md). `node:sqlite` (stdlib, FTS5 works on this Node 22.21) is a verified fallback if the native build ever bites; DB access lives in one module |
 | Vector search | Float32 BLOB column + exact cosine in memory | `sqlite-vec` 0.1.9 is the upgrade path (still 0.x) |
-| AI | `ai` 7.0 · `@ai-sdk/react` 4.0 · `@openrouter/ai-sdk-provider` 3.1 | Hidden behind one adapter module; match majors at install |
+| AI | `ai` 7.0 · `@ai-sdk/react` 4.0 · `@openrouter/ai-sdk-provider` 3.1 | Hidden behind one adapter module; configured for Meta Llama models (Llama 3.3 / Llama 3.2 Vision) for the [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon) |
 | Chat rendering | `react-markdown` 10.1 · `remark-gfm` 4.0 · `remark-math` 6.0 | Math nodes are rendered by our own `renderMath()`, so there is one math engine |
 | Math | `@mathjax/src` 4.1 (v4), TeX in, SVG out | `mathjax-full` 3.2 is the older v3 line. [math-renderer](./math-renderer.md) |
 | Server canvas | `@napi-rs/canvas` 1.1 | **[spike S1]** Arabic shaping; alternative `skia-canvas` |

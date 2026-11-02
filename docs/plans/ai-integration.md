@@ -27,6 +27,11 @@ Each default below supports tool calling and image input (embeddings are listed 
 
 **S3 compared** Sonnet 5.5, Gemini 3.8 Flash, GPT-6 Luna and Haiku 5.5 ([results](../../spikes/s3-openrouter/RESULT.md)); originally planned as: S3 compares three tutor candidates on your questions** (e.g. Sonnet 5.5, Gemini 3.7 Flash, `openai/gpt-6-luna`) and picks by quality on your books, Arabic included, not by brand.
 
+### Meta AI Developer Hackathon Configuration
+Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley), Whiteboard AI is configured to leverage Meta's open foundation models via OpenRouter or direct Meta API:
+- **Tutor / Reasoning (`TUTOR_MODEL`):** `meta-llama/llama-3.3-70b-instruct` (or `meta-llama/llama-3.1-405b-instruct`) for tool loop orchestration, complex math derivation, and pedagogical step generation.
+- **Vision & Board Perception (`VISION_MODEL`):** `meta-llama/llama-3.2-11b-vision-instruct` (or `meta-llama/llama-3.2-90b-vision-instruct`) for inspecting student canvas drawings and textbook figures.
+
 **Cost envelope** (estimates from catalog prices; S3 replaces them with measured numbers):
 
 - Index a 400-page book: embeddings ≈ $0.002; summaries ≈ $0.02–0.05; optional paid extraction: `mistral-ocr` ≈ $0.80, vision transcription ≈ $0.2–1.5.
