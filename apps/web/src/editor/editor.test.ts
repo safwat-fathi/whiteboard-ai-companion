@@ -283,6 +283,50 @@ describe('Editor', () => {
     input.remove()
   })
 
+  describe('shortcuts on a non-Latin keyboard layout match the physical key', () => {
+    it('tool letters: an Arabic letter on KeyR selects the rectangle, KeyV select, KeyT text', () => {
+      key('ر', { code: 'KeyR' })
+      expect(ed.tool.id).toBe('rect')
+      key('ف', { code: 'KeyV' })
+      expect(ed.tool.id).toBe('select')
+      key('ت', { code: 'KeyT' })
+      expect(ed.tool.id).toBe('text')
+    })
+
+    it('Ctrl/Cmd+Z, +Shift+Z and +Y undo and redo', () => {
+      ed.commit(add('a'))
+      key('ئ', { ctrlKey: true, code: 'KeyZ' })
+      expect(ids()).toEqual([])
+      key('ئ', { ctrlKey: true, shiftKey: true, code: 'KeyZ' })
+      expect(ids()).toEqual(['a'])
+      key('ئ', { metaKey: true, code: 'KeyZ' })
+      expect(ids()).toEqual([])
+      key('ن', { ctrlKey: true, code: 'KeyY' })
+      expect(ids()).toEqual(['a'])
+    })
+
+    it('the layout letter wins while it is Latin (Dvorak, AZERTY), and punctuation never stands in', () => {
+      key('p', { code: 'KeyR' }) // Dvorak: the key at QWERTY R types p
+      expect(ed.tool.id).toBe('hand')
+      key('a', { code: 'KeyQ' }) // AZERTY: a is at QWERTY Q
+      expect(ed.tool.id).toBe('arrow')
+      ed.commit(add('a'))
+      key(';', { ctrlKey: true, code: 'KeyZ' }) // Dvorak: Ctrl+; sits on the QWERTY Z key
+      expect(ids()).toEqual(['a'])
+    })
+
+    it('nothing fires while a textarea is focused', () => {
+      const ta = document.createElement('textarea')
+      document.body.append(ta)
+      ed.commit(add('a'))
+      key('ر', { code: 'KeyR' }, ta)
+      key('ئ', { ctrlKey: true, code: 'KeyZ' }, ta)
+      expect(ed.tool.id).toBe('hand')
+      expect(ids()).toEqual(['a'])
+      ta.remove()
+    })
+  })
+
   it('tool keys come from the registry', () => {
     ed.tools.other = stub()
     key('q')

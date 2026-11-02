@@ -11,6 +11,7 @@ import {
   toLocal,
 } from '@whiteboard/core'
 import type { Editor } from '../editor'
+import { shortcutKey } from '../keys'
 import { COLORS, drawGroupBox, drawHighlight, LOOK } from './highlight'
 import type { Tool, ToolEvent } from './index'
 import {
@@ -238,7 +239,7 @@ export const selectTool = (ed: Editor): Tool => {
         ed.editText(one.id)
         return true
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      if ((e.ctrlKey || e.metaKey) && shortcutKey(e) === 'a') {
         set(
           [...ed.scene.els.values()]
             .filter((el) => !el.locked)

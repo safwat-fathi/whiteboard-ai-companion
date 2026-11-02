@@ -21,6 +21,7 @@ import {
   worldToScreen,
   zoomAt,
 } from '@whiteboard/core'
+import { shortcutKey } from './keys'
 import { browserPlatform } from './platform'
 import { type Tool, type ToolEvent, tools as toolFactories } from './tools'
 import type { TextTool } from './tools/text'
@@ -441,7 +442,7 @@ export class Editor {
   private onKeyDown(e: KeyboardEvent) {
     if (typing(e.target)) return
     const mod = e.ctrlKey || e.metaKey
-    const k = e.key.toLowerCase()
+    const k = shortcutKey(e) // the physical key on a non-Latin layout, so Arabic typists keep R/V/T and Ctrl+Z
     if (e.code === 'Space') {
       // Only claim Space when focus is on the board, so buttons and links keep Space activation.
       const t = e.target

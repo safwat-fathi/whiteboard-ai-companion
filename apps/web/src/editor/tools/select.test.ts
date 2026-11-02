@@ -278,6 +278,12 @@ describe('select tool', () => {
     expect([get('a').x, get('a').y]).toEqual([1, 10])
   })
 
+  it('ctrl+A selects all on an Arabic layout (physical KeyA)', () => {
+    put(ed, mk('a', 0, 0), mk('b', 200, 0))
+    expect(key(ed.tool, 'ش', { ctrlKey: true, code: 'KeyA' })).toBe(true)
+    expect([...ed.selection]).toEqual(['a', 'b'])
+  })
+
   it('dragging an arrow endpoint handle unbinds in free space and rebinds on a shape', () => {
     flow()
     put(ed, mk('c', 300, 200))
