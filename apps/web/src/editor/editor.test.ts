@@ -628,16 +628,40 @@ describe('Editor', () => {
       },
     )
 
-    it('touch and pen drags pan only with the Hand tool', () => {
-      for (const id of ['select', 'rect', 'text']) {
-        ed.setTool(id)
-        for (const pt of ['touch', 'pen']) {
-          tptr('pointerdown', 100, 100, pt)
-          tptr('pointermove', 70, 90, pt)
-          tptr('pointerup', 70, 90, pt)
-          expect(ed.camera, `${id} ${pt}`).toEqual({ x: 0, y: 0, zoom: 1 })
-        }
+    it('touch and pen drags pan only with the Hand tool; other tools get them as before', () => {
+      const home = { x: 0, y: 0, zoom: 1 }
+      ed.setTool('text')
+      for (const pt of ['touch', 'pen']) {
+        tptr('pointerdown', 100, 100, pt)
+        tptr('pointermove', 70, 90, pt)
+        tptr('pointerup', 70, 90, pt)
+        expect(ed.camera, `text ${pt}`).toEqual(home)
       }
+      ed.setTool('rect')
+      tptr('pointerdown', 100, 100, 'touch')
+      tptr('pointermove', 170, 150, 'touch')
+      tptr('pointerup', 170, 150, 'touch')
+      expect(ids()).toHaveLength(1) // a touch drag draws
+      expect(ed.camera).toEqual(home)
+      const [id] = ids() as [string]
+      expect(ed.tool.id).toBe('select') // the new shape is selected
+      tptr('pointerdown', 120, 100, 'pen') // a pen drag on its top edge moves it
+      tptr('pointermove', 150, 100, 'pen')
+      tptr('pointerup', 150, 100, 'pen')
+      expect(ed.scene.els.get(id)?.x).toBe(130)
+      expect(ed.camera).toEqual(home)
+    })
+
+    it('a pointer whose capture throws starts no pan: nothing stuck', () => {
+      const over = host.querySelectorAll('canvas')[1] as HTMLCanvasElement
+      over.setPointerCapture = () => {
+        throw new DOMException('no such pointer', 'NotFoundError')
+      }
+      tptr('pointerdown', 100, 100, 'touch')
+      expect(cursor()).toBe('grab')
+      tptr('pointermove', 70, 90, 'touch')
+      tptr('pointerup', 70, 90, 'touch')
+      expect(ed.camera).toEqual({ x: 0, y: 0, zoom: 1 })
     })
 
     it('a second pointer neither moves the anchor nor ends the pan', () => {
@@ -720,8 +744,8 @@ describe('Editor', () => {
       expect(dbl).toHaveBeenCalledTimes(1)
     })
 
-    it.each(['ctrlKey', 'metaKey'])(
-      '%s+Space is not claimed (the OS input-language switch): no grabbing, nothing to get stuck',
+    it.each(['ctrlKey', 'metaKey', 'altKey'])(
+      '%s+Space is not claimed (an OS shortcut that may swallow the keyup): no grabbing, nothing to get stuck',
       (mod) => {
         expect(space(undefined, { [mod]: true })).toBe(true) // not prevented
         expect(cursor()).toBe('grab')

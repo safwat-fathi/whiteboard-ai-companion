@@ -842,8 +842,12 @@ export class Editor {
         (this.space || (touchOrPen(e) && this.tool === this.tools.hand)))
     ) {
       if (!pan) {
+        try {
+          this.overlay.setPointerCapture?.(e.pointerId)
+        } catch {
+          return // the pointer is already gone (NotFoundError): a pan started now would never see its pointerup
+        }
         this.setPanning({ id: e.pointerId, at: screen })
-        this.overlay.setPointerCapture?.(e.pointerId)
       } else if (e.pointerId === pan.id) {
         if (kind === 'move')
           this.panBy(screen.x - pan.at.x, screen.y - pan.at.y)
@@ -876,7 +880,8 @@ export class Editor {
       // Only claim Space when focus is on the board, so buttons and links keep Space activation.
       const t = e.target
       if (
-        !mod && // Ctrl+Space switches the input language on macOS: no keyup would follow
+        !mod && // Ctrl+Space switches the input language on macOS and Alt+Space opens the window menu on Windows/Linux: no keyup would follow
+        !e.altKey &&
         (t === document.body ||
           t === this.host ||
           t === this.sceneCanvas ||
