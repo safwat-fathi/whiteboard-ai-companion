@@ -11,7 +11,6 @@ import {
 } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Editor } from './editor'
-import { tools } from './tools'
 
 const shape = (id: string, x = 0): Element => ({
   id,
@@ -75,6 +74,32 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+const ev = (x: number, y: number) => ({
+  screen: { x, y },
+  world: { x, y },
+  shift: false,
+  alt: false,
+  button: 0,
+  pointerType: 'mouse',
+})
+const key = (
+  k: string,
+  init: KeyboardEventInit = {},
+  t: EventTarget = document.body,
+) =>
+  t.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: k,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    }),
+  )
+const ptr = (type: string, x: number, y: number) =>
+  (host.querySelectorAll('canvas')[1] as HTMLCanvasElement).dispatchEvent(
+    new MouseEvent(type, { clientX: x, clientY: y, bubbles: true }),
+  )
+
 const ids = () => ordered(ed.scene).map((e) => e.id)
 
 describe('Editor', () => {
@@ -131,25 +156,35 @@ describe('Editor', () => {
     expect(frames).toHaveLength(2)
   })
 
+  const stub = (onCancel = () => {}, navigates = false) => ({
+    id: 'other',
+    key: 'o',
+    navigates,
+    onPointerDown() {},
+    onPointerMove() {},
+    onPointerUp() {},
+    onCancel,
+  })
+
   it('setTool throws on unknown ids and cancels the old tool', () => {
     expect(() => ed.setTool('nope')).toThrow()
     const onCancel = vi.fn()
-    const other = {
-      id: 'other',
-      key: 'o',
-      onPointerDown() {},
-      onPointerMove() {},
-      onPointerUp() {},
-      onCancel,
-    }
-    tools.other = other
-    try {
-      ed.setTool('other')
-      ed.setTool('hand')
-      expect(onCancel).toHaveBeenCalledTimes(1)
-    } finally {
-      delete tools.other
-    }
+    ed.tools.other = stub(onCancel)
+    ed.setTool('other')
+    ed.setTool('hand')
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('two editors have independent tool state', () => {
+    const host2 = document.createElement('div')
+    document.body.append(host2)
+    const ed2 = new Editor(host2, { platform })
+    expect(ed2.tools.hand).not.toBe(ed.tools.hand)
+    ed.tools.hand?.onPointerDown(ev(0, 0))
+    ed2.tools.hand?.onPointerMove(ev(50, 50)) // ed2 never pressed: no pan
+    expect(ed2.camera).toEqual({ x: 0, y: 0, zoom: 1 })
+    ed2.dispose()
+    host2.remove()
   })
 
   it('ctrl+wheel zooms keeping the world point under the cursor fixed', () => {
@@ -209,5 +244,121 @@ describe('Editor', () => {
     expect(ids()).toEqual(['a'])
     ed.undoOnce()
     expect(ids()).toEqual([])
+  })
+
+  it('ctrl/cmd+Z, ctrl+shift+Z and ctrl+Y undo/redo; inputs are ignored', () => {
+    ed.commit(add('a'))
+    key('z', { ctrlKey: true })
+    expect(ids()).toEqual([])
+    key('z', { ctrlKey: true, shiftKey: true })
+    expect(ids()).toEqual(['a'])
+    key('z', { metaKey: true })
+    expect(ids()).toEqual([])
+    key('y', { ctrlKey: true })
+    expect(ids()).toEqual(['a'])
+    const input = document.createElement('input')
+    document.body.append(input)
+    key('z', { ctrlKey: true }, input)
+    expect(ids()).toEqual(['a'])
+    input.remove()
+  })
+
+  it('tool keys come from the registry', () => {
+    ed.tools.other = stub()
+    key('o')
+    expect(ed.tool.id).toBe('other')
+    key('h')
+    expect(ed.tool.id).toBe('hand')
+  })
+
+  it('readOnly: navigating tools get pointer events, others are inert, h still works', () => {
+    ed.readOnly = true
+    ptr('pointerdown', 10, 10)
+    ptr('pointermove', 0, 0)
+    expect(ed.camera.x).toBe(10)
+    const down = vi.fn()
+    ed.tools.other = { ...stub(), onPointerDown: down }
+    ed.tool = ed.tools.other
+    ptr('pointerdown', 1, 1)
+    expect(down).not.toHaveBeenCalled()
+    key('h')
+    expect(ed.tool.id).toBe('hand')
+    ed.tools.other = stub()
+    key('o')
+    expect(ed.tool.id).toBe('hand')
+  })
+
+  it('Space-drag pans only when focus is on the board; blur releases it', () => {
+    const btn = document.createElement('button')
+    document.body.append(btn)
+    expect(key(' ', { code: 'Space' }, btn)).toBe(true) // not prevented
+    btn.remove()
+    expect(key(' ', { code: 'Space' })).toBe(false) // body: claimed
+    ed.setTool('hand')
+    ed.tools.other = stub()
+    ed.tool = ed.tools.other
+    ptr('pointerdown', 10, 10)
+    ptr('pointermove', 0, 0)
+    expect(ed.camera.x).toBe(10)
+    ptr('pointerup', 0, 0)
+    window.dispatchEvent(new Event('blur'))
+    ptr('pointerdown', 10, 10)
+    ptr('pointermove', 0, 0)
+    expect(ed.camera.x).toBe(10)
+  })
+
+  it('normalises wheel deltaMode lines', () => {
+    host.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: 2, deltaMode: 1, cancelable: true }),
+    )
+    expect(ed.camera.y).toBe(32)
+  })
+
+  it('dispose removes listeners and schedules no frames', () => {
+    const cancel = vi.fn()
+    ed.tools.other = { ...stub(cancel) }
+    ed.tool = ed.tools.other
+    ed.dispose()
+    expect(cancel).toHaveBeenCalled()
+    frames.length = 0
+    host.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: 10, cancelable: true }),
+    )
+    key('z', { ctrlKey: true })
+    key('h')
+    ed.invalidate()
+    expect(ed.camera.y).toBe(0)
+    expect(frames).toHaveLength(0)
+  })
+
+  it('a devicePixelRatio change resizes the canvases and renders', () => {
+    const listeners: (() => void)[] = []
+    vi.stubGlobal('matchMedia', () => ({
+      addEventListener: (_: string, fn: () => void) => listeners.push(fn),
+      removeEventListener: () => {},
+    }))
+    Object.defineProperty(host, 'clientWidth', {
+      value: 100,
+      configurable: true,
+    })
+    Object.defineProperty(host, 'clientHeight', {
+      value: 50,
+      configurable: true,
+    })
+    const h2 = document.createElement('div')
+    Object.defineProperty(h2, 'clientWidth', { value: 100 })
+    Object.defineProperty(h2, 'clientHeight', { value: 50 })
+    document.body.append(h2)
+    const e2 = new Editor(h2, { platform })
+    const c = h2.querySelector('canvas') as HTMLCanvasElement
+    expect(c.width).toBe(100)
+    ;(ctx as { fillRect: unknown }).fillRect = vi.fn()
+    vi.stubGlobal('devicePixelRatio', 2)
+    listeners.shift()?.()
+    expect([c.width, c.height]).toEqual([200, 100])
+    expect(ctx.fillRect).toHaveBeenCalled()
+    expect(listeners).toHaveLength(1) // re-armed
+    e2.dispose()
+    h2.remove()
   })
 })

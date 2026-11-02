@@ -20,7 +20,7 @@ import {
   zoomAt,
 } from '@whiteboard/core'
 import { browserPlatform } from './platform'
-import { type Tool, type ToolEvent, tools } from './tools'
+import { type Tool, type ToolEvent, tools as toolFactories } from './tools'
 
 export type Snapshot = { elements: Element[]; camera: Camera; undo: UndoJSON }
 
@@ -39,6 +39,7 @@ export class Editor {
   camera: Camera = { x: 0, y: 0, zoom: 1 }
   undo: UndoManager
   selection = new Set<Id>()
+  readonly tools: Record<string, Tool>
   tool: Tool
   readOnly = false
   viewport: Viewport = { width: 0, height: 0, dpr: 1 }
@@ -55,6 +56,7 @@ export class Editor {
   private space = false
   private panning: Point | null = null
   private off: (() => void)[] = []
+  private unDpr?: () => void
 
   constructor(
     readonly host: HTMLElement,
@@ -64,8 +66,10 @@ export class Editor {
     this.index.load([...this.scene.els.values()])
     this.undo = new UndoManager(this.scene)
     this.platform = opts.platform ?? browserPlatform()
-    for (const t of Object.values(tools)) t.attach?.(this)
-    this.tool = tools.hand as Tool
+    this.tools = Object.fromEntries(
+      Object.entries(toolFactories).map(([id, make]) => [id, make(this)]),
+    )
+    this.tool = this.tools.hand as Tool
 
     if (getComputedStyle(host).position === 'static')
       host.style.position = 'relative'
@@ -92,15 +96,25 @@ export class Editor {
     on(this.overlay, 'pointercancel', (e: PointerEvent) =>
       this.onPointer('up', e),
     )
+    // The window-level key listeners assume one Editor per page.
     on(window, 'keydown', (e: KeyboardEvent) => this.onKeyDown(e))
     on(window, 'keyup', (e: KeyboardEvent) => {
       if (e.code === 'Space') this.space = false
+    })
+    const release = () => {
+      this.space = false
+      this.panning = null
+    }
+    on(window, 'blur', release)
+    on(document, 'visibilitychange', () => {
+      if (document.visibilityState === 'hidden') release()
     })
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.resize())
       this.ro.observe(host)
     }
     this.resize()
+    this.watchDpr()
   }
 
   commit(batch: Batch, kind: 'edit' | 'undo' | 'redo' = 'edit'): void {
@@ -128,7 +142,7 @@ export class Editor {
   }
 
   setTool(id: string): void {
-    const next = tools[id]
+    const next = this.tools[id]
     if (!next) throw new Error(`unknown tool: ${id}`)
     if (next === this.tool) return
     this.tool.onCancel?.()
@@ -192,7 +206,9 @@ export class Editor {
   }
 
   dispose(): void {
+    this.tool.onCancel?.()
     this.disposed = true
+    this.unDpr?.()
     cancelAnimationFrame(this.raf)
     for (const f of this.off) f()
     this.ro?.disconnect()
@@ -218,10 +234,28 @@ export class Editor {
     const height = this.host.clientHeight
     this.viewport = { width, height, dpr }
     for (const c of [this.sceneCanvas, this.overlay]) {
-      c.width = Math.round(width * dpr)
-      c.height = Math.round(height * dpr)
+      const w = Math.round(width * dpr)
+      const h = Math.round(height * dpr)
+      if (c.width !== w) c.width = w
+      if (c.height !== h) c.height = h
     }
-    this.invalidate()
+    // Assigning width/height clears the canvas: repaint now so a resize never shows a blank frame.
+    cancelAnimationFrame(this.raf)
+    this.raf = 0
+    this.frame()
+  }
+
+  // Page zoom or moving to another monitor changes devicePixelRatio without resizing the host box.
+  private watchDpr() {
+    this.unDpr?.()
+    if (typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    const fn = () => {
+      this.resize()
+      this.watchDpr()
+    }
+    mq.addEventListener('change', fn, { once: true })
+    this.unDpr = () => mq.removeEventListener('change', fn)
   }
 
   private frame() {
@@ -244,14 +278,18 @@ export class Editor {
 
   private onWheel(e: WheelEvent) {
     e.preventDefault()
+    const unit =
+      e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.viewport.height : 1
+    const dx = e.deltaX * unit
+    const dy = e.deltaY * unit
     if (e.ctrlKey || e.metaKey)
       this.camera = zoomAt(
         this.camera,
         this.toScreen(e.clientX, e.clientY),
-        Math.exp(-e.deltaY * 0.01),
+        Math.exp(-dy * 0.01),
       )
     else {
-      this.panBy(-e.deltaX, -e.deltaY)
+      this.panBy(-dx, -dy)
       return
     }
     this.invalidate()
@@ -270,7 +308,7 @@ export class Editor {
       }
       return
     }
-    if (this.readOnly) return
+    if (this.readOnly && !this.tool.navigates) return
     const ev: ToolEvent = {
       screen,
       world: screenToWorld(screen, this.camera, this.viewport),
@@ -290,8 +328,17 @@ export class Editor {
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
     if (e.code === 'Space') {
-      this.space = true
-      e.preventDefault()
+      // Only claim Space when focus is on the board, so buttons and links keep Space activation.
+      const t = e.target
+      if (
+        t === document.body ||
+        t === this.host ||
+        t === this.sceneCanvas ||
+        t === this.overlay
+      ) {
+        this.space = true
+        e.preventDefault()
+      }
     } else if (mod && k === 'z') {
       e.preventDefault()
       if (this.readOnly) return
@@ -303,8 +350,8 @@ export class Editor {
     } else if (!this.readOnly && this.tool.onKey?.(e)) {
       e.preventDefault()
     } else if (!mod && !e.altKey) {
-      const t = Object.values(tools).find((t) => t.key === k)
-      if (t) this.setTool(t.id)
+      const t = Object.values(this.tools).find((t) => t.key === k)
+      if (t && (!this.readOnly || t.navigates)) this.setTool(t.id)
     }
   }
 }

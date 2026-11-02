@@ -10,11 +10,13 @@ export default function Page() {
   useEffect(() => {
     let editor: Editor | undefined
     let stop = false
-    loadFonts().then(() => {
-      // Platform is created after fonts load: text layout is memoised per Platform object.
-      if (!stop && host.current)
-        editor = new Editor(host.current, { platform: browserPlatform() })
-    })
+    loadFonts()
+      .catch((err) => console.error('font loading failed', err))
+      .then(() => {
+        // Platform is created after fonts load: text layout is memoised per Platform object.
+        if (!stop && host.current)
+          editor = new Editor(host.current, { platform: browserPlatform() })
+      })
     return () => {
       stop = true
       editor?.dispose()

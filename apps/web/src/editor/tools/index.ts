@@ -1,6 +1,6 @@
 import type { Point } from '@whiteboard/core'
 import type { Editor } from '../editor'
-import { hand } from './hand'
+import { handTool } from './hand'
 
 export type ToolEvent = {
   world: Point
@@ -20,10 +20,9 @@ export interface Tool {
   onKey?(e: KeyboardEvent): boolean
   onCancel?(): void
   drawOverlay?(ctx: CanvasRenderingContext2D): void
-  /** Called once per Editor so a tool can reach commit/camera/selection. Tools never mutate the scene directly. */
-  attach?(editor: Editor): void
+  /** Navigation-only tools (Hand) keep receiving pointer events and can be selected while the editor is read-only. */
+  navigates?: boolean
 }
 
-/** A new tool is one file plus one entry here. */
-// ponytail: tools are singletons, so attach() binds the most recent Editor; one editor per page today.
-export const tools: Record<string, Tool> = { hand }
+/** A new tool is one file plus one entry here. Each Editor instantiates every factory once; tool state lives in the closure. */
+export const tools: Record<string, (ed: Editor) => Tool> = { hand: handTool }
