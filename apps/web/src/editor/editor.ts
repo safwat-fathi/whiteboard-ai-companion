@@ -1,0 +1,310 @@
+import {
+  applyBatch,
+  type Batch,
+  type Camera,
+  createScene,
+  type Element,
+  type Id,
+  ordered,
+  type Platform,
+  type Point,
+  RenderCache,
+  render,
+  type Scene,
+  SpatialIndex,
+  screenToWorld,
+  type UndoJSON,
+  UndoManager,
+  type Viewport,
+  worldToScreen,
+  zoomAt,
+} from '@whiteboard/core'
+import { browserPlatform } from './platform'
+import { type Tool, type ToolEvent, tools } from './tools'
+
+export type Snapshot = { elements: Element[]; camera: Camera; undo: UndoJSON }
+
+const typing = (t: EventTarget | null) =>
+  t instanceof HTMLElement &&
+  (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+
+const canvas = (z: number) => {
+  const c = document.createElement('canvas')
+  c.style.cssText = `position:absolute;inset:0;width:100%;height:100%;z-index:${z}`
+  return c
+}
+
+export class Editor {
+  scene: Scene
+  camera: Camera = { x: 0, y: 0, zoom: 1 }
+  undo: UndoManager
+  selection = new Set<Id>()
+  tool: Tool
+  readOnly = false
+  viewport: Viewport = { width: 0, height: 0, dpr: 1 }
+
+  private index = new SpatialIndex()
+  private cache = new RenderCache()
+  private platform: Platform
+  private listeners = new Set<() => void>()
+  private sceneCanvas = canvas(0)
+  private overlay = canvas(1)
+  private ro?: ResizeObserver
+  private raf = 0
+  private disposed = false
+  private space = false
+  private panning: Point | null = null
+  private off: (() => void)[] = []
+
+  constructor(
+    readonly host: HTMLElement,
+    opts: { board?: Scene; platform?: Platform } = {},
+  ) {
+    this.scene = opts.board ?? createScene()
+    this.index.load([...this.scene.els.values()])
+    this.undo = new UndoManager(this.scene)
+    this.platform = opts.platform ?? browserPlatform()
+    for (const t of Object.values(tools)) t.attach?.(this)
+    this.tool = tools.hand as Tool
+
+    if (getComputedStyle(host).position === 'static')
+      host.style.position = 'relative'
+    host.style.touchAction = 'none'
+    host.append(this.sceneCanvas, this.overlay)
+
+    const on = <T extends EventTarget>(
+      el: T,
+      type: string,
+      fn: (e: never) => void,
+      o?: AddEventListenerOptions,
+    ) => {
+      el.addEventListener(type, fn as EventListener, o)
+      this.off.push(() => el.removeEventListener(type, fn as EventListener, o))
+    }
+    on(host, 'wheel', (e: WheelEvent) => this.onWheel(e), { passive: false })
+    on(this.overlay, 'pointerdown', (e: PointerEvent) =>
+      this.onPointer('down', e),
+    )
+    on(this.overlay, 'pointermove', (e: PointerEvent) =>
+      this.onPointer('move', e),
+    )
+    on(this.overlay, 'pointerup', (e: PointerEvent) => this.onPointer('up', e))
+    on(this.overlay, 'pointercancel', (e: PointerEvent) =>
+      this.onPointer('up', e),
+    )
+    on(window, 'keydown', (e: KeyboardEvent) => this.onKeyDown(e))
+    on(window, 'keyup', (e: KeyboardEvent) => {
+      if (e.code === 'Space') this.space = false
+    })
+    if (typeof ResizeObserver !== 'undefined') {
+      this.ro = new ResizeObserver(() => this.resize())
+      this.ro.observe(host)
+    }
+    this.resize()
+  }
+
+  commit(batch: Batch, kind: 'edit' | 'undo' | 'redo' = 'edit'): void {
+    if (this.readOnly) throw new Error('editor is read-only')
+    const applied = applyBatch(this.scene, batch) // validates; throws OpError and changes nothing
+    for (const id of applied.touched) {
+      const el = this.scene.els.get(id)
+      if (el) this.index.upsert(el)
+      else this.index.remove(id)
+    }
+    this.undo.record(applied, batch, kind)
+    for (const id of this.selection)
+      if (!this.scene.els.has(id)) this.selection.delete(id)
+    this.changed()
+  }
+
+  undoOnce(): void {
+    const r = this.undo.undo()
+    if (r?.batch.ops.length) this.commit(r.batch, 'undo')
+  }
+
+  redoOnce(): void {
+    const r = this.undo.redo()
+    if (r?.batch.ops.length) this.commit(r.batch, 'redo')
+  }
+
+  setTool(id: string): void {
+    const next = tools[id]
+    if (!next) throw new Error(`unknown tool: ${id}`)
+    if (next === this.tool) return
+    this.tool.onCancel?.()
+    this.tool = next
+    this.invalidate()
+  }
+
+  invalidate(): void {
+    if (this.raf || this.disposed) return
+    this.raf = requestAnimationFrame(() => {
+      this.raf = 0
+      this.frame()
+    })
+  }
+
+  onChange(fn: () => void): () => void {
+    this.listeners.add(fn)
+    return () => this.listeners.delete(fn)
+  }
+
+  /** Replaces the board contents; undo history is reset unless `undo` JSON is given. */
+  setScene(elements: Element[], camera?: Camera, undo?: UndoJSON): void {
+    this.scene.els = createScene(elements).els
+    this.index.load(elements)
+    this.undo = undo
+      ? UndoManager.fromJSON(this.scene, undo)
+      : new UndoManager(this.scene)
+    this.selection.clear()
+    this.cache.dispose()
+    if (camera) this.camera = camera
+    this.changed()
+  }
+
+  getSnapshot(): Snapshot {
+    return {
+      elements: structuredClone(ordered(this.scene)),
+      camera: { ...this.camera },
+      undo: this.undo.toJSON(),
+    }
+  }
+
+  screenToWorldPoint(clientX: number, clientY: number): Point {
+    return screenToWorld(
+      this.toScreen(clientX, clientY),
+      this.camera,
+      this.viewport,
+    )
+  }
+
+  worldToClient(p: Point): Point {
+    const s = worldToScreen(p, this.camera, this.viewport)
+    const r = this.host.getBoundingClientRect()
+    return { x: s.x + r.left, y: s.y + r.top }
+  }
+
+  /** Pans by a screen-space (CSS px) delta; content follows the pointer. */
+  panBy(dx: number, dy: number): void {
+    const { x, y, zoom } = this.camera
+    this.camera = { x: x - dx / zoom, y: y - dy / zoom, zoom }
+    this.invalidate()
+  }
+
+  dispose(): void {
+    this.disposed = true
+    cancelAnimationFrame(this.raf)
+    for (const f of this.off) f()
+    this.ro?.disconnect()
+    this.cache.dispose()
+    this.sceneCanvas.remove()
+    this.overlay.remove()
+    this.listeners.clear()
+  }
+
+  private changed() {
+    this.invalidate()
+    for (const fn of this.listeners) fn()
+  }
+
+  private toScreen(clientX: number, clientY: number): Point {
+    const r = this.host.getBoundingClientRect()
+    return { x: clientX - r.left, y: clientY - r.top }
+  }
+
+  private resize() {
+    const dpr = window.devicePixelRatio || 1
+    const width = this.host.clientWidth
+    const height = this.host.clientHeight
+    this.viewport = { width, height, dpr }
+    for (const c of [this.sceneCanvas, this.overlay]) {
+      c.width = Math.round(width * dpr)
+      c.height = Math.round(height * dpr)
+    }
+    this.invalidate()
+  }
+
+  private frame() {
+    const { width, height, dpr } = this.viewport
+    const sctx = this.sceneCanvas.getContext('2d')
+    if (sctx)
+      render(sctx, this.scene, this.camera, this.viewport, this.platform, {
+        index: this.index,
+        cache: this.cache,
+      })
+    const octx = this.overlay.getContext('2d')
+    if (octx) {
+      octx.setTransform(1, 0, 0, 1, 0, 0)
+      octx.clearRect(0, 0, width * dpr, height * dpr)
+      const s = this.camera.zoom * dpr
+      octx.setTransform(s, 0, 0, s, -this.camera.x * s, -this.camera.y * s)
+      this.tool.drawOverlay?.(octx)
+    }
+  }
+
+  private onWheel(e: WheelEvent) {
+    e.preventDefault()
+    if (e.ctrlKey || e.metaKey)
+      this.camera = zoomAt(
+        this.camera,
+        this.toScreen(e.clientX, e.clientY),
+        Math.exp(-e.deltaY * 0.01),
+      )
+    else {
+      this.panBy(-e.deltaX, -e.deltaY)
+      return
+    }
+    this.invalidate()
+  }
+
+  private onPointer(kind: 'down' | 'move' | 'up', e: PointerEvent) {
+    const screen = this.toScreen(e.clientX, e.clientY)
+    if (this.panning || (kind === 'down' && this.space)) {
+      if (kind === 'down') {
+        this.panning = screen
+        this.overlay.setPointerCapture?.(e.pointerId)
+      } else if (this.panning) {
+        if (kind === 'move')
+          this.panBy(screen.x - this.panning.x, screen.y - this.panning.y)
+        this.panning = kind === 'up' ? null : screen
+      }
+      return
+    }
+    if (this.readOnly) return
+    const ev: ToolEvent = {
+      screen,
+      world: screenToWorld(screen, this.camera, this.viewport),
+      shift: e.shiftKey,
+      alt: e.altKey,
+      button: e.button,
+      pointerType: e.pointerType,
+    }
+    if (kind === 'down') this.overlay.setPointerCapture?.(e.pointerId)
+    if (kind === 'down') this.tool.onPointerDown(ev)
+    else if (kind === 'move') this.tool.onPointerMove(ev)
+    else this.tool.onPointerUp(ev)
+  }
+
+  private onKeyDown(e: KeyboardEvent) {
+    if (typing(e.target)) return
+    const mod = e.ctrlKey || e.metaKey
+    const k = e.key.toLowerCase()
+    if (e.code === 'Space') {
+      this.space = true
+      e.preventDefault()
+    } else if (mod && k === 'z') {
+      e.preventDefault()
+      if (this.readOnly) return
+      if (e.shiftKey) this.redoOnce()
+      else this.undoOnce()
+    } else if (mod && k === 'y') {
+      e.preventDefault()
+      if (!this.readOnly) this.redoOnce()
+    } else if (!this.readOnly && this.tool.onKey?.(e)) {
+      e.preventDefault()
+    } else if (!mod && !e.altKey) {
+      const t = Object.values(tools).find((t) => t.key === k)
+      if (t) this.setTool(t.id)
+    }
+  }
+}

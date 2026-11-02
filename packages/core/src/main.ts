@@ -1,6 +1,8 @@
 export * from './geometry'
 export * from './index'
 export { OpError, validateBatch } from './ops'
+export * from './platform'
+export * from './render'
 export * from './scene'
 export * from './schema'
 export * from './undo'

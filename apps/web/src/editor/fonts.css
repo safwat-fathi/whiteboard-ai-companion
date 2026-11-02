@@ -1,0 +1,14 @@
+@font-face {
+  font-family: "Plex-Arabic";
+  font-weight: 400;
+  font-display: block;
+  src: url("@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-400-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Plex-Latin";
+  font-weight: 400;
+  font-display: block;
+  src: url("@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-400-normal.woff2")
+    format("woff2");
+}
