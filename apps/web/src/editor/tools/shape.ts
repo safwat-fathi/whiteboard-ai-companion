@@ -108,7 +108,7 @@ export const shapeTool =
       from = null
       to = null
       toSnap = null
-      ed.invalidate()
+      ed.invalidateOverlay()
     }
 
     return {
@@ -132,7 +132,7 @@ export const shapeTool =
           return
         to = e.world
         toSnap = linear ? shapeAt(ed, e.world) : null
-        ed.invalidate()
+        ed.invalidateOverlay()
       },
       onPointerUp(e) {
         const f = from

@@ -4,6 +4,7 @@ import { matchesGolden } from '../test/matchesGolden'
 import { bounds } from './geometry'
 import { SpatialIndex } from './index'
 import { nodePlatform } from './node'
+import type { Platform } from './platform'
 import {
   RenderCache,
   render,
@@ -327,6 +328,51 @@ describe('RenderCache', () => {
     cache.dispose()
     expect(open).toBe(0)
     expect(cache.get(1, 'b', 0)).toBeUndefined()
+  })
+
+  it('bytes is the sum of the held entries', () => {
+    const cache = new RenderCache(250)
+    const b = { close() {} }
+    cache.set(1, 'a', 0, b, 100)
+    cache.set(1, 'b', 0, b, 100)
+    expect(cache.bytes).toBe(200)
+    cache.set(1, 'a', 1, b, 50) // replaces a
+    expect(cache.bytes).toBe(150)
+    cache.set(1, 'c', 0, b, 200) // over the cap: the oldest are closed
+    expect(cache.bytes).toBeLessThanOrEqual(250)
+    cache.dispose()
+    expect(cache.bytes).toBe(0)
+  })
+
+  it('text is cached as an ImageBitmap when the canvas can freeze one, and closed with the cache', () => {
+    const frozen = { closed: 0, close: () => void frozen.closed++ }
+    const p: Platform = {
+      ...platform,
+      createCanvas: (w, h) =>
+        Object.assign(createCanvas(w, h), {
+          transferToImageBitmap: () => frozen,
+        }) as unknown as ReturnType<Platform['createCanvas']>,
+    }
+    const drawn: unknown[] = []
+    const ctx = new Proxy(
+      {},
+      {
+        get: (_, k) =>
+          k === 'drawImage' ? (img: unknown) => drawn.push(img) : () => {},
+        set: () => true,
+      },
+    ) as unknown as CanvasRenderingContext2D
+    const el = {
+      ...mk('t', { w: 60, h: 20 }),
+      type: 'text',
+      data: { text: 'hi', size: 16, align: 'left', dir: 'ltr' },
+    } as Element
+    const cache = new RenderCache()
+    for (let i = 0; i < 2; i++)
+      render(ctx, createScene([el]), cam, vp, p, { cache })
+    expect(drawn).toEqual([frozen, frozen]) // the second frame is a cache hit
+    cache.dispose()
+    expect(frozen.closed).toBe(1)
   })
 })
 

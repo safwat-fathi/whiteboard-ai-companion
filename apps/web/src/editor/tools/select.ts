@@ -80,7 +80,7 @@ export const selectTool = (ed: Editor): Tool => {
   const set = (ids: Iterable<Id>) => {
     ed.selection.clear()
     for (const i of ids) ed.selection.add(i)
-    ed.invalidate()
+    ed.invalidateOverlay()
   }
   const commitPatch = (label: string, el: Element, patch: Patch | null) => {
     const b = patch && buildBatch(ed.scene, label, new Map([[el.id, patch]]))
@@ -115,7 +115,7 @@ export const selectTool = (ed: Editor): Tool => {
       if (hit) {
         if (e.shift) {
           if (!ed.selection.delete(hit.id)) ed.selection.add(hit.id)
-          ed.invalidate()
+          ed.invalidateOverlay()
           return
         }
         if (!ed.selection.has(hit.id)) set([hit.id])
@@ -154,12 +154,12 @@ export const selectTool = (ed: Editor): Tool => {
         g.snap = shapeAt(ed, e.world)
         g.p = g.snap ? resolveEnd(bindTo(g.snap, e.world), g.snap) : e.world
       }
-      ed.invalidate()
+      ed.invalidateOverlay()
     },
     onPointerUp() {
       const cur = g
       g = null
-      ed.invalidate()
+      ed.invalidateOverlay()
       if (!cur) return
       if (cur.k === 'move') {
         if (cur.moved) {
@@ -232,7 +232,7 @@ export const selectTool = (ed: Editor): Tool => {
       if (e.key === 'Escape') {
         if (g) g = null
         else ed.selection.clear()
-        ed.invalidate()
+        ed.invalidateOverlay()
         return true
       }
       if (g) return false
@@ -252,7 +252,7 @@ export const selectTool = (ed: Editor): Tool => {
     },
     onCancel() {
       g = null
-      ed.invalidate()
+      ed.invalidateOverlay()
     },
     drawOverlay(ctx) {
       const k = z()

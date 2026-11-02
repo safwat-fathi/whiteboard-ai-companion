@@ -156,6 +156,26 @@ describe('Editor', () => {
     expect(frames).toHaveLength(2)
   })
 
+  it('invalidateOverlay() redraws the overlay but not the scene', () => {
+    const flush = () => {
+      for (const f of frames.splice(0)) f(0)
+    }
+    const draw = vi.fn()
+    ed.setTool('select')
+    ed.tool.drawOverlay = draw
+    flush()
+    const rendered = ed.lastRender
+    draw.mockClear()
+    ed.invalidateOverlay()
+    flush()
+    expect(draw).toHaveBeenCalledTimes(1)
+    expect(ed.lastRender).toBe(rendered)
+    ed.invalidate()
+    flush()
+    expect(draw).toHaveBeenCalledTimes(2)
+    expect(ed.lastRender).not.toBe(rendered)
+  })
+
   const stub = (onCancel = () => {}, navigates = false) => ({
     id: 'other',
     key: 'q',

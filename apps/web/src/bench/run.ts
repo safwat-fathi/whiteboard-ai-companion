@@ -1,0 +1,305 @@
+import type { Camera, Element } from '@whiteboard/core'
+import type { Editor } from '../editor/editor'
+import { browserPlatform } from '../editor/platform'
+import type { Tool } from '../editor/tools'
+import { describeScene, makeScene } from './scene'
+
+// The S1 method (spikes/s1-canvas/web/bench.ts + render.ts measureFrames) run against a real Editor on a fixed
+// 1440x900 CSS px host, so results do not depend on the window. Core's camera (x, y) is the top-left corner
+// (S1: the centre), so every S1 camera is converted with cam().
+const W = 1440
+const H = 900
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length
+const pct = (a: number[], p: number) =>
+  [...a].sort((x, y) => x - y)[Math.ceil(p * a.length) - 1] as number // nearest rank
+const round = (x: number, d: number) => Number(x.toFixed(d))
+const mb = (bytes: number) => round(bytes / 2 ** 20, 1)
+
+const worldOf = (n: number) => {
+  const s = Math.sqrt(n / 5000) // 1000x600 for 5,000 elements, 2000x1200 for 20,000 (same density as S1)
+  return { x: 0, y: 0, w: 1000 * s, h: 600 * s }
+}
+const cam = (cx: number, cy: number, zoom: number): Camera => ({
+  x: cx - W / 2 / zoom,
+  y: cy - H / 2 / zoom,
+  zoom,
+})
+
+function idleDeltas(count: number) {
+  return new Promise<number[]>((done) => {
+    const d: number[] = []
+    let last = -1
+    const f = (t: number) => {
+      if (last >= 0) d.push(t - last)
+      last = t
+      if (d.length < count) requestAnimationFrame(f)
+      else done(d)
+    }
+    requestAnimationFrame(f)
+  })
+}
+
+function clockTick() {
+  let min = Number.POSITIVE_INFINITY
+  let a = performance.now()
+  for (let i = 0; i < 200000; i++) {
+    const b = performance.now()
+    if (b > a) {
+      min = Math.min(min, b - a)
+      a = b
+    }
+  }
+  return min
+}
+
+function environment() {
+  const gl = document.createElement('canvas').getContext('webgl')
+  const ext = gl?.getExtension('WEBGL_debug_renderer_info')
+  const glRenderer = gl
+    ? String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER))
+    : 'none'
+  gl?.getExtension('WEBGL_lose_context')?.loseContext()
+  const ua = navigator.userAgent
+  return {
+    ua,
+    devicePixelRatio,
+    glRenderer,
+    headless: /HeadlessChrome/.test(ua) || /SwiftShader/i.test(glRenderer),
+    windowInner: `${innerWidth}x${innerHeight}`,
+    screen: `${screen.width}x${screen.height}`,
+  }
+}
+
+const foreground = () =>
+  `${document.visibilityState}, ${document.hasFocus() ? 'focused' : 'not focused'}`
+
+/** Resolves at the end of the next rAF callback: call it AFTER the call that makes the Editor request its frame. */
+const frameEnd = () =>
+  new Promise<number>((r) => requestAnimationFrame(() => r(performance.now())))
+
+export async function runBench(
+  editor: Editor,
+  n: number,
+  requestedDpr: string | null,
+  alive: { stop: boolean },
+) {
+  const stopIf = () => {
+    if (alive.stop) throw new Error('stopped')
+  }
+  const world = worldOf(n)
+  const cx = world.w / 2
+  const cy = world.h / 2
+  const genPlatform = browserPlatform() // a separate Platform: the Editor's layout memo starts cold
+  const els = makeScene(n, n === 20000 ? 2 : 1, world, genPlatform)
+  const sel = editor.tools.select as Tool
+  editor.setTool('select')
+
+  /** Repaints at `c` (loading `scene` first, which empties the render cache) and resolves with the time the frame ended; throws if the Editor did not render. */
+  const repaint = async (c: Camera, scene?: Element[]) => {
+    const before = editor.lastRender
+    if (scene) editor.setScene(scene, c)
+    else {
+      editor.camera = c
+      editor.invalidate()
+    }
+    const end = await frameEnd()
+    if (editor.lastRender === before) throw new Error('no editor frame')
+    return end
+  }
+
+  await sleep(3000) // let navigation tooling settle before anything is timed
+  stopIf()
+  const fgStart = foreground()
+  const env = environment()
+  const idleFps = 1000 / mean(await idleDeltas(60))
+  const tick = clockTick()
+
+  // Unmeasured warm-up: one cold frame at each zoom the phases use (the RenderCache buckets are zoom * dpr), then 1 s of each path.
+  const cold: number[] = []
+  for (const zoom of [1, 0.6, 1.4]) {
+    await repaint(cam(cx, cy, zoom), zoom === 1 ? els : undefined)
+    cold.push(editor.lastRender?.ms ?? 0)
+  }
+  const pan = (s: number) =>
+    cam(
+      cx + 150 * Math.sin(2 * Math.PI * 0.6 * s),
+      cy + 100 * Math.sin(2 * Math.PI * 0.4 * s),
+      1,
+    ) // Lissajous 3:2
+  const zoomPath = (s: number) =>
+    cam(cx, cy, 1 + 0.4 * Math.sin((2 * Math.PI * s) / 2.5)) // 0.6 to 1.4 about the centre
+
+  // Drives the camera from the Editor's own frame loop (Tool.onFrame runs first in Editor.frame, so the new camera is
+  // rendered in the same frame, then invalidate() asks for the next one). t is the rAF timestamp of the frame.
+  const phase = (ms: number, camAt: (s: number) => Camera) =>
+    new Promise<{
+      deltas: number[]
+      draws: number[]
+      minDrawn: number
+      maxCulled: number
+    }>((done) => {
+      const deltas: number[] = []
+      const draws: number[] = []
+      let t0 = -1
+      let last = 0
+      let minDrawn = Number.POSITIVE_INFINITY
+      let maxCulled = 0
+      sel.onFrame = () => {
+        const t = Number(document.timeline.currentTime)
+        const r = editor.lastRender
+        if (t0 < 0) t0 = t
+        else if (r) {
+          deltas.push(t - last)
+          draws.push(r.ms) // the previous frame's render
+          minDrawn = Math.min(minDrawn, r.drawn)
+          maxCulled = Math.max(maxCulled, r.culled)
+        }
+        last = t
+        if (t - t0 >= ms) {
+          sel.onFrame = undefined
+          done({ deltas, draws, minDrawn, maxCulled })
+          return
+        }
+        editor.camera = camAt((t - t0) / 1000)
+        editor.invalidate()
+      }
+      editor.invalidate()
+    })
+
+  await phase(1000, pan)
+  await phase(1000, zoomPath)
+  const frames = []
+  for (const [name, path] of [
+    ['pan', pan],
+    ['zoom', zoomPath],
+  ] as const) {
+    stopIf()
+    const p = await phase(5000, path)
+    frames.push({
+      phase: name,
+      meanFps: round(1000 / mean(p.deltas), 1),
+      p95FrameMs: round(pct(p.deltas, 0.95), 2),
+      drawMsMean: round(mean(p.draws), 2),
+      minDrawn: p.minDrawn,
+      maxCulled: p.maxCulled,
+    })
+  }
+  const cacheMB = mb(editor.cacheBytes)
+
+  // First ink. M1 has no pen, so this is the Editor's pointerdown -> overlay-frame latency with the select tool starting
+  // a marquee on empty board (an empty marquee, not a stroke; sceneRepaints counts frames that also repainted the scene).
+  // The camera fits the board with a 150 px empty band on top, which the pointer lands in. Starts after 500 ms of idle.
+  const fz = Math.min(1, W / world.w, (H - 150) / world.h)
+  await repaint({ x: cx - W / 2 / fz, y: -150 / fz, zoom: fz })
+  await sleep(500)
+  const overlay = editor.host.querySelectorAll('canvas')[1] as HTMLCanvasElement
+  let overlayFrames = 0
+  let overlayStart = 0
+  const drawOverlay = sel.drawOverlay?.bind(sel)
+  sel.drawOverlay = (ctx) => {
+    overlayStart = performance.now()
+    drawOverlay?.(ctx)
+    overlayFrames++
+  }
+  const pointer = (type: string, i: number) =>
+    overlay.dispatchEvent(
+      new PointerEvent(type, {
+        clientX: 200 + i * 50,
+        clientY: 75,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true,
+        button: 0,
+        pressure: 0.5,
+        bubbles: true,
+      }),
+    )
+  const ink: { lat: number; wait: number; work: number }[] = []
+  let sceneRepaints = 0
+  for (let i = 0; i < 20; i++) {
+    stopIf()
+    await sleep(50 + Math.random() * 50)
+    const frames0 = overlayFrames
+    const scene0 = editor.lastRender
+    const t0 = performance.now()
+    pointer('pointerdown', i)
+    const end = await frameEnd()
+    if (overlayFrames === frames0) throw new Error('pointerdown made no frame')
+    if (editor.lastRender !== scene0) sceneRepaints++
+    ink.push({
+      lat: end - t0,
+      wait: overlayStart - t0,
+      work: end - overlayStart,
+    })
+    pointer('pointerup', i)
+  }
+  sel.drawOverlay = drawOverlay
+
+  // Open a 20,000-element board with the camera fitting all of it: JSON.parse -> setScene (store + index, cache disposed)
+  // -> end of the first painted frame. The Editor's layout memo and path cache key on element objects, which are new here.
+  const world20k = worldOf(20000)
+  const els20k = makeScene(20000, 2, world20k, genPlatform)
+  const json = JSON.stringify(els20k)
+  await sleep(500)
+  stopIf()
+  const fit = Math.min(W / world20k.w, H / world20k.h)
+  const t0 = performance.now()
+  const parsed = JSON.parse(json) as Element[]
+  const end = await repaint(cam(world20k.w / 2, world20k.h / 2, fit), parsed)
+  const open20k = {
+    ms: round(end - t0, 1),
+    drawn: editor.lastRender?.drawn,
+    culled: editor.lastRender?.culled,
+    renderMs: round(editor.lastRender?.ms ?? 0, 1),
+    cacheMB: mb(editor.cacheBytes),
+    jsonMB: round(json.length / 2 ** 20, 1),
+    scene: describeScene(els20k, world20k),
+  }
+
+  return {
+    n,
+    requestedDpr,
+    host: `${W}x${H} CSS px, fixed`,
+    env: {
+      ...env,
+      idleRafFps: round(idleFps, 1),
+      clockTickMs: round(tick, 4),
+      foregroundStart: fgStart,
+      foregroundEnd: foreground(),
+    },
+    scene: describeScene(els, world),
+    frames,
+    coldFrameMs: cold.map((c) => round(c, 1)),
+    cacheMB,
+    firstInk: {
+      p95Ms: round(
+        pct(
+          ink.map((i) => i.lat),
+          0.95,
+        ),
+        2,
+      ),
+      maxMs: round(Math.max(...ink.map((i) => i.lat)), 2),
+      // lat = wait + work: wait is the time to the frame's start (vsync alignment), work is the frame itself
+      waitP95Ms: round(
+        pct(
+          ink.map((i) => i.wait),
+          0.95,
+        ),
+        2,
+      ),
+      workP95Ms: round(
+        pct(
+          ink.map((i) => i.work),
+          0.95,
+        ),
+        2,
+      ),
+      sceneRepaints,
+      samples: ink.map((i) => round(i.lat, 1)),
+    },
+    open20k,
+  }
+}

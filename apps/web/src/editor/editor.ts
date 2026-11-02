@@ -9,6 +9,7 @@ import {
   type Platform,
   type Point,
   RenderCache,
+  type RenderStats,
   render,
   type Scene,
   SpatialIndex,
@@ -46,9 +47,15 @@ export class Editor {
   /** Element drawn by a DOM overlay (text being edited); omitted from the canvas so it is never drawn twice. */
   hidden: Id | null = null
   viewport: Viewport = { width: 0, height: 0, dpr: 1 }
+  /** Stats and JS time (ms) of the last scene render; a new object per frame. Read by the /bench page. */
+  lastRender: (RenderStats & { ms: number }) | null = null
 
   readonly index = new SpatialIndex() // tools read it (pick/search)
   private cache = new RenderCache()
+  /** Bytes held by the render cache (read by the /bench page). */
+  get cacheBytes(): number {
+    return this.cache.bytes
+  }
   readonly platform: Platform
   private listeners = new Set<() => void>()
   private camListeners = new Set<() => void>()
@@ -56,6 +63,7 @@ export class Editor {
   private overlay = canvas(1)
   private ro?: ResizeObserver
   private raf = 0
+  private sceneDirty = true
   private disposed = false
   private space = false
   private panning: Point | null = null
@@ -176,7 +184,18 @@ export class Editor {
     ;(this.tools.text as TextTool).edit(el)
   }
 
+  /** The scene or camera changed: the next frame repaints the scene canvas and the overlay. */
   invalidate(): void {
+    this.sceneDirty = true
+    this.request()
+  }
+
+  /** Overlay-only change (selection, marquee, handles, previews): the next frame leaves the scene canvas as it is. */
+  invalidateOverlay(): void {
+    this.request()
+  }
+
+  private request(): void {
     if (this.raf || this.disposed) return
     this.raf = requestAnimationFrame(() => {
       this.raf = 0
@@ -280,6 +299,7 @@ export class Editor {
     // Assigning width/height clears the canvas: repaint now so a resize never shows a blank frame.
     cancelAnimationFrame(this.raf)
     this.raf = 0
+    this.sceneDirty = true
     this.frame()
   }
 
@@ -300,7 +320,8 @@ export class Editor {
     const { width, height, dpr } = this.viewport
     this.tool.onFrame?.()
     const sctx = this.sceneCanvas.getContext('2d')
-    if (sctx) {
+    if (sctx && this.sceneDirty) {
+      this.sceneDirty = false
       const scene = this.hidden
         ? {
             els: new Map(
@@ -308,10 +329,16 @@ export class Editor {
             ),
           }
         : this.scene
-      render(sctx, scene, this.camera, this.viewport, this.platform, {
-        index: this.index,
-        cache: this.cache,
-      })
+      const t0 = performance.now()
+      const stats = render(
+        sctx,
+        scene,
+        this.camera,
+        this.viewport,
+        this.platform,
+        { index: this.index, cache: this.cache },
+      )
+      this.lastRender = { ...stats, ms: performance.now() - t0 }
     }
     const octx = this.overlay.getContext('2d')
     if (octx) {

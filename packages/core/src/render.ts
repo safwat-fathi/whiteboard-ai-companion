@@ -58,7 +58,12 @@ export class RenderCache {
   private m = new Map<string, { v: number; b: Closable; bytes: number }>()
   private total = 0
 
-  constructor(private readonly maxBytes = 256 * 2 ** 20) {}
+  constructor(private readonly maxBytes = 1024 * 2 ** 20) {}
+
+  /** Bytes currently held (sum of the `bytes` given to set()). */
+  get bytes(): number {
+    return this.total
+  }
 
   get<B extends Closable>(
     bucket: number,
@@ -150,28 +155,39 @@ function drawText(
   scale: number,
   cache?: RenderCache,
 ) {
-  const { lines, width, height } = layoutText(el, platform)
   const bucket = zoomBucket(scale)
-  const pw = Math.ceil(width * bucket)
-  const ph = Math.ceil(height * bucket)
-  if (pw < 1 || ph < 1 || pw > MAX_BITMAP || ph > MAX_BITMAP || !cache) {
-    ctx.save()
-    ctx.translate(el.x, el.y)
-    drawLines(ctx, el, lines, platform)
-    ctx.restore()
-    return
-  }
-  let bmp = cache.get<TextBitmap>(bucket, el.id, el.v)
+  // A hit carries its own size, so a frame that only redraws cached bitmaps never lays text out.
+  let bmp = cache?.get<TextBitmap>(bucket, el.id, el.v)
   if (!bmp) {
+    const { lines, width, height } = layoutText(el, platform)
+    const pw = Math.ceil(width * bucket)
+    const ph = Math.ceil(height * bucket)
+    if (pw < 1 || ph < 1 || pw > MAX_BITMAP || ph > MAX_BITMAP || !cache) {
+      ctx.save()
+      ctx.translate(el.x, el.y)
+      drawLines(ctx, el, lines, platform)
+      ctx.restore()
+      return
+    }
     const canvas = platform.createCanvas(pw, ph)
     const c = canvas.getContext('2d') as CanvasRenderingContext2D
     c.scale(bucket, bucket)
     drawLines(c, el, lines, platform)
+    // Browser: freeze the pixels into an ImageBitmap (what S1 measured). It draws faster than an OffscreenCanvas
+    // source; Node canvases have no such method and are drawn as they are.
+    const frozen = (
+      canvas as { transferToImageBitmap?: () => ImageBitmap }
+    ).transferToImageBitmap?.()
     bmp = {
-      canvas,
+      canvas: frozen ?? canvas,
+      pw,
+      ph,
       close() {
-        canvas.width = 0
-        canvas.height = 0
+        if (frozen) frozen.close()
+        else {
+          canvas.width = 0
+          canvas.height = 0
+        }
       },
     }
     cache.set(bucket, el.id, el.v, bmp, pw * ph * 4)
@@ -180,11 +196,16 @@ function drawText(
     bmp.canvas as unknown as CanvasImageSource,
     el.x,
     el.y,
-    pw / bucket,
-    ph / bucket,
+    bmp.pw / bucket,
+    bmp.ph / bucket,
   )
 }
-type TextBitmap = { canvas: CanvasLike; close(): void }
+type TextBitmap = {
+  canvas: CanvasLike | ImageBitmap
+  pw: number
+  ph: number
+  close(): void
+}
 
 // Geometry in world space, built once per element object (elements are replaced, never mutated). Keyed per platform
 // because a Path2D from one platform's constructor is not valid on another's context.
@@ -308,6 +329,8 @@ export function render(
   ctx.setTransform(s, 0, 0, s, -camera.x * s, -camera.y * s)
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
+  ctx.globalAlpha = 1
+  ctx.setLineDash([])
 
   const view: Rect = {
     minX: camera.x,
@@ -316,17 +339,20 @@ export function render(
     maxY: camera.y + height / camera.zoom,
   }
   // ponytail: the linear scan is O(n) per frame; keep a separate index of lines/arrows if that ever shows in profiles.
-  const closed = (
-    opts.index
-      ? opts.index
-          .search(inflate(view, MAX_STROKE_PAD))
-          .flatMap((f) => scene.els.get(f.id) ?? [])
-      : ordered(scene)
-  ).filter(
-    (el) =>
-      !isLinear(el) &&
-      intersects(inflate(bounds(el), el.style.strokeWidth / 2), view),
-  )
+  const found = opts.index
+    ? opts.index.search(inflate(view, MAX_STROKE_PAD))
+    : ordered(scene)
+  const closed: Element[] = []
+  for (const f of found) {
+    const el = opts.index ? scene.els.get(f.id) : f
+    if (!el || isLinear(el)) continue
+    // Unrotated boxes (almost all of them) skip bounds(), which allocates four rotated corners.
+    const box = el.rotation
+      ? bounds(el)
+      : { minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h }
+    if (intersects(inflate(box, el.style.strokeWidth / 2), view))
+      closed.push(el)
+  }
   const linear = ordered(scene).filter(
     (el) => isLinear(el) && intersects(linearRect(el, scene), view),
   )
@@ -336,49 +362,58 @@ export function render(
 
   let drawn = 0
   for (const el of visible) {
+    // save/restore (and the dash array) only for elements that change alpha, dash or transform: at 5,000 elements
+    // they cost about a third of a frame's JS time (task 12). Plain elements set every style they use.
     if (el.type === 'text') {
+      const state = el.rotation !== 0 || el.style.opacity !== 1
+      if (state) {
+        ctx.save()
+        ctx.globalAlpha = el.style.opacity
+        if (el.rotation) {
+          const cx = el.x + el.w / 2
+          const cy = el.y + el.h / 2
+          ctx.translate(cx, cy)
+          ctx.rotate(el.rotation)
+          ctx.translate(-cx, -cy)
+        }
+      }
+      drawText(ctx, el, platform, s, opts.cache)
+      if (state) ctx.restore()
+      drawn++
+      continue
+    }
+    const path = pathOf(el, scene, platform)
+    const { stroke, fill, strokeWidth, opacity, dash } = el.style
+    const line = isLinear(el)
+    const rotated = el.rotation !== 0 && !line
+    const state = rotated || opacity !== 1 || dash !== 'solid'
+    if (state) {
       ctx.save()
-      ctx.globalAlpha = el.style.opacity
-      if (el.rotation) {
+      ctx.globalAlpha = opacity
+      if (rotated) {
         const cx = el.x + el.w / 2
         const cy = el.y + el.h / 2
         ctx.translate(cx, cy)
         ctx.rotate(el.rotation)
         ctx.translate(-cx, -cy)
       }
-      drawText(ctx, el, platform, s, opts.cache)
-      ctx.restore()
-      drawn++
-      continue
     }
-    const path = pathOf(el, scene, platform)
-    const { stroke, fill, strokeWidth, opacity, dash } = el.style
-    ctx.save()
-    ctx.globalAlpha = opacity
-    if (el.rotation && !isLinear(el)) {
-      const cx = el.x + el.w / 2
-      const cy = el.y + el.h / 2
-      ctx.translate(cx, cy)
-      ctx.rotate(el.rotation)
-      ctx.translate(-cx, -cy)
-    }
-    if (fill && !isLinear(el)) {
+    if (fill && !line) {
       ctx.fillStyle = fill
       ctx.fill(path)
     }
     if (strokeWidth > 0) {
       ctx.lineWidth = strokeWidth
       ctx.strokeStyle = stroke
-      ctx.setLineDash(
-        dash === 'dashed'
-          ? [strokeWidth * 4, strokeWidth * 3]
-          : dash === 'dotted'
-            ? [strokeWidth, strokeWidth * 2]
-            : [],
-      )
+      if (dash !== 'solid')
+        ctx.setLineDash(
+          dash === 'dashed'
+            ? [strokeWidth * 4, strokeWidth * 3]
+            : [strokeWidth, strokeWidth * 2],
+        )
       ctx.stroke(path)
     }
-    ctx.restore()
+    if (state) ctx.restore()
     drawn++
   }
   return { drawn, culled: scene.els.size - visible.length }
