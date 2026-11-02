@@ -812,7 +812,7 @@ describe('math rendering', () => {
           rctx.fillStyle = '#fff'
           rctx.fillRect(0, 0, outW, outH)
           const img = await loadImage(refSvg.toBuffer('image/png'))
-          rctx.drawImage(img, 0, 0, w * zoom, h * zoom)
+          rctx.drawImage(img, 0, 0, outW, outH)
 
           const a = c.getContext('2d').getImageData(0, 0, outW, outH).data
           const b = rctx.getImageData(0, 0, outW, outH).data
@@ -827,11 +827,7 @@ describe('math rendering', () => {
               diff++
             }
           }
-          // The render is pixel-exact (crisp). This reference is a resampled
-          // raster of a rounded-up bitmap, so it is softer; allow for edge
-          // differences. Fidelity against the committed goldens is gated in
-          // e2e/math-parity.spec.ts (<= 1.5%).
-          expect(diff / total).toBeLessThanOrEqual(0.05)
+          expect(diff / total).toBeLessThanOrEqual(0.02)
         }
         cache.dispose()
       }

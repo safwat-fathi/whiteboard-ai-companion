@@ -119,14 +119,8 @@ export function createWebMathProvider(
                 '2d',
               ) as unknown as CanvasRenderingContext2D | null
               if (!ctx) return null
-              mod.drawMathPaths(
-                ctx,
-                parsed,
-                0,
-                0,
-                res.width * pxPerEm,
-                (res.height + res.depth) * pxPerEm,
-                (d) => createPath2D(d),
+              mod.drawMathPaths(ctx, parsed, 0, 0, pw, ph, (d) =>
+                createPath2D(d),
               )
               if (typeof c.transferToImageBitmap === 'function') {
                 return c.transferToImageBitmap()
@@ -144,14 +138,8 @@ export function createWebMathProvider(
               c.height = ph
               const ctx = c.getContext('2d')
               if (!ctx) return null
-              mod.drawMathPaths(
-                ctx,
-                parsed,
-                0,
-                0,
-                res.width * pxPerEm,
-                (res.height + res.depth) * pxPerEm,
-                (d) => createPath2D(d),
+              mod.drawMathPaths(ctx, parsed, 0, 0, pw, ph, (d) =>
+                createPath2D(d),
               )
               return Object.assign(c as unknown as CanvasImageSource, {
                 close() {
