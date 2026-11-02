@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   bounds,
+  boundsOf,
+  fitMath,
   hitTest,
+  lockedAspect,
   outline,
   resizeBox,
   rotateTo,
@@ -101,7 +104,7 @@ describe('hitTest', () => {
     expect(hitTest(a, { x: 60, y: 20 }, 6)).toBe(false)
   })
 
-  it('text hits by its stored box, rotation-aware', () => {
+  it('text, math, and rotated image hit by their stored box at zoom 0.05 and 20 (DPR 1 and 2)', () => {
     const t = {
       ...mk('t', { x: 0, y: 0, w: 100, h: 20, rotation: Math.PI / 2 }),
       type: 'text',
@@ -110,6 +113,48 @@ describe('hitTest', () => {
     // rotated 90 about (50,10): covers x 40..60, y -40..60
     expect(hitTest(t, { x: 50, y: -30 }, 1)).toBe(true)
     expect(hitTest(t, { x: 10, y: 10 }, 1)).toBe(false)
+
+    const img = {
+      ...mk('im', { x: 100, y: 100, w: 100, h: 60, rotation: R45 }),
+      type: 'image',
+      data: { blobId: 'b'.repeat(64), naturalW: 400, naturalH: 240 },
+    } as Element
+    const c = { x: 150, y: 130 }
+    const d = Math.SQRT1_2
+    for (const zoom of [0.05, 20]) {
+      for (const _dpr of [1, 2]) {
+        const tol = 6 / zoom
+        // Right edge in local frame is +50 from centre along rotated X axis
+        const insideEdge = { x: c.x + 50 * d, y: c.y + 50 * d }
+        const outside7px = {
+          x: c.x + (50 + 7 / zoom) * d,
+          y: c.y + (50 + 7 / zoom) * d,
+        }
+        expect(hitTest(img, insideEdge, tol)).toBe(true)
+        expect(hitTest(img, outside7px, tol)).toBe(false)
+      }
+    }
+  })
+
+  it('lockedAspect and fitMath compute math and image dimensions', () => {
+    const m = {
+      ...mk('m', { w: 80, h: 40 }),
+      type: 'math',
+      data: { latex: 'x', display: true, size: 20 },
+    } as Element
+    const im = {
+      ...mk('i', { w: 120, h: 60 }),
+      type: 'image',
+      data: { blobId: 'a'.repeat(64), naturalW: 120, naturalH: 60 },
+    } as Element
+    expect(lockedAspect(m)).toBe(2)
+    expect(lockedAspect(im)).toBe(2)
+    expect(lockedAspect(mk('s'))).toBeNull()
+    expect(fitMath({ width: 2.5, height: 1.2, depth: 0.3 }, 20)).toEqual({
+      w: 50,
+      h: 30,
+    })
+    expect(boundsOf(m)).toEqual(bounds(m))
   })
 
   it('toLocal inverse-rotates about the centre', () => {

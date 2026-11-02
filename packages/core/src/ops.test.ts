@@ -141,5 +141,20 @@ describe('validateBatch', () => {
     expect(
       fieldOf(batch([{ op: 'patch', id: 'a1', set: { 'style.opacity': 3 } }])),
     ).toBe('style.opacity')
+    expect(
+      validateBatch(
+        batch([
+          {
+            op: 'patch',
+            id: 'a1',
+            set: {
+              'data.latex': 'x^2',
+              'data.crop': { x: 0, y: 0, w: 10, h: 10 },
+              'data.crop.x': 2,
+            },
+          },
+        ]),
+      ),
+    ).toBeTruthy()
   })
 })

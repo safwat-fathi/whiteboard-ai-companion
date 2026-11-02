@@ -2,6 +2,8 @@ import type { z } from 'zod'
 import {
   type Batch,
   BatchSchema,
+  ImageElementSchema,
+  MathElementSchema,
   ShapeElementSchema,
   TextElementSchema,
 } from './schema'
@@ -38,7 +40,10 @@ function checkPatch(set: Record<string, unknown>) {
     const path = key.split('.')
     const schema = NOT_PATCHABLE.has(path[0] ?? '')
       ? undefined
-      : (leaf(ShapeElementSchema, path) ?? leaf(TextElementSchema, path))
+      : (leaf(ShapeElementSchema, path) ??
+        leaf(TextElementSchema, path) ??
+        leaf(MathElementSchema, path) ??
+        leaf(ImageElementSchema, path))
     if (!schema) throw new OpError(key, 'is not a patchable field')
     // Convention: null on an optional field means "unset it"; required fields reject null.
     if (value === null && schema.def.type === 'optional') continue

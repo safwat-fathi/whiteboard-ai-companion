@@ -18,6 +18,36 @@ const shape = (id: string, z: string): Element => ({
   v: 0,
   data: { kind: 'rect' },
 })
+const mathEl = (id: string, z: string): Element => ({
+  id,
+  type: 'math',
+  x: 0,
+  y: 0,
+  w: 40,
+  h: 20,
+  rotation: 0,
+  z,
+  style: { ...DEFAULT_STYLE },
+  locked: false,
+  author: { kind: 'human', id: 'u' },
+  v: 0,
+  data: { latex: 'x^2', display: true, size: 24 },
+})
+const imageEl = (id: string, z: string): Element => ({
+  id,
+  type: 'image',
+  x: 0,
+  y: 0,
+  w: 100,
+  h: 80,
+  rotation: 0,
+  z,
+  style: { ...DEFAULT_STYLE },
+  locked: false,
+  author: { kind: 'human', id: 'u' },
+  v: 0,
+  data: { blobId: 'a'.repeat(64), naturalW: 200, naturalH: 160 },
+})
 const batch = (...ops: Op[]): Batch => ({ batchId: 'b', label: 'T', ops })
 
 const noV = (s: ReturnType<typeof createScene>) =>
@@ -40,7 +70,11 @@ describe('scene', () => {
       let z = 'a0'
       const els = Array.from({ length: 5 }, (_, k) => {
         z = zBetween(z, null)
-        return shape(`e${k}`, z)
+        return k === 3
+          ? mathEl(`e${k}`, z)
+          : k === 4
+            ? imageEl(`e${k}`, z)
+            : shape(`e${k}`, z)
       })
       const scene = createScene(els)
       const before = noV(scene)
@@ -57,13 +91,24 @@ describe('scene', () => {
           ops.push({
             op: 'patch',
             id,
-            set: pick([
-              { x: Math.floor(rand() * 100) },
-              { 'style.fill': '#f00', 'data.radius': 3 },
-              { 'data.label': 'hi' },
-              { 'data.label': null },
-              { 'style.fill': null },
-            ]),
+            set:
+              id === 'e3'
+                ? pick([
+                    { 'data.latex': 'y^2', 'data.size': 32 },
+                    { 'data.display': false },
+                  ])
+                : id === 'e4'
+                  ? pick([
+                      { 'data.crop': { x: 0, y: 0, w: 50, h: 40 } },
+                      { 'data.crop': null },
+                    ])
+                  : pick([
+                      { x: Math.floor(rand() * 100) },
+                      { 'style.fill': '#f00', 'data.radius': 3 },
+                      { 'data.label': 'hi' },
+                      { 'data.label': null },
+                      { 'style.fill': null },
+                    ]),
           })
       }
       const { inverse } = applyBatch(scene, batch(...ops))

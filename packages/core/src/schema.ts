@@ -54,6 +54,48 @@ export const TextDataSchema = z.object({
 })
 export type TextData = z.infer<typeof TextDataSchema>
 
+export const MathDataSchema = z.object({
+  latex: z
+    .string()
+    .min(1, 'must not be empty')
+    .max(4000, 'must be at most 4000 chars'),
+  display: z.boolean(),
+  size: num.min(8, 'must be 8..1000').max(1000, 'must be 8..1000'),
+})
+export type MathData = z.infer<typeof MathDataSchema>
+
+export const CropSchema = z.object({
+  x: num.min(0, 'must be >= 0'),
+  y: num.min(0, 'must be >= 0'),
+  w: num.min(1, 'must be >= 1'),
+  h: num.min(1, 'must be >= 1'),
+})
+export type Crop = z.infer<typeof CropSchema>
+
+export const ImageDataSchema = z
+  .object({
+    blobId: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'must be a 64-char lowercase hex sha256'),
+    naturalW: num
+      .int('must be an integer')
+      .min(1, 'must be 1..8192')
+      .max(8192, 'must be 1..8192'),
+    naturalH: num
+      .int('must be an integer')
+      .min(1, 'must be 1..8192')
+      .max(8192, 'must be 1..8192'),
+    crop: CropSchema.optional(),
+    alt: z.string().max(500, 'must be at most 500 chars').optional(),
+  })
+  .refine(
+    (d) =>
+      !d.crop ||
+      (d.crop.x + d.crop.w <= d.naturalW && d.crop.y + d.crop.h <= d.naturalH),
+    { message: 'crop must lie within naturalW x naturalH', path: ['crop'] },
+  )
+export type ImageData = z.infer<typeof ImageDataSchema>
+
 export const BaseShape = {
   id,
   x: num,
@@ -79,9 +121,21 @@ export const TextElementSchema = z.object({
   type: z.literal('text'),
   data: TextDataSchema,
 })
+export const MathElementSchema = z.object({
+  ...BaseShape,
+  type: z.literal('math'),
+  data: MathDataSchema,
+})
+export const ImageElementSchema = z.object({
+  ...BaseShape,
+  type: z.literal('image'),
+  data: ImageDataSchema,
+})
 export const ElementSchema = z.discriminatedUnion('type', [
   ShapeElementSchema,
   TextElementSchema,
+  MathElementSchema,
+  ImageElementSchema,
 ])
 export type Element = z.infer<typeof ElementSchema>
 

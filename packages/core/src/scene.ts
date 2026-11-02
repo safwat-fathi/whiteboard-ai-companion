@@ -5,6 +5,8 @@ import {
   type Element,
   ElementSchema,
   type Id,
+  ImageElementSchema,
+  MathElementSchema,
   newId,
   ShapeElementSchema,
   TextElementSchema,
@@ -24,7 +26,12 @@ export const ordered = (scene: Scene): Element[] =>
 export const zBetween = (a: string | null, b: string | null): string =>
   generateKeyBetween(a, b)
 
-const SCHEMA = { shape: ShapeElementSchema, text: TextElementSchema }
+const SCHEMA = {
+  shape: ShapeElementSchema,
+  text: TextElementSchema,
+  math: MathElementSchema,
+  image: ImageElementSchema,
+}
 
 // Current value at a dotted path, or null if absent (absent only happens on optional leaves).
 function getPath(el: Element, key: string): unknown {

@@ -57,6 +57,25 @@ export function bounds(el: Element): Rect {
   }
 }
 
+export const boundsOf = bounds
+
+export function lockedAspect(el: Element): number | null {
+  if (el.type === 'math' || el.type === 'image')
+    return el.w > 0 && el.h > 0 ? el.w / el.h : 1
+  return null
+}
+
+/** MathJax em metrics -> world `{w, h}` at `size`. */
+export function fitMath(
+  metrics: { width: number; height: number; depth: number },
+  size: number,
+): { w: number; h: number } {
+  return {
+    w: metrics.width * size,
+    h: (metrics.height + metrics.depth) * size,
+  }
+}
+
 function segDist(p: Point, a: Point, b: Point): number {
   const dx = b.x - a.x
   const dy = b.y - a.y
@@ -133,7 +152,7 @@ export function hitTest(el: Element, p: Point, tolWorld: number): boolean {
     return d <= tolWorld + el.style.strokeWidth / 2
   }
   const q = toLocal(el, p)
-  if (el.type === 'text')
+  if (el.type === 'text' || el.type === 'math' || el.type === 'image')
     return (
       q.x >= el.x - tolWorld &&
       q.x <= el.x + el.w + tolWorld &&
@@ -206,7 +225,7 @@ export function resizeBox(
   if (east) right = Math.max(q.x, left + MIN)
   if (north) top = Math.min(q.y, bottom - MIN)
   if (south) bottom = Math.max(q.y, top + MIN)
-  if (keepAspect && el.w > 0 && el.h > 0) {
+  if ((keepAspect || lockedAspect(el) !== null) && el.w > 0 && el.h > 0) {
     const corner = (west || east) && (north || south)
     let nw = right - left
     let nh = bottom - top
