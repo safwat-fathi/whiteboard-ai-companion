@@ -7,7 +7,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from '@whiteboard/core'
-import type { Editor } from './editor'
+import type { Editor, Snapshot } from './editor'
 
 export const SCHEMA_VERSION = 1
 const DB = 'whiteboard'
@@ -263,6 +263,7 @@ export type PersistenceOpts = {
  *          and the result is 'ok' with `backupFailed`.
  *  start() begins autosave: commits (200 ms) and camera moves (500 ms) debounced; flush on visibilitychange hidden / pagehide.
  *  stop()  ends an open edit (the text tool commits it), flushes anything pending, then detaches all listeners (idempotent).
+ *          It never throws: if ending the edit fails the error is logged and the board is saved as it was, with the draft.
  *          Call it before editor.dispose(), which cancels the tool after the listeners are gone.
  *  flush() writes now if there are unsaved changes; a failed write stays pending and retries on the next change.
  *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}-${Date.now()}`; if that write fails it stays blocked.
@@ -283,17 +284,16 @@ export function createPersistence(
   let chain: Promise<void> = Promise.resolve()
   let detach: (() => void) | undefined
 
-  const flush = (): Promise<void> => {
+  const write = (snap?: Snapshot): Promise<void> => {
     clearTimeout(timer)
     timer = undefined
     if (blocked || !dirty) return chain
     dirty = false
-    const snap = editor.getSnapshot()
     const record: BoardRecord = {
       version: SCHEMA_VERSION,
       boardId,
       savedAt: Date.now(),
-      ...snap,
+      ...(snap ?? editor.getSnapshot()),
     }
     chain = chain.then(() =>
       saveBoard(boardId, record).then(opts.onSaved, (err) => {
@@ -304,6 +304,7 @@ export function createPersistence(
     )
     return chain
   }
+  const flush = () => write()
   const schedule = (delay: number) => {
     if (timer && pending < delay) return // an earlier deadline is already set
     clearTimeout(timer)
@@ -358,14 +359,21 @@ export function createPersistence(
       }
     },
     stop() {
+      // The board with the open draft as it stands now: a failing commit below drops the draft, and the flush must not
+      // overwrite the autosaved draft with a board that lacks it.
+      const before =
+        detach && (timer || dirty) ? editor.getSnapshot() : undefined
+      let failed = false
       try {
         // An open text edit commits on cancel: do it while the listeners are still attached so the flush below saves it.
         if (detach) editor.tool.onCancel?.()
-      } finally {
-        if (timer || dirty) void flush()
-        detach?.()
-        detach = undefined
+      } catch (err) {
+        failed = true
+        console.error('ending the open edit failed', err) // never rethrown: the page cleanup must go on to dispose()
       }
+      if (timer || dirty) void write(failed ? before : undefined)
+      detach?.()
+      detach = undefined
     },
     flush,
     async startEmptyKeepingBackup(): Promise<void> {

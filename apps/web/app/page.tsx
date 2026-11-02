@@ -124,9 +124,16 @@ export default function Page() {
     })()
     return () => {
       stop = true
-      persistence?.stop() // commits an open text edit and saves it; only then dispose() tears the editor down
-      editor?.dispose()
-      releaseBoardLock(BOARD)
+      // Each step in its own try/finally: a throw must not skip dispose() or leave the lock held (a remount would be read-only).
+      try {
+        persistence?.stop() // commits an open text edit and saves it; only then dispose() tears the editor down
+      } finally {
+        try {
+          editor?.dispose()
+        } finally {
+          releaseBoardLock(BOARD)
+        }
+      }
     }
   }, [])
   return (

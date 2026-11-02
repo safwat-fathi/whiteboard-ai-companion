@@ -650,6 +650,63 @@ describe('stop', () => {
   })
 })
 
+describe('stop when ending the open edit throws', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('does not rethrow, still flushes the pending change and detaches', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    put(t.ed, mk('a', 0, 0))
+    vi.spyOn(t.ed.tool, 'onCancel').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    expect(() => p.stop()).not.toThrow()
+    expect(err).toHaveBeenCalled() // logged, not swallowed silently
+    await p.flush() // waits for the write stop() started
+    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+    put(t.ed, mk('b', 20, 0)) // detached: this change is not picked up
+    await p.flush()
+    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+    expect(() => p.stop()).not.toThrow() // still idempotent
+  })
+
+  it('a commit that throws while ending a text edit saves the board with the draft, not without it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const draft = async () =>
+      (
+        (await rawGet('local')) as { elements: { data: { text: string } }[] }
+      ).elements.map((e) => e.data.text)
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    t.ed.setTool('text')
+    const at = { x: 9, y: 9 }
+    const e = {
+      screen: at,
+      world: at,
+      shift: false,
+      alt: false,
+      button: 0,
+      pointerType: 'mouse',
+    }
+    t.ed.tool.onPointerDown(e)
+    t.ed.tool.onPointerUp(e)
+    const ta = t.ed.host.querySelector('textarea') as HTMLTextAreaElement
+    ta.value = 'saved by the debounce'
+    ta.dispatchEvent(new Event('input'))
+    await p.flush()
+    expect(await draft()).toEqual(['saved by the debounce'])
+    ta.value = 'typed after that'
+    ta.dispatchEvent(new Event('input'))
+    vi.spyOn(t.ed, 'commit').mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    expect(() => p.stop()).not.toThrow()
+    await p.flush()
+    expect(await draft()).toEqual(['typed after that'])
+  })
+})
+
 describe('saveBoard', () => {
   it('writes the record verbatim', async () => {
     await saveBoard('x', rec({ boardId: 'x' }) as never)
