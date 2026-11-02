@@ -73,7 +73,13 @@ export function Toolbar({
             className="tb-btn"
             aria-label={label}
             aria-pressed={active === id}
-            title={key ? `${label} (${key})` : label}
+            title={
+              id === 'hand'
+                ? 'Hand (H): hold Space and drag to move the canvas'
+                : key
+                  ? `${label} (${key})`
+                  : label
+            }
             disabled={off}
             onClick={() => editor?.setTool(id)}
           >

@@ -42,6 +42,10 @@ describe('Toolbar', () => {
     const { ed, btn } = await mount()
     expect(btn('Rectangle').title).toBe('Rectangle (R)')
     expect(btn('Triangle').title).toBe('Triangle') // no shortcut
+    expect(btn('Hand').title).toBe(
+      'Hand (H): hold Space and drag to move the canvas',
+    )
+    expect(btn('Hand').getAttribute('aria-label')).toBe('Hand')
     expect(btn('Hand').getAttribute('aria-pressed')).toBe('true') // the Editor starts on Hand
     await act(async () => btn('Rectangle').click())
     expect(ed.tool.id).toBe('rect')
