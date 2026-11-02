@@ -258,15 +258,19 @@ export type PersistenceOpts = {
 /**
  * Binds an Editor to one stored board.
  *  load()  reads the record and applies it to the editor (unreadable => editor stays empty and saving is blocked).
- *          If elements or undo entries were dropped it first keeps the stored record as a backup (`canWrite` false skips that
- *          write, for a read-only tab); when that write fails the valid elements are still loaded, saving stays blocked
+ *          If elements or undo entries were dropped it first keeps the stored record as a backup at
+ *          `${boardId}:backup:${savedAt}-dropped` ('undated' if it has no valid savedAt; a reload before the next save rewrites
+ *          the same key; `canWrite` false skips that write, for a read-only tab); when that write fails the valid elements are still loaded, saving stays blocked
  *          and the result is 'ok' with `backupFailed`.
  *  start() begins autosave: commits (200 ms) and camera moves (500 ms) debounced; flush on visibilitychange hidden / pagehide.
- *  stop()  ends an open edit (the text tool commits it), flushes anything pending, then detaches all listeners (idempotent).
- *          An error from ending the edit is logged, not rethrown: the board is saved as it was before the attempt, with the draft.
+ *  stop()  in this order: snapshots the board (open draft included) if a save is pending, ends an open edit (the text tool
+ *          commits it), detaches all listeners, then writes what is pending (idempotent). An error from any of those steps is
+ *          logged, never rethrown; if the snapshot was taken and ending the edit failed, that snapshot is what gets written,
+ *          so the draft stays saved.
  *          Call it before editor.dispose(), which cancels the tool after the listeners are gone.
  *  flush() writes now if there are unsaved changes; a failed write stays pending and retries on the next change.
- *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}-${Date.now()}`; if that write fails it stays blocked.
+ *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}-${Date.now()}` ('undated' in place of
+ *          savedAt when it has none); if that write fails it stays blocked.
  */
 export function createPersistence(
   editor: Editor,
@@ -362,19 +366,23 @@ export function createPersistence(
       let before: Snapshot | undefined
       let failed = false
       try {
-        // The board with the open draft as it stands now: a failing commit below drops the draft, and the flush must not
+        // The board with the open draft as it stands now: a failing commit below drops the draft, and the final write must not
         // overwrite the autosaved draft with a board that lacks it.
         if (detach && (timer || dirty)) before = editor.getSnapshot()
-        // An open text edit commits on cancel: do it while the listeners are still attached so the flush below saves it.
+        // An open text edit commits on cancel: do it while the listeners are still attached so the write below saves it.
         if (detach) editor.tool.onCancel?.()
       } catch (err) {
         failed = true
         console.error('ending the open edit failed', err) // never rethrown: the page cleanup must go on to dispose()
       }
-      const pending = timer || dirty
+      const unsaved = timer || dirty
       detach?.() // before the write, so nothing that can still throw leaves the listeners attached
       detach = undefined
-      if (pending) void write(failed ? before : undefined)
+      try {
+        if (unsaved) void write(failed ? before : undefined) // throws synchronously when the snapshot does
+      } catch (err) {
+        console.error('the final save failed', err)
+      }
     },
     flush,
     async startEmptyKeepingBackup(): Promise<void> {

@@ -693,6 +693,23 @@ describe('stop when ending the open edit throws', () => {
     expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
   })
 
+  it('a snapshot that keeps throwing never escapes stop(), and the listeners are already detached when the write fails', async () => {
+    vi.useFakeTimers(FAKE)
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    put(t.ed, mk('a', 0, 0))
+    vi.spyOn(t.ed, 'getSnapshot').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    expect(() => p.stop()).not.toThrow() // the final write throws too
+    expect(err).toHaveBeenCalledTimes(2) // the snapshot before ending the edit, and the write
+    expect(vi.getTimerCount()).toBe(0)
+    put(t.ed, mk('b', 20, 0))
+    expect(vi.getTimerCount()).toBe(0) // detached: this change schedules nothing
+    expect(() => p.stop()).not.toThrow()
+  })
+
   it('a commit that throws while ending a text edit saves the board with the draft, not without it', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const draft = async () =>
