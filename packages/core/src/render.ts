@@ -1,6 +1,6 @@
 import { bounds, type Point, type Rect, routeArrow } from './geometry'
 import type { SpatialIndex } from './index'
-import type { Platform } from './platform'
+import { type CanvasLike, FONT_STACK, type Platform } from './platform'
 import { ordered, type Scene } from './scene'
 import {
   type Camera,
@@ -9,6 +9,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from './schema'
+import { layoutText } from './text'
 
 export type RenderStats = { drawn: number; culled: number }
 
@@ -50,7 +51,7 @@ type Closable = { close(): void }
 
 /**
  * Bitmaps for expensive elements (text, later math/images), keyed (zoomBucket, id, v).
- * Task 7 fills it; ponytail: bitmaps over 4096 px a side should be drawn directly, not cached.
+ * Text is the only user so far; bitmaps over MAX_BITMAP px a side are drawn directly, never cached.
  */
 export class RenderCache {
   private buckets = new Map<number, Map<string, { v: number; b: Closable }>>()
@@ -77,6 +78,70 @@ export class RenderCache {
     this.buckets.clear()
   }
 }
+
+const MAX_BITMAP = 4096
+
+type TextEl = Element & { type: 'text' }
+
+function drawLines(
+  ctx: CanvasRenderingContext2D,
+  el: TextEl,
+  lines: ReturnType<typeof layoutText>['lines'],
+) {
+  const { size } = el.data
+  ctx.font = `${size}px ${FONT_STACK}`
+  ctx.fillStyle = el.style.stroke // text colour is the style's stroke
+  ctx.textAlign = 'left' // line.x is the visual left edge, whatever the direction
+  ctx.textBaseline = 'middle'
+  for (const l of lines) {
+    ctx.direction = l.dir
+    ctx.fillText(l.text, l.x, l.y + (size * 1.4) / 2)
+  }
+}
+
+/** Draws a text element at its origin (the caller has set the world transform, alpha and rotation). */
+function drawText(
+  ctx: CanvasRenderingContext2D,
+  el: TextEl,
+  platform: Platform,
+  scale: number,
+  cache?: RenderCache,
+) {
+  const { lines, width, height } = layoutText(el, platform)
+  const bucket = zoomBucket(scale)
+  const pw = Math.ceil(width * bucket)
+  const ph = Math.ceil(height * bucket)
+  if (pw < 1 || ph < 1 || pw > MAX_BITMAP || ph > MAX_BITMAP || !cache) {
+    ctx.save()
+    ctx.translate(el.x, el.y)
+    drawLines(ctx, el, lines)
+    ctx.restore()
+    return
+  }
+  let bmp = cache.get<TextBitmap>(bucket, el.id, el.v)
+  if (!bmp) {
+    const canvas = platform.createCanvas(pw, ph)
+    const c = canvas.getContext('2d') as CanvasRenderingContext2D
+    c.scale(bucket, bucket)
+    drawLines(c, el, lines)
+    bmp = {
+      canvas,
+      close() {
+        canvas.width = 0
+        canvas.height = 0
+      },
+    }
+    cache.set(bucket, el.id, el.v, bmp)
+  }
+  ctx.drawImage(
+    bmp.canvas as unknown as CanvasImageSource,
+    el.x,
+    el.y,
+    pw / bucket,
+    ph / bucket,
+  )
+}
+type TextBitmap = { canvas: CanvasLike; close(): void }
 
 // Geometry in world space, built once per element object (elements are replaced, never mutated). Keyed per platform
 // because a Path2D from one platform's constructor is not valid on another's context.
@@ -189,7 +254,7 @@ export function render(
   scene: Scene,
   camera: Camera,
   viewport: Viewport,
-  platform: Platform, // path creation now; text measuring/drawing in Task 7
+  platform: Platform,
   opts: { index?: SpatialIndex; cache?: RenderCache } = {},
 ): RenderStats {
   const { width, height, dpr } = viewport
@@ -228,8 +293,21 @@ export function render(
 
   let drawn = 0
   for (const el of visible) {
-    // text: Task 7 (uses opts.cache and the platform)
-    if (el.type !== 'shape') continue
+    if (el.type === 'text') {
+      ctx.save()
+      ctx.globalAlpha = el.style.opacity
+      if (el.rotation) {
+        const cx = el.x + el.w / 2
+        const cy = el.y + el.h / 2
+        ctx.translate(cx, cy)
+        ctx.rotate(el.rotation)
+        ctx.translate(-cx, -cy)
+      }
+      drawText(ctx, el, platform, s, opts.cache)
+      ctx.restore()
+      drawn++
+      continue
+    }
     const path = pathOf(el, scene, platform)
     const { stroke, fill, strokeWidth, opacity, dash } = el.style
     ctx.save()

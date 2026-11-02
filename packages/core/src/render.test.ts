@@ -153,15 +153,6 @@ describe('render', () => {
     )
   })
 
-  it('skips text elements', () => {
-    const text = mk('t', {
-      type: 'text',
-      data: { text: 'hi', size: 16, align: 'left', dir: 'auto' },
-    } as never)
-    const { ctx } = canvas()
-    expect(render(ctx, createScene([text]), cam, vp, platform).drawn).toBe(0)
-  })
-
   for (const zoom of [0.05, 20]) {
     it(`culls to the brute-force visible count at zoom ${zoom}`, () => {
       let seed = 7
