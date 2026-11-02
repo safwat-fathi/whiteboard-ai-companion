@@ -158,12 +158,16 @@ export class Editor {
     this.changed()
   }
 
+  // The toolbar keeps focus in a text field, so undo/redo can arrive mid-gesture or mid-edit: end it first (a text edit is
+  // committed, then undone), or a later commit would patch an element that undo removed.
   undoOnce(): void {
+    this.tool.onCancel?.()
     const r = this.undo.undo()
     if (r?.batch.ops.length) this.commit(r.batch, 'undo')
   }
 
   redoOnce(): void {
+    this.tool.onCancel?.()
     const r = this.undo.redo()
     if (r?.batch.ops.length) this.commit(r.batch, 'redo')
   }

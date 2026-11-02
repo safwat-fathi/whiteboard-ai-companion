@@ -64,6 +64,28 @@ describe('text tool', () => {
     expect(els()).toEqual([])
   })
 
+  it('undo while a text is open (toolbar) commits the edit first, then undoes it', () => {
+    const t = seedText('old')
+    ed.editText(t?.id as string)
+    type('new')
+    ed.undoOnce() // the toolbar keeps focus in the textarea, so this path is reachable
+    expect(area()).toBeNull()
+    expect(ed.tool.id).toBe('select')
+    const back = els()[0]
+    expect(back?.type === 'text' && back.data.text).toBe('old') // the typed edit was committed, then undone
+    ed.redoOnce()
+    const again = els()[0]
+    expect(again?.type === 'text' && again.data.text).toBe('new')
+  })
+
+  it('undoing the Add Text of a text being edited does not leave a dangling textarea', () => {
+    const t = seedText('old')
+    ed.editText(t?.id as string)
+    ed.undoOnce() // undoes "Add Text" while its edit is open
+    expect(area()).toBeNull()
+    expect(els()).toEqual([])
+  })
+
   it('the key T selects the text tool', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 't' }))
     expect(ed.tool.id).toBe('text')
