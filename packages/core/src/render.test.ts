@@ -1,0 +1,227 @@
+import { createCanvas } from '@napi-rs/canvas'
+import { describe, expect, it } from 'vitest'
+import { matchesGolden } from '../test/matchesGolden'
+import { bounds } from './geometry'
+import { SpatialIndex } from './index'
+import { nodePlatform } from './node'
+import {
+  RenderCache,
+  render,
+  screenToWorld,
+  worldToScreen,
+  zoomAt,
+} from './render'
+import { createScene } from './scene'
+import { type Camera, type ShapeData, ZOOM_MAX, ZOOM_MIN } from './schema'
+import { mk } from './test-utils'
+
+const platform = nodePlatform()
+const vp = { width: 600, height: 400, dpr: 1 }
+const cam: Camera = { x: 0, y: 0, zoom: 1 }
+const canvas = (w = vp.width, h = vp.height) => {
+  const c = createCanvas(w, h)
+  return { c, ctx: c.getContext('2d') as unknown as CanvasRenderingContext2D }
+}
+type MkOpts = NonNullable<Parameters<typeof mk>[1]>
+const shape = (id: string, kind: ShapeData['kind'], p: MkOpts = {}) =>
+  mk(id, { w: 80, h: 60, data: { kind }, ...p } as MkOpts)
+
+function goldenScene() {
+  const blue = '#cfe3ff'
+  return createScene([
+    shape('r', 'rect', { x: 20, y: 20, fill: blue }),
+    shape('r2', 'rect', { x: 120, y: 20 }),
+    shape('rr', 'rect', {
+      x: 220,
+      y: 20,
+      data: { kind: 'rect', radius: 14 },
+      fill: '#ffe3b0',
+    }),
+    shape('e', 'ellipse', { x: 20, y: 110, fill: '#d4f5d0' }),
+    shape('e2', 'ellipse', { x: 120, y: 110, rotation: 0.5 }),
+    shape('d', 'diamond', { x: 220, y: 110, fill: '#f6d2e8' }),
+    shape('t', 'triangle', { x: 320, y: 110, fill: '#e8d9ff' }),
+    shape('rot', 'rect', { x: 420, y: 20, rotation: Math.PI / 6, fill: blue }),
+    shape('dash', 'rect', {
+      x: 20,
+      y: 200,
+      style: { ...mk('s').style, dash: 'dashed', stroke: '#c0392b' },
+    }),
+    shape('dot', 'ellipse', {
+      x: 120,
+      y: 200,
+      style: { ...mk('s').style, dash: 'dotted', strokeWidth: 3 },
+    }),
+    shape('line', 'line', {
+      x: 220,
+      y: 200,
+      data: {
+        kind: 'line',
+        points: [
+          [0, 60],
+          [40, 0],
+          [80, 50],
+        ],
+      },
+    }),
+    shape('arr', 'arrow', {
+      x: 320,
+      y: 200,
+      data: {
+        kind: 'arrow',
+        arrowheads: { start: true, end: true },
+        points: [
+          [0, 30],
+          [100, 30],
+        ],
+      },
+    }),
+    shape('a', 'rect', { x: 20, y: 300, w: 80, h: 50, fill: blue }),
+    shape('b', 'ellipse', { x: 300, y: 300, w: 80, h: 50, fill: '#d4f5d0' }),
+    shape('bound', 'arrow', {
+      x: 100,
+      y: 325,
+      data: {
+        kind: 'arrow',
+        start: { id: 'a', fx: 1, fy: 0.5 },
+        end: { id: 'b', fx: 0, fy: 0.5 },
+        points: [
+          [0, 0],
+          [10, 0],
+        ],
+      },
+    }),
+  ])
+}
+
+describe('render', () => {
+  it('matches the shapes golden', async () => {
+    const { c, ctx } = canvas()
+    render(ctx, goldenScene(), cam, vp, platform)
+    await matchesGolden(c, 'shapes')
+  })
+
+  it('renders identical pixels twice', () => {
+    const scene = goldenScene()
+    const a = canvas()
+    const b = canvas()
+    render(a.ctx, scene, cam, vp, platform)
+    render(b.ctx, scene, cam, vp, platform)
+    render(b.ctx, scene, cam, vp, platform)
+    expect(a.c.toBuffer('image/png').equals(b.c.toBuffer('image/png'))).toBe(
+      true,
+    )
+  })
+
+  it('skips text elements', () => {
+    const text = mk('t', {
+      type: 'text',
+      data: { text: 'hi', size: 16, align: 'left', dir: 'auto' },
+    } as never)
+    const { ctx } = canvas()
+    expect(render(ctx, createScene([text]), cam, vp, platform).drawn).toBe(0)
+  })
+
+  for (const zoom of [0.05, 20]) {
+    it(`culls to the brute-force visible count at zoom ${zoom}`, () => {
+      let seed = 7
+      const rnd = () => {
+        seed = (seed * 1664525 + 1013904223) % 2 ** 32
+        return seed / 2 ** 32
+      }
+      const els = Array.from({ length: 5000 }, (_, i) =>
+        mk(`e${i}`, {
+          x: rnd() * 2000 - 500,
+          y: rnd() * 1500 - 500,
+          w: 5 + rnd() * 60,
+          h: 5 + rnd() * 40,
+          rotation: rnd() < 0.25 ? rnd() * 3 : 0,
+          data: { kind: i % 2 ? 'ellipse' : 'rect' },
+        }),
+      )
+      const scene = createScene(els)
+      const index = new SpatialIndex()
+      index.load(els)
+      const camera = { x: 400, y: 300, zoom }
+      const view = {
+        x0: 400,
+        y0: 300,
+        x1: 400 + 600 / zoom,
+        y1: 300 + 400 / zoom,
+      }
+      const brute = els.filter((e) => {
+        const b = bounds(e)
+        return (
+          b.minX <= view.x1 &&
+          b.maxX >= view.x0 &&
+          b.minY <= view.y1 &&
+          b.maxY >= view.y0
+        )
+      }).length
+      expect(brute).toBeGreaterThan(0)
+      const { ctx } = canvas()
+      const s = render(ctx, scene, camera, vp, platform, { index })
+      expect(s.drawn).toBe(brute)
+      expect(s.culled).toBe(5000 - brute)
+      expect(render(ctx, scene, camera, vp, platform).drawn).toBe(brute)
+    })
+  }
+})
+
+describe('camera', () => {
+  const dvp = { width: 800, height: 600, dpr: 2 }
+  it('screenToWorld inverts worldToScreen', () => {
+    const c = { x: 123, y: -45, zoom: 2.5 }
+    const p = { x: 17.5, y: 99 }
+    const q = screenToWorld(worldToScreen(p, c, dvp), c, dvp)
+    expect(q.x).toBeCloseTo(p.x, 9)
+    expect(q.y).toBeCloseTo(p.y, 9)
+  })
+
+  it('zoomAt keeps the world point under the cursor fixed', () => {
+    const c = { x: 50, y: 20, zoom: 1 }
+    const s = { x: 300, y: 200 }
+    const before = screenToWorld(s, c, dvp)
+    const z = zoomAt(c, s, 1.7)
+    expect(z.zoom).toBeCloseTo(1.7, 9)
+    const after = screenToWorld(s, z, dvp)
+    expect(after.x).toBeCloseTo(before.x, 9)
+    expect(after.y).toBeCloseTo(before.y, 9)
+  })
+
+  it('zoomAt clamps at both limits and stays anchored', () => {
+    const s = { x: 120, y: 80 }
+    const c = { x: 10, y: 10, zoom: 1 }
+    const hi = zoomAt(c, s, 1000)
+    const lo = zoomAt(c, s, 0.00001)
+    expect(hi.zoom).toBe(ZOOM_MAX)
+    expect(lo.zoom).toBe(ZOOM_MIN)
+    for (const z of [hi, lo]) {
+      const a = screenToWorld(s, c, dvp)
+      const b = screenToWorld(s, z, dvp)
+      expect(b.x).toBeCloseTo(a.x, 9)
+      expect(b.y).toBeCloseTo(a.y, 9)
+    }
+  })
+})
+
+describe('RenderCache', () => {
+  it('dispose closes every bitmap', () => {
+    const cache = new RenderCache()
+    let open = 0
+    const bmp = () => {
+      open++
+      return { close: () => void open-- }
+    }
+    cache.set(1, 'a', 0, bmp())
+    cache.set(1, 'b', 0, bmp())
+    cache.set(2, 'a', 0, bmp())
+    cache.set(1, 'a', 1, bmp()) // replaces (and closes) the v0 bitmap
+    expect(open).toBe(3)
+    expect(cache.get(1, 'a', 1)).toBeDefined()
+    expect(cache.get(1, 'a', 0)).toBeUndefined()
+    cache.dispose()
+    expect(open).toBe(0)
+    expect(cache.get(1, 'b', 0)).toBeUndefined()
+  })
+})
