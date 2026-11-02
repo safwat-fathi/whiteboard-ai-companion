@@ -676,6 +676,23 @@ describe('stop when ending the open edit throws', () => {
     expect(() => p.stop()).not.toThrow() // still idempotent
   })
 
+  it('a snapshot that throws before the edit is ended is logged too, and the listeners still detach', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    put(t.ed, mk('a', 0, 0))
+    vi.spyOn(t.ed, 'getSnapshot').mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    expect(() => p.stop()).not.toThrow()
+    expect(err).toHaveBeenCalled()
+    await p.flush()
+    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+    put(t.ed, mk('b', 20, 0)) // detached: not picked up
+    await p.flush()
+    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+  })
+
   it('a commit that throws while ending a text edit saves the board with the draft, not without it', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const draft = async () =>

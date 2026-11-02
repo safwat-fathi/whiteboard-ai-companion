@@ -263,7 +263,7 @@ export type PersistenceOpts = {
  *          and the result is 'ok' with `backupFailed`.
  *  start() begins autosave: commits (200 ms) and camera moves (500 ms) debounced; flush on visibilitychange hidden / pagehide.
  *  stop()  ends an open edit (the text tool commits it), flushes anything pending, then detaches all listeners (idempotent).
- *          It never throws: if ending the edit fails the error is logged and the board is saved as it was, with the draft.
+ *          An error from ending the edit is logged, not rethrown: the board is saved as it was before the attempt, with the draft.
  *          Call it before editor.dispose(), which cancels the tool after the listeners are gone.
  *  flush() writes now if there are unsaved changes; a failed write stays pending and retries on the next change.
  *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}-${Date.now()}`; if that write fails it stays blocked.
@@ -359,21 +359,22 @@ export function createPersistence(
       }
     },
     stop() {
-      // The board with the open draft as it stands now: a failing commit below drops the draft, and the flush must not
-      // overwrite the autosaved draft with a board that lacks it.
-      const before =
-        detach && (timer || dirty) ? editor.getSnapshot() : undefined
+      let before: Snapshot | undefined
       let failed = false
       try {
+        // The board with the open draft as it stands now: a failing commit below drops the draft, and the flush must not
+        // overwrite the autosaved draft with a board that lacks it.
+        if (detach && (timer || dirty)) before = editor.getSnapshot()
         // An open text edit commits on cancel: do it while the listeners are still attached so the flush below saves it.
         if (detach) editor.tool.onCancel?.()
       } catch (err) {
         failed = true
         console.error('ending the open edit failed', err) // never rethrown: the page cleanup must go on to dispose()
       }
-      if (timer || dirty) void write(failed ? before : undefined)
-      detach?.()
+      const pending = timer || dirty
+      detach?.() // before the write, so nothing that can still throw leaves the listeners attached
       detach = undefined
+      if (pending) void write(failed ? before : undefined)
     },
     flush,
     async startEmptyKeepingBackup(): Promise<void> {
