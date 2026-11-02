@@ -245,9 +245,21 @@ export class Editor {
     this.changed()
   }
 
+  /** Tells change listeners (autosave) that the saved board is stale without committing anything (an open text draft). */
+  markDirty(): void {
+    for (const fn of this.listeners) fn()
+  }
+
+  /** The board as it should be saved: the scene plus the open text draft (replacing its element by id, or appended). */
   getSnapshot(): Snapshot {
+    const draft = (this.tools.text as TextTool | undefined)?.draft()
+    let els = ordered(this.scene)
+    if (draft)
+      els = els.some((e) => e.id === draft.id)
+        ? els.map((e) => (e.id === draft.id ? draft : e))
+        : [...els, draft]
     return {
-      elements: structuredClone(ordered(this.scene)),
+      elements: structuredClone(els),
       camera: { ...this.camera },
       undo: this.undo.toJSON(),
     }
@@ -296,7 +308,7 @@ export class Editor {
 
   private changed() {
     this.invalidate()
-    for (const fn of this.listeners) fn()
+    this.markDirty()
   }
 
   private toScreen(clientX: number, clientY: number): Point {

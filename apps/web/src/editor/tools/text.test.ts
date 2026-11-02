@@ -2,7 +2,7 @@
 import { layoutText, ordered, render } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '../editor'
-import { drag, ev, key, ptr, setup } from '../test-utils'
+import { drag, ev, key, mk, ptr, put, setup } from '../test-utils'
 
 vi.mock('@whiteboard/core', async (orig) => ({
   ...(await orig<typeof import('@whiteboard/core')>()),
@@ -353,5 +353,119 @@ describe('text tool', () => {
     const host = ed.host
     ed.dispose()
     expect(host.querySelector('textarea')).toBeNull()
+  })
+})
+
+describe('the open draft reaches the snapshot, not the scene', () => {
+  const snapTexts = () =>
+    ed
+      .getSnapshot()
+      .elements.filter((e) => e.type === 'text')
+      .map((e) => e.type === 'text' && e.data.text)
+
+  it('a new text is in the snapshot while typing, with its final id and a top z; the scene and undo are untouched', () => {
+    put(ed, mk('s', 0, 0))
+    const undoBefore = ed.undo.toJSON()
+    start()
+    expect(snapTexts()).toEqual([]) // nothing typed yet: no empty element persisted
+    type('مرحبا')
+    expect(snapTexts()).toEqual(['مرحبا'])
+    const snap = ed.getSnapshot().elements
+    const draft = snap.at(-1)
+    if (draft?.type !== 'text') throw new Error('no draft')
+    expect(draft.z > (snap[0]?.z ?? '')).toBe(true)
+    expect([draft.w, draft.h]).toEqual([
+      layoutText(draft, ed.platform).width,
+      layoutText(draft, ed.platform).height,
+    ])
+    expect(els()).toHaveLength(1) // the scene has only the shape
+    expect(ed.undo.toJSON()).toEqual(undoBefore)
+    blur()
+    const committed = els().at(-1)
+    expect(committed?.id).toBe(draft.id) // the committed element is the one already saved
+    expect(committed?.z).toBe(draft.z)
+    expect(ed.getSnapshot().elements).toHaveLength(2) // and not duplicated
+  })
+
+  it('blank or cleared drafts add nothing; Esc on empty leaves nothing', () => {
+    start()
+    type('   ')
+    expect(ed.getSnapshot().elements).toEqual([])
+    type('x')
+    expect(snapTexts()).toEqual(['x'])
+    type('')
+    expect(ed.getSnapshot().elements).toEqual([])
+    area().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(ed.getSnapshot().elements).toEqual([])
+  })
+
+  it('an edit of an existing text replaces that element in the snapshot only', () => {
+    const t = seedText('old')
+    const other = mk('o', 300, 300)
+    put(ed, other)
+    ed.editText(t?.id as string)
+    type('a much longer line')
+    const snap = ed.getSnapshot().elements
+    expect(snap.map((e) => e.id)).toEqual(els().map((e) => e.id)) // same elements, same order, no duplicate
+    expect(snapTexts()).toEqual(['a much longer line'])
+    const edited = snap.find((e) => e.id === t?.id)
+    expect(edited?.w).toBeGreaterThan(t?.w ?? 0)
+    expect(els().find((e) => e.id === t?.id)).toEqual(t) // scene still old
+    blur()
+    expect(ed.getSnapshot().elements).toEqual(structuredClone(els()))
+  })
+
+  it('a blanked existing text keeps its original in the snapshot until the edit is committed', () => {
+    const t = seedText('old')
+    ed.editText(t?.id as string)
+    type('')
+    expect(snapTexts()).toEqual(['old'])
+    blur() // Delete Text
+    expect(ed.getSnapshot().elements).toEqual([])
+  })
+
+  it('typing notifies change listeners (autosave) without a commit', () => {
+    const changed = vi.fn()
+    ed.onChange(changed)
+    const commit = vi.spyOn(ed, 'commit')
+    start()
+    type('a')
+    type('ab')
+    expect(changed).toHaveBeenCalledTimes(2)
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('a commit that throws still tears the edit down', () => {
+    start()
+    type('x')
+    vi.spyOn(ed, 'commit').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    expect(() => ed.tool.onCancel?.()).toThrow('boom') // a listener's throw is swallowed by dispatchEvent, so call the tool
+    expect(area()).toBeNull()
+    expect(ed.hidden).toBeNull()
+    expect(ed.getSnapshot().elements).toEqual([])
+  })
+
+  it('a stroke string cannot add declarations to the textarea', () => {
+    const t = seedText('x')
+    if (t?.type !== 'text') throw new Error('no text')
+    ed.scene.els.set(t.id, {
+      ...t,
+      style: { ...t.style, stroke: 'red;position:fixed;inset:0' },
+    })
+    ed.editText(t.id)
+    expect(area().style.position).toBe('absolute')
+    expect(area().style.cssText).not.toContain('fixed')
+    ed.tool.onCancel?.()
+    ed.scene.els.set(t.id, { ...t, style: { ...t.style, stroke: '#ff0000' } })
+    ed.editText(t.id)
+    expect(area().style.color).toBe('rgb(255, 0, 0)')
+    expect(area().style.caretColor).toBe('rgb(255, 0, 0)')
+  })
+
+  it('the textarea caps its length', () => {
+    start()
+    expect(area().maxLength).toBe(100_000)
   })
 })

@@ -359,6 +359,93 @@ describe('debounce deadlines', () => {
   })
 })
 
+describe('an open text draft', () => {
+  const typeInto = (v: string) => {
+    const ta = t.ed.host.querySelector('textarea') as HTMLTextAreaElement
+    ta.value = v
+    ta.dispatchEvent(new Event('input'))
+  }
+  const stored = async () =>
+    (
+      (await rawGet('local')) as
+        | { elements: { id: string; data: { text?: string } }[] }
+        | undefined
+    )?.elements.map((e) => e.data.text)
+  const startText = () => {
+    t.ed.setTool('text')
+    t.ed.tool.onPointerDown({
+      screen: { x: 9, y: 9 },
+      world: { x: 9, y: 9 },
+      shift: false,
+      alt: false,
+      button: 0,
+      pointerType: 'mouse',
+    })
+    t.ed.tool.onPointerUp({
+      screen: { x: 9, y: 9 },
+      world: { x: 9, y: 9 },
+      shift: false,
+      alt: false,
+      button: 0,
+      pointerType: 'mouse',
+    })
+  }
+
+  it('is saved by the 200 ms debounce while the textarea is still open, then follows the final commit', async () => {
+    await loadBoard('local') // opens the connection so writes start in microtasks
+    vi.useFakeTimers(FAKE)
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    startText()
+    typeInto('مرحبا')
+    await vi.advanceTimersByTimeAsync(199)
+    expect(await stored()).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
+    vi.useRealTimers()
+    await p.flush()
+    expect(await stored()).toEqual(['مرحبا'])
+    expect(t.ed.scene.els.size).toBe(0) // never committed
+    expect(t.ed.undo.canUndo).toBe(false)
+    p.stop()
+  })
+
+  it('pagehide flushes the draft; an empty draft adds no element', async () => {
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    startText()
+    typeInto('  ')
+    window.dispatchEvent(new Event('pagehide'))
+    await p.flush()
+    expect(await stored()).toEqual([]) // a board with no elements: no empty text element
+    typeInto('hello')
+    window.dispatchEvent(new Event('pagehide'))
+    await p.flush()
+    expect(await stored()).toEqual(['hello'])
+    typeInto('')
+    window.dispatchEvent(new Event('pagehide'))
+    await p.flush()
+    expect(await stored()).toEqual([])
+    p.stop()
+  })
+
+  it('an edit of an existing text saves its draft content in place', async () => {
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    startText()
+    typeInto('old')
+    t.ed.tool.onCancel?.() // commit
+    const id = [...t.ed.scene.els.keys()][0] as string
+    t.ed.editText(id)
+    typeInto('new text')
+    await p.flush()
+    expect(await stored()).toEqual(['new text'])
+    expect(
+      (t.ed.scene.els.get(id) as { data: { text: string } }).data.text,
+    ).toBe('old')
+    p.stop()
+  })
+})
+
 describe('saveBoard', () => {
   it('writes the record verbatim', async () => {
     await saveBoard('x', rec({ boardId: 'x' }) as never)

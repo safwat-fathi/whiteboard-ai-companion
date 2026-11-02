@@ -13,7 +13,15 @@ import type { Editor } from '../editor'
 import type { Tool } from './index'
 
 type TextEl = Element & { type: 'text' }
-export type TextTool = Tool & { edit(el: TextEl): void }
+export type TextTool = Tool & {
+  edit(el: TextEl): void
+  /**
+   * The open edit as the element it would commit, or null (nothing open, or blank). Persistence saves it without it
+   * entering the scene or the undo history. A blank draft is null even for an existing text: its original stays
+   * saved until Delete Text is committed, so a reload never loses text the user has not yet removed for good.
+   */
+  draft(): TextEl | null
+}
 
 const SIZE = 24
 const SLACK = 2 // css px of room at the text's trailing edge so the caret is not clipped (no horizontal scroll jump)
@@ -63,56 +71,65 @@ export const textTool = (ed: Editor): TextTool => {
   const finish = () => {
     const s = cur
     if (!s) return
-    cur = null
-    s.ta.remove()
-    ed.hidden = null
     const text = s.ta.value
     const blank = !text.trim()
     const id = s.el.id
-    if (s.isNew) {
-      if (!blank)
+    // Commit first and tear down in `finally`: `cur` stays set while committing (getSnapshot swaps by id, so the
+    // draft never doubles the element being added), and a throwing commit still removes the textarea and `hidden`.
+    try {
+      if (s.isNew) {
+        if (!blank)
+          ed.commit({
+            batchId: newId(),
+            label: 'Add Text',
+            ops: [{ op: 'add', el: withText(s, text) }],
+          })
+      } else if (blank) {
         ed.commit({
           batchId: newId(),
-          label: 'Add Text',
-          ops: [{ op: 'add', el: withText(s, text) }],
+          label: 'Delete Text',
+          ops: [{ op: 'remove', id }],
         })
-    } else if (blank) {
-      ed.commit({
-        batchId: newId(),
-        label: 'Delete Text',
-        ops: [{ op: 'remove', id }],
-      })
-    } else if (text !== s.el.data.text) {
-      const el = withText(s, text)
-      ed.commit({
-        batchId: newId(),
-        label: 'Edit Text',
-        ops: [
-          {
-            op: 'patch',
-            id,
-            set: { 'data.text': text, w: el.w, h: el.h },
-          },
-        ],
-      })
+      } else if (text !== s.el.data.text) {
+        const el = withText(s, text)
+        ed.commit({
+          batchId: newId(),
+          label: 'Edit Text',
+          ops: [
+            {
+              op: 'patch',
+              id,
+              set: { 'data.text': text, w: el.w, h: el.h },
+            },
+          ],
+        })
+      }
+    } finally {
+      cur = null
+      s.ta.remove()
+      ed.hidden = null
+      ed.invalidate() // the element comes back on the canvas, also when the commit threw
     }
     ed.selection.clear()
     if (ed.scene.els.has(id)) ed.selection.add(id)
     ed.setTool('select')
-    ed.invalidate()
   }
 
   const begin = (el: TextEl, isNew: boolean) => {
     const ta = document.createElement('textarea')
     ta.setAttribute('aria-label', 'Text')
+    ta.maxLength = 100_000 // the schema's text limit: a longer paste would fail the commit and lose everything
     ta.value = el.data.text
-    ta.style.cssText =
-      'position:absolute;z-index:2;margin:0;padding:0;border:0;outline:0;background:transparent;resize:none;overflow:hidden;' +
-      `font-family:${FONT_STACK};line-height:1.4;transform-origin:center;caret-color:${el.style.stroke};color:${el.style.stroke}`
+    ta.style.cssText = `position:absolute;z-index:2;margin:0;padding:0;border:0;outline:0;background:transparent;resize:none;overflow:hidden;font-family:${FONT_STACK};line-height:1.4;transform-origin:center`
+    // Properties, not cssText: a stroke string must not be able to add declarations.
+    ta.style.color = ta.style.caretColor = el.style.stroke
     cur = { ta, el, isNew }
     ed.hidden = isNew ? null : el.id
     ed.host.append(ta)
-    ta.addEventListener('input', sync)
+    ta.addEventListener('input', () => {
+      sync()
+      ed.markDirty() // autosave picks the draft up through getSnapshot
+    })
     ta.addEventListener('blur', finish)
     // Esc/Enter belong to the IME while composing. Safari reports keyCode 229 and fires keydown after compositionend,
     // so the flag is cleared a tick late.
@@ -144,6 +161,7 @@ export const textTool = (ed: Editor): TextTool => {
     id: 'text',
     key: 't',
     edit: (el) => begin(el, false),
+    draft: () => (cur?.ta.value.trim() ? withText(cur, cur.ta.value) : null),
     onPointerDown(e) {
       // Clicking away while editing commits (the blur that follows is then a no-op) and the click goes on to the select tool.
       if (cur) {

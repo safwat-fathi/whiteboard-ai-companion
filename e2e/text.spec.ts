@@ -12,6 +12,32 @@ const texts = (page: Page) =>
       .map((e) => e.data.text),
   )
 
+/** The texts in the stored IndexedDB record (what a reload would load). */
+const storedTexts = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<(string | undefined)[]>((resolve, reject) => {
+        const open = indexedDB.open('whiteboard')
+        open.onerror = () => reject(open.error)
+        open.onsuccess = () => {
+          const db = open.result
+          const get = db
+            .transaction('boards')
+            .objectStore('boards')
+            .get('local')
+          get.onerror = () => reject(get.error)
+          get.onsuccess = () => {
+            db.close()
+            const els: { type: string; data: { text?: string } }[] =
+              get.result?.elements ?? []
+            resolve(
+              els.filter((e) => e.type === 'text').map((e) => e.data.text),
+            )
+          }
+        }
+      }),
+  )
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => (window as unknown as W).__editor)
@@ -45,4 +71,14 @@ test('IME composition is not committed until it ends', async ({ page }) => {
   await page.waitForTimeout(50) // compositionend grace tick
   await page.keyboard.press('Escape')
   expect(await texts(page)).toEqual(['مرحبا'])
+})
+
+test('typed text survives a reload with no Esc or blur', async ({ page }) => {
+  await page.keyboard.type('مرحبا بالعالم')
+  expect(await texts(page)).toEqual([]) // still a draft: the scene is untouched
+  await expect.poll(() => storedTexts(page)).toEqual(['مرحبا بالعالم']) // the 200 ms autosave wrote the draft
+  await page.reload()
+  await page.waitForFunction(() => (window as unknown as W).__editor)
+  await expect.poll(() => texts(page)).toEqual(['مرحبا بالعالم'])
+  await expect(page.locator('textarea')).toHaveCount(0)
 })
