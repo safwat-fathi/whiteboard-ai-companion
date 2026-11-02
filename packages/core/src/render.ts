@@ -54,28 +54,49 @@ type Closable = { close(): void }
  * Text is the only user so far; bitmaps over MAX_BITMAP px a side are drawn directly, never cached.
  */
 export class RenderCache {
-  private buckets = new Map<number, Map<string, { v: number; b: Closable }>>()
+  // Map insertion order is the LRU order: get() re-inserts, eviction takes the first entry.
+  private m = new Map<string, { v: number; b: Closable; bytes: number }>()
+  private total = 0
+
+  constructor(private readonly maxBytes = 256 * 2 ** 20) {}
 
   get<B extends Closable>(
     bucket: number,
     id: string,
     v: number,
   ): B | undefined {
-    const e = this.buckets.get(bucket)?.get(id)
-    return e?.v === v ? (e.b as B) : undefined
+    const k = `${bucket}|${id}`
+    const e = this.m.get(k)
+    if (e?.v !== v) return undefined
+    this.m.delete(k)
+    this.m.set(k, e)
+    return e.b as B
   }
 
-  set(bucket: number, id: string, v: number, b: Closable): void {
-    const m = this.buckets.get(bucket) ?? new Map()
-    this.buckets.set(bucket, m)
-    m.get(id)?.b.close()
-    m.set(id, { v, b })
+  /** `bytes` is the bitmap's memory (w * h * 4); the least recently used entries are closed once the cap is exceeded. */
+  set(bucket: number, id: string, v: number, b: Closable, bytes = 0): void {
+    const k = `${bucket}|${id}`
+    this.drop(k)
+    this.m.set(k, { v, b, bytes })
+    this.total += bytes
+    for (const old of this.m.keys()) {
+      if (this.total <= this.maxBytes || this.m.size <= 1) break
+      this.drop(old)
+    }
+  }
+
+  private drop(k: string): void {
+    const e = this.m.get(k)
+    if (!e) return
+    e.b.close()
+    this.total -= e.bytes
+    this.m.delete(k)
   }
 
   dispose(): void {
-    for (const m of this.buckets.values())
-      for (const e of m.values()) e.b.close()
-    this.buckets.clear()
+    for (const e of this.m.values()) e.b.close()
+    this.m.clear()
+    this.total = 0
   }
 }
 
@@ -131,7 +152,7 @@ function drawText(
         canvas.height = 0
       },
     }
-    cache.set(bucket, el.id, el.v, bmp)
+    cache.set(bucket, el.id, el.v, bmp, pw * ph * 4)
   }
   ctx.drawImage(
     bmp.canvas as unknown as CanvasImageSource,

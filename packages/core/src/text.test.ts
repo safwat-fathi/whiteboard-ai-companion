@@ -2,6 +2,7 @@ import { createCanvas } from '@napi-rs/canvas'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { matchesGolden } from '../test/matchesGolden'
 import { nodePlatform, registerBundledFonts } from './node'
+import { FONT_STACK } from './platform'
 import { RenderCache, render } from './render'
 import { createScene } from './scene'
 import type { Camera, Element, TextData } from './schema'
@@ -100,8 +101,98 @@ describe('layoutText', () => {
     expect(c && c.x * 2 + c.width).toBeCloseTo(200)
   })
 
+  const lay = (text: string, maxWidth?: number) =>
+    layoutText(txt('w', { text, maxWidth }), platform)
+
+  it('breaks a long unbroken word by grapheme, within maxWidth', () => {
+    const l = lay('abcdefghijklmnopqrstuvwxyz'.repeat(3), 100)
+    expect(l.lines.length).toBeGreaterThan(2)
+    for (const x of l.lines) expect(x.width).toBeLessThanOrEqual(100)
+    expect(l.lines.map((x) => x.text).join('')).toBe(
+      'abcdefghijklmnopqrstuvwxyz'.repeat(3),
+    )
+  })
+
+  it('handles a 10,000-char single word quickly', () => {
+    const word = 'a'.repeat(10_000)
+    lay(word.slice(0, 300), 400) // warm-up
+    const t = performance.now()
+    const l = lay(word, 400)
+    expect(performance.now() - t).toBeLessThan(1000)
+    expect(l.lines.map((x) => x.text).join('')).toBe(word)
+    for (const x of l.lines) expect(x.width).toBeLessThanOrEqual(400)
+  })
+
+  it('keeps leading whitespace, blank lines and a trailing newline', () => {
+    expect(lay('  ab').lines[0]?.text).toBe('  ab')
+    expect(lay('a\n\nb').lines.map((x) => x.text)).toEqual(['a', '', 'b'])
+    expect(lay('a\n').lines.map((x) => x.text)).toEqual(['a', ''])
+  })
+
+  it('drops whitespace at a wrap boundary and treats NBSP as unbreakable', () => {
+    const w = platform.measureText(`24px ${FONT_STACK}`, 'hellow') // wider than either word
+    const l = lay('hello world', w + 1)
+    expect(l.lines.map((x) => x.text)).toEqual(['hello', 'world'])
+    expect(lay('hello\u00a0world', w + 1).lines.length).toBeGreaterThan(1)
+    expect(lay('hello\u00a0world', w + 1).lines[0]?.text).not.toBe('hello')
+  })
+
+  it('memoises layout per element object', () => {
+    let calls = 0
+    const counting = {
+      ...platform,
+      measureText: (f: string, t: string) => {
+        calls++
+        return platform.measureText(f, t)
+      },
+    }
+    const scene = createScene(goldenEls())
+    const cache = new RenderCache()
+    const { ctx } = canvas()
+    render(ctx, scene, cam, vp, counting, { cache })
+    const first = calls
+    expect(first).toBeGreaterThan(0)
+    render(ctx, scene, cam, vp, counting, { cache })
+    expect(calls).toBe(first)
+    cache.dispose()
+  })
+
+  it('evicts least recently used bitmaps over the byte cap and re-rasterises', () => {
+    const els = ['a', 'b', 'c'].map((id, i) =>
+      txt(id, { text: 'cap test' }, { x: 10, y: 10 + i * 40 }),
+    )
+    const scene = createScene(els)
+    const cache = new RenderCache(6000) // each bitmap is a few thousand bytes
+    const a = canvas()
+    render(a.ctx, scene, cam, vp, platform, { cache })
+    expect(cache.get(1, 'c', 0)).toBeDefined()
+    expect(cache.get(1, 'a', 0)).toBeUndefined() // oldest evicted
+    const b = canvas()
+    render(b.ctx, scene, cam, vp, platform, { cache })
+    expect(a.c.toBuffer('image/png').equals(b.c.toBuffer('image/png'))).toBe(
+      true,
+    )
+    cache.dispose()
+  })
+
+  it('closes an evicted bitmap', () => {
+    const cache = new RenderCache(10)
+    let closed = 0
+    const bm = () => ({ close: () => closed++ })
+    cache.set(1, 'a', 0, bm(), 8)
+    cache.set(1, 'b', 0, bm(), 8)
+    expect(closed).toBe(1)
+    expect(cache.get(1, 'a', 0)).toBeUndefined()
+    cache.dispose()
+    expect(closed).toBe(2)
+  })
+
   it('lays out 10,000 characters in under 200 ms', () => {
     const text = `${'hello مرحبا world '.repeat(625)}`.slice(0, 10_000)
+    layoutText(
+      txt('warm', { text: text.slice(0, 500), maxWidth: 400 }),
+      platform,
+    )
     for (const maxWidth of [undefined, 400]) {
       const t = performance.now()
       layoutText(txt('big', { text, maxWidth }), platform)
