@@ -20,6 +20,9 @@ const shape = (id: string, z: string): Element => ({
 })
 const batch = (...ops: Op[]): Batch => ({ batchId: 'b', label: 'T', ops })
 
+const noV = (s: ReturnType<typeof createScene>) =>
+  ordered(s).map((e) => ({ ...e, v: 0 }))
+
 // mulberry32 seeded PRNG
 const rng = (seed: number) => () => {
   seed = (seed + 0x6d2b79f5) | 0
@@ -40,7 +43,7 @@ describe('scene', () => {
         return shape(`e${k}`, z)
       })
       const scene = createScene(els)
-      const before = structuredClone(scene)
+      const before = noV(scene)
       const ops: Op[] = []
       for (let k = 0; k < 1 + Math.floor(rand() * 5); k++) {
         const id = `e${Math.floor(rand() * 7)}` // e5, e6 unknown
@@ -66,7 +69,7 @@ describe('scene', () => {
       const { inverse } = applyBatch(scene, batch(...ops))
       if (inverse.ops.length) n++
       if (inverse.ops.length) applyBatch(scene, inverse) // all-dropped batch: empty inverse
-      expect(scene).toEqual(before)
+      expect(noV(scene)).toEqual(before)
     }
     expect(n).toBeGreaterThan(100)
   })
@@ -84,6 +87,28 @@ describe('scene', () => {
         ),
       ),
     ).toThrow(OpError)
+    expect(scene).toEqual(before)
+  })
+
+  it('inverse is field-level: undoing batch 1 keeps batch 2 edits, v keeps rising', () => {
+    const scene = createScene([shape('a', 'a0')])
+    const b1 = applyBatch(scene, batch({ op: 'patch', id: 'a', set: { x: 5 } }))
+    applyBatch(scene, batch({ op: 'patch', id: 'a', set: { y: 7 } }))
+    const vBefore = (scene.els.get('a') as Element).v
+    applyBatch(scene, b1.inverse)
+    const el = scene.els.get('a') as Element
+    expect([el.x, el.y]).toEqual([0, 7])
+    expect(el.v).toBeGreaterThan(vBefore)
+  })
+
+  it('empty inverse means no change', () => {
+    const scene = createScene([shape('a', 'a0')])
+    const before = structuredClone(scene)
+    const { inverse } = applyBatch(
+      scene,
+      batch({ op: 'patch', id: 'zz', set: { x: 1 } }),
+    )
+    expect(inverse.ops).toHaveLength(0)
     expect(scene).toEqual(before)
   })
 
