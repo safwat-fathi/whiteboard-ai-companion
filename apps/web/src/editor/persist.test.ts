@@ -290,6 +290,29 @@ describe('dropped data is backed up before saving starts', () => {
     p.stop()
   })
 
+  it.each([
+    ['no savedAt', undefined],
+    ['a savedAt that is not a number', 'soon'],
+    ['a savedAt of 0', 0],
+  ])(
+    'a stored record with %s still gets one backup key, however often it is reloaded',
+    async (_n, savedAt) => {
+      const undated = rec({ elements: [mk('a', 0, 0), { id: 'x' }], savedAt })
+      await raw('local', undated)
+      for (let i = 0; i < 3; i++) {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(Date.now() + i * 5000)
+        await createPersistence(t.ed, 'local').load()
+        vi.useRealTimers()
+      }
+      expect((await rawKeys()).sort()).toEqual([
+        'local',
+        'local:backup:undated-dropped',
+      ])
+      expect(await rawGet('local:backup:undated-dropped')).toEqual(undated)
+    },
+  )
+
   it('does nothing when nothing was dropped, or when this tab may not write', async () => {
     await raw('local', rec({ elements: [mk('a', 0, 0)] }))
     await createPersistence(t.ed, 'local').load()

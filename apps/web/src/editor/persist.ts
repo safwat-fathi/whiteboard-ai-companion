@@ -117,13 +117,16 @@ const clampCamera = (c: Camera): Camera => ({
   zoom: Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, c.zoom)),
 })
 
-/** Copies a stored record to `${boardId}:backup:${savedAt}-${tag}`; rejects when the write fails. */
+/**
+ * Copies a stored record to `${boardId}:backup:${savedAt}-${tag}`; rejects when the write fails. A record without a valid
+ * savedAt uses 'undated' there, so a fixed tag still gives a fixed key (no new copy per reload).
+ */
 const backup = (
   boardId: string,
   raw: unknown,
   tag: string | number = Date.now(),
 ) => {
-  const at = isObj(raw) && Number(raw.savedAt) ? raw.savedAt : Date.now()
+  const at = isObj(raw) && Number(raw.savedAt) ? raw.savedAt : 'undated'
   return put(`${boardId}:backup:${at}-${tag}`, raw)
 }
 
