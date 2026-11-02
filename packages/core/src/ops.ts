@@ -18,6 +18,7 @@ export class OpError extends Error {
 
 const NOT_PATCHABLE = new Set(['type', 'id', 'v', 'author'])
 
+// Patches address leaf paths only (e.g. `data.kind`), not whole `data`/`style` objects.
 // Follow a dotted path through object schemas (unwrapping optional/nullable); undefined if unknown.
 function leaf(root: z.ZodType, path: string[]): z.ZodType | undefined {
   let s = root
@@ -25,9 +26,9 @@ function leaf(root: z.ZodType, path: string[]): z.ZodType | undefined {
     while (s.def.type === 'optional' || s.def.type === 'nullable')
       s = (s as z.ZodOptional).unwrap() as z.ZodType
     if (s.def.type !== 'object') return undefined
-    const next = (s as z.ZodObject).shape[key] as z.ZodType | undefined
-    if (!next) return undefined
-    s = next
+    const shape = (s as z.ZodObject).shape
+    if (!Object.hasOwn(shape, key)) return undefined
+    s = shape[key] as z.ZodType
   }
   return s
 }
@@ -39,6 +40,8 @@ function checkPatch(set: Record<string, unknown>) {
       ? undefined
       : (leaf(ShapeElementSchema, path) ?? leaf(TextElementSchema, path))
     if (!schema) throw new OpError(key, 'is not a patchable field')
+    // Convention: null on an optional field means "unset it"; required fields reject null.
+    if (value === null && schema.def.type === 'optional') continue
     const r = schema.safeParse(value)
     if (!r.success)
       throw new OpError(key, r.error.issues[0]?.message ?? 'is invalid')

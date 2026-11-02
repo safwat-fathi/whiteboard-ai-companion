@@ -79,6 +79,31 @@ describe('validateBatch', () => {
       validateBatch(add({ style: { ...style, opacity: 2 } })),
     ).toThrow('style.opacity must be 0..1')
   })
+  it('rejects oversize text on add', () => {
+    expect(
+      fieldOf(
+        add({
+          type: 'text',
+          data: {
+            text: 'x'.repeat(100001),
+            size: 16,
+            align: 'left',
+            dir: 'auto',
+          },
+        }),
+      ),
+    ).toBe('data.text')
+  })
+  it('treats null on optional patch fields as unset', () => {
+    for (const k of ['parentId', 'data.start', 'data.radius', 'style.fill'])
+      expect(
+        validateBatch(batch([{ op: 'patch', id: 'a1', set: { [k]: null } }])),
+      ).toBeTruthy()
+    for (const k of ['w', 'style.stroke'])
+      expect(
+        fieldOf(batch([{ op: 'patch', id: 'a1', set: { [k]: null } }])),
+      ).toBe(k)
+  })
   it('rejects empty ops', () => {
     expect(fieldOf(batch([]))).toBe('ops')
   })
