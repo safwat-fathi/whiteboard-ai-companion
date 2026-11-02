@@ -27,8 +27,8 @@ const LRM = '\u200E'
 /**
  * `auto` = direction of the first strong character, `ltr` when there is none. Strong = a letter, or one of the few
  * non-letters the textarea (`unicode-bidi: plaintext`) also treats as strong; digits, other punctuation and marks are skipped.
- * ponytail: an explicit list (no bidi-class lookup in JS regexes); Hebrew geresh/gershayim (U+05F3/4) and a few rare
- * Arabic signs (U+0608, U+060B, U+060D, U+061E) are R/AL too and still skipped.
+ * ponytail: an explicit list (no bidi-class lookup in JS regexes); other R/AL non-letters are still skipped: Hebrew
+ * geresh/gershayim (U+05F3/4) and others, e.g. U+060B Afghani sign, U+066D, U+FDFC Rial sign, Syriac/NKo punctuation.
  */
 export function resolveDir(text: string, dir: TextData['dir']): 'ltr' | 'rtl' {
   if (dir !== 'auto') return dir
