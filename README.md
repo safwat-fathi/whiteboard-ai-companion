@@ -110,7 +110,7 @@ docs/            PLAN.md and docs/plans/*.md
 | **M5**    | **Tutor slice: in-app chat, board context, citations, jump-to-AI**                               |
 | M6–M7     | Ink and charts, hardening, optional MCP adapter                                                  |
 
-About 19.5 full-time-engineer weeks in total; a usable tutor at about week 15. Scope, gates and status per phase: [`ROADMAP.md`](docs/ROADMAP.md).
+The first usable tutor is the end of M5. Scope, gates and status per phase, ordered by dependency: [`ROADMAP.md`](docs/ROADMAP.md).
 
 ## License
 
