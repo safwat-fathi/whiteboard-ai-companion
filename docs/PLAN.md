@@ -1,7 +1,7 @@
 # Whiteboard AI — Study Companion: Validation and Full Plan
 
 > **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** and **Cerebral Valley**.
-> **Status:** revision 1 approved 2026-11-01 · **revision 2** (same day, awaiting your review): no Docker, in-app chat, whiteboard as AI context, plan split into one file per aspect, README added.
+> **Status:** revision 1 approved 2026-11-01 · **revision 2** (same day, approved at Kickoff: ROADMAP K ✔): no Docker, in-app chat, whiteboard as AI context, plan split into one file per aspect, README added.
 > **Inputs:** Claude Doc *Whiteboard Engine: Design Doc* (https://claude.ai/artifact/QPPBUq22meEmXKSmJ856qq, rev 11; all text and both diagrams read) · your answers to its 5 open questions · your brief (student companion, books + RAG, OpenRouter key, "jump to where the AI worked") · your revision-2 resolutions (next section).
 > **Conventions:** **[my call]** = a decision I made for you; override any. **[spike]** = I could not verify it from here; M0 settles it with evidence.
 > **How the plan is organised:** this file is the master (resolutions, validation, product, milestones, decisions). Each aspect has its own file in [`plans/`](./plans/). The section for it below summarises it and names the file.

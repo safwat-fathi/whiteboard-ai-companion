@@ -4,7 +4,7 @@
 
 A personal **study companion**. Upload a book, choose what to study (a topic, a chapter, the whole book) and **chat with an AI tutor inside the app**. The tutor explains on a shared infinite whiteboard with text, LaTeX equations, diagrams, charts and figures from your book, and cites the pages. You can draw and write on the same board, select anything and ask about it, and jump to wherever the AI worked.
 
-> **Status: planning.** No code yet. The full plan is in [`docs/PLAN.md`](docs/PLAN.md); nothing below is runnable until milestone M1.
+> **Status: the editor runs, the tutor does not exist yet.** The from-scratch canvas editor (M1: shapes, Arabic/Latin text, undo, local save) is built; math and images (M2) are on branch `m2-math-images`. The server, the library and the AI tutor are planned (M3 to M5): the Meta Model API pieces below describe the plan and are **[spike]** until they are measured against that API (the M0 spikes ran on OpenRouter). Plan: [`docs/PLAN.md`](docs/PLAN.md); scope, gates and status per phase: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## What it does (v1)
 
@@ -16,6 +16,8 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 - **Simple to run.** No login, no Docker, no database server: Node, one SQLite file, a [Meta Llama API](https://llama.developer.meta.com) key (`META_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings. Runs on a laptop and on a small VPS.
 
 ## Hackathon & Meta AI Integration
+
+> Planned design (M5): nothing in this section is built yet, and the model choices are **[spike]** until re-measured against the Meta Model API.
 
 Whiteboard AI is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (October 26 – November 4, 2026), hosted by **Meta** and **Cerebral Valley**.
 
@@ -61,15 +63,17 @@ Start with the master plan, then the aspect you care about.
 | [`auth-security`](docs/plans/auth-security.md)                     | The access gate, secrets, limits, prompt injection                        |
 | [`testing-spikes`](docs/plans/testing-spikes.md)                   | M0 spikes, risks, test strategy, acceptance scripts                       |
 
-## Quick start (planned; not runnable yet)
+## Quick start
 
-Prerequisites: **Node 22+**, **pnpm 12** (`corepack enable`), a **Meta API key** (`META_API_KEY`), and an **OpenRouter API key** (`OPENROUTER_API_KEY`, for `baai/bge-m3` embeddings). Nothing else.
+Prerequisites: **Node 22+** and **pnpm 12** (`corepack enable`). The editor needs no API keys.
 
 ```
 pnpm install
-cp deploy/.env.example .env      # set META_API_KEY and OPENROUTER_API_KEY
-pnpm dev                         # web http://localhost:3000, server :4000, data in ./data
+pnpm dev                         # the editor at http://localhost:3000 (saved in your browser)
+pnpm test && pnpm e2e            # unit tests, then the browser tests against the dev server
 ```
+
+Planned, from M3 on: `cp .env.example .env` and set `META_API_KEY` (tutor, vision) and `OPENROUTER_API_KEY` (`baai/bge-m3` embeddings); the server on :4000 and the data in `./data` arrive with M3.
 
 Deploying to a VPS (Node + systemd + Caddy, no Docker): [`docs/plans/deployment.md`](docs/plans/deployment.md).
 
