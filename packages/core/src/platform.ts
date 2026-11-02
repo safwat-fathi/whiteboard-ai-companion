@@ -39,6 +39,17 @@ export interface MathProvider {
   ): void
 }
 
+export type ImageBitmapEntry = {
+  bitmap: CanvasImageSource & { close?(): void }
+  w: number
+  h: number
+}
+
+export interface ImageProvider {
+  peek(blobId: string): ImageBitmapEntry | 'missing' | undefined
+  request(blobId: string, onReady: () => void): void
+}
+
 /** What differs between browser and Node. M2 adds `rasterizeSvg` and `math`/`images` providers. */
 export interface Platform {
   createCanvas(w: number, h: number): CanvasLike
@@ -49,6 +60,7 @@ export interface Platform {
   /** render.ts never touches the global Path2D; the browser platform passes `(d) => new Path2D(d)`. */
   createPath2D(d?: string): Path2D
   math?: MathProvider
+  images?: ImageProvider
   rasterizeSvg?(svg: string, w: number, h: number): Promise<CanvasLike>
 }
 

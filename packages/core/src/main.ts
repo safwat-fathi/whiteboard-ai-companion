@@ -1,4 +1,5 @@
 export * from './blob'
+export * from './cachebudget'
 export * from './geometry'
 export * from './index'
 export { OpError, validateBatch } from './ops'

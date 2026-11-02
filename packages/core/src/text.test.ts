@@ -172,7 +172,7 @@ describe('layoutText', () => {
       txt(id, { text: 'cap test' }, { x: 10, y: 10 + i * 40 }),
     )
     const scene = createScene(els)
-    const cache = new RenderCache(6000) // each bitmap is a few thousand bytes
+    const cache = new RenderCache(15000) // each bitmap is ~12 KB; cap holds one at a time
     const a = canvas()
     render(a.ctx, scene, cam, vp, platform, { cache })
     expect(cache.get(1, 'c', 0)).toBeDefined()

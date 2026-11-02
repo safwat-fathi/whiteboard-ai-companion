@@ -7,7 +7,12 @@ import { matchesGolden } from '../test/matchesGolden'
 import { bounds, fitMath } from './geometry'
 import { SpatialIndex } from './index'
 import { nodePlatform, registerBundledFonts } from './node'
-import type { MathEntry, MathProvider, Platform } from './platform'
+import type {
+  ImageProvider,
+  MathEntry,
+  MathProvider,
+  Platform,
+} from './platform'
 import {
   RenderCache,
   render,
@@ -827,5 +832,183 @@ describe('math rendering', () => {
         cache.dispose()
       }
     }
+  })
+})
+
+const BLOB_A = 'a'.repeat(64)
+
+function imageEl(
+  id: string,
+  over: Partial<Element & { type: 'image' }> = {},
+): Element {
+  const base = mk(id, { x: 0, y: 0, w: 200, h: 200 })
+  return {
+    ...base,
+    type: 'image',
+    ...over,
+    data: {
+      blobId: BLOB_A,
+      naturalW: 200,
+      naturalH: 200,
+      ...(over.data ?? {}),
+    },
+  } as Element
+}
+
+function fourColorImage(w = 200, h = 200) {
+  const c = createCanvas(w, h)
+  const g = c.getContext('2d')
+  const hw = w / 2
+  const hh = h / 2
+  // Top-left: red, Top-right: green, Bottom-left: blue, Bottom-right: yellow
+  g.fillStyle = '#ff0000'
+  g.fillRect(0, 0, hw, hh)
+  g.fillStyle = '#00ff00'
+  g.fillRect(hw, 0, hw, hh)
+  g.fillStyle = '#0000ff'
+  g.fillRect(0, hh, hw, hh)
+  g.fillStyle = '#ffff00'
+  g.fillRect(hw, hh, hw, hh)
+  return c
+}
+
+describe('image rendering and RenderCache tiers', () => {
+  it('honours crop rect pixel-exact on a 4-colour test image', () => {
+    const src = fourColorImage(200, 200)
+    const provider: ImageProvider = {
+      peek: () => ({
+        bitmap: src as unknown as CanvasImageSource,
+        w: 200,
+        h: 200,
+      }),
+      request: vi.fn(),
+    }
+    const p: Platform = { ...platform, images: provider }
+    // Crop to bottom-right quadrant (yellow: #ffff00)
+    const el = imageEl('im1', {
+      x: 10,
+      y: 10,
+      w: 100,
+      h: 100,
+      data: {
+        blobId: BLOB_A,
+        naturalW: 200,
+        naturalH: 200,
+        crop: { x: 100, y: 100, w: 100, h: 100 },
+      },
+    })
+    const { c, ctx } = canvas(200, 200)
+    render(ctx, createScene([el]), cam, { width: 200, height: 200, dpr: 1 }, p)
+    const px = c.getContext('2d').getImageData(50, 50, 1, 1).data
+    expect([px[0], px[1], px[2]]).toEqual([255, 255, 0])
+  })
+
+  it('zoom 0.05 draws a <= 1/16 bucket copy, zoom 20 draws the original, and duplicates share one cache entry', () => {
+    const src = fourColorImage(256, 256)
+    const provider: ImageProvider = {
+      peek: () => ({
+        bitmap: src as unknown as CanvasImageSource,
+        w: 256,
+        h: 256,
+      }),
+      request: vi.fn(),
+    }
+    let createdCanvases = 0
+    const p: Platform = {
+      ...platform,
+      images: provider,
+      createCanvas(w, h) {
+        createdCanvases++
+        return platform.createCanvas(w, h)
+      },
+    }
+    const cache = new RenderCache()
+    const el1 = imageEl('i1', {
+      x: 0,
+      y: 0,
+      w: 256,
+      h: 256,
+      data: { blobId: BLOB_A, naturalW: 256, naturalH: 256 },
+    })
+    const el2 = imageEl('i2', {
+      x: 300,
+      y: 0,
+      w: 256,
+      h: 256,
+      z: 'a1',
+      data: { blobId: BLOB_A, naturalW: 256, naturalH: 256 },
+    })
+    const { ctx } = canvas()
+    // At zoom 0.05, ratio = 0.05 -> bucket = 1/16 (0.0625) -> 16x16 bucket bitmap = 1024 bytes
+    render(ctx, createScene([el1, el2]), { x: 0, y: 0, zoom: 0.05 }, vp, p, {
+      cache,
+    })
+    expect(createdCanvases).toBe(1) // shared between el1 and el2
+    expect(cache.bytes).toBe(16 * 16 * 4)
+
+    // At zoom 20, draws original directly without creating a new bucket canvas
+    render(ctx, createScene([el1]), { x: 0, y: 0, zoom: 20 }, vp, p, { cache })
+    expect(createdCanvases).toBe(1)
+    cache.dispose()
+  })
+
+  it('evicts original tier before bucket tier, and does not retain or evict when single entry exceeds cap', () => {
+    const cache = new RenderCache(300)
+    const closed: string[] = []
+    const mkBmp = (name: string) => ({
+      close: () => void closed.push(name),
+    })
+
+    // Add a bucket entry first (older in insertion order) and an original entry second (newer)
+    cache.set(0.5, 'bucket-1', 0, mkBmp('bucket-1'), 100, 'bucket')
+    cache.set(1, 'orig-1', 0, mkBmp('orig-1'), 150, 'original')
+    expect(cache.bytes).toBe(250)
+
+    // Adding bucket-2 (100 bytes) exceeds 300 cap -> must evict orig-1 first even though bucket-1 is older
+    cache.set(0.5, 'bucket-2', 0, mkBmp('bucket-2'), 100, 'bucket')
+    expect(closed).toEqual(['orig-1'])
+    expect(cache.get(0.5, 'bucket-1', 0)).toBeDefined()
+    expect(cache.get(0.5, 'bucket-2', 0)).toBeDefined()
+    expect(cache.bytes).toBe(200)
+
+    // An entry larger than the cap (500 > 300) is not retained and does not evict bucket-1 or bucket-2
+    cache.set(1, 'huge', 0, mkBmp('huge'), 500, 'bucket')
+    expect(cache.get(1, 'huge', 0)).toBeUndefined()
+    expect(cache.get(0.5, 'bucket-1', 0)).toBeDefined()
+    expect(cache.get(0.5, 'bucket-2', 0)).toBeDefined()
+    expect(cache.bytes).toBe(200)
+    expect(cache.cap).toBe(300)
+  })
+
+  it('draws labelled placeholder for missing blob and plain placeholder with single request for undefined', () => {
+    const request = vi.fn()
+    let state: 'missing' | undefined
+    const provider: ImageProvider = {
+      peek: () => state,
+      request,
+    }
+    const p: Platform = { ...platform, images: provider }
+    const el = imageEl('im', { x: 20, y: 20, w: 160, h: 80 })
+    const { c: c1, ctx: ctx1 } = canvas()
+    for (let i = 0; i < 5; i++) {
+      render(ctx1, createScene([el]), cam, vp, p)
+    }
+    expect(request).toHaveBeenCalledTimes(1)
+    const plainPixels = nonWhitePixels(c1)
+    expect(plainPixels).toBeGreaterThan(20)
+
+    state = 'missing'
+    const { c: c2, ctx: ctx2 } = canvas()
+    expect(() => render(ctx2, createScene([el]), cam, vp, p)).not.toThrow()
+    const interiorDark = (cv: ReturnType<typeof canvas>['c']) => {
+      const d = cv.getContext('2d').getImageData(30, 30, 140, 60).data
+      let n = 0
+      for (let i = 0; i < d.length; i += 4) {
+        if ((d[i] ?? 255) < 150) n++
+      }
+      return n
+    }
+    expect(interiorDark(c1)).toBe(0)
+    expect(interiorDark(c2)).toBeGreaterThan(20)
   })
 })

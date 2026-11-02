@@ -3,6 +3,7 @@ import type { SpatialIndex } from './index'
 import {
   type CanvasLike,
   FONT_STACK,
+  type ImageProvider,
   type MathBitmapSource,
   type MathPaths,
   type MathProvider,
@@ -56,13 +57,18 @@ export const zoomBucket = (zoom: number): number =>
 
 type Closable = { close(): void }
 
+export type CacheTier = 'bucket' | 'original'
+
 /**
- * Bitmaps for expensive elements (text, later math/images), keyed (zoomBucket, id, v).
- * Text is the only user so far; bitmaps over MAX_BITMAP px a side are drawn directly, never cached.
+ * Bitmaps for expensive elements (text, math, images), keyed (zoomBucket, id, v).
+ * Bitmaps over MAX_BITMAP px a side or larger than `cap` are drawn directly and never retained.
  */
 export class RenderCache {
-  // Map insertion order is the LRU order: get() re-inserts, eviction takes the first entry.
-  private m = new Map<string, { v: number; b: Closable; bytes: number }>()
+  // Map insertion order is the LRU order: get() re-inserts, eviction takes 'original' tier first then 'bucket'.
+  private m = new Map<
+    string,
+    { v: number; b: Closable; bytes: number; tier: CacheTier }
+  >()
   private total = 0
 
   constructor(private readonly maxBytes = 1024 * 2 ** 20) {}
@@ -70,6 +76,11 @@ export class RenderCache {
   /** Bytes currently held (sum of the `bytes` given to set()). */
   get bytes(): number {
     return this.total
+  }
+
+  /** Maximum byte budget configured for this cache. */
+  get cap(): number {
+    return this.maxBytes
   }
 
   get<B extends Closable>(
@@ -85,15 +96,38 @@ export class RenderCache {
     return e.b as B
   }
 
-  /** `bytes` is the bitmap's memory (w * h * 4); the least recently used entries are closed once the cap is exceeded. */
-  set(bucket: number, id: string, v: number, b: Closable, bytes = 0): void {
+  /** `bytes` is the bitmap's memory (w * h * 4); 'original' tier entries are evicted before 'bucket' entries. */
+  set(
+    bucket: number,
+    id: string,
+    v: number,
+    b: Closable,
+    bytes = 0,
+    tier: CacheTier = 'bucket',
+  ): void {
     const k = `${bucket}|${id}`
     this.drop(k)
-    this.m.set(k, { v, b, bytes })
+    if (bytes > this.maxBytes) return
+    this.m.set(k, { v, b, bytes, tier })
     this.total += bytes
-    for (const old of this.m.keys()) {
-      if (this.total <= this.maxBytes || this.m.size <= 1) break
-      this.drop(old)
+    while (this.total > this.maxBytes && this.m.size > 1) {
+      let victim: string | undefined
+      for (const [key, entry] of this.m) {
+        if (key !== k && entry.tier === 'original') {
+          victim = key
+          break
+        }
+      }
+      if (!victim) {
+        for (const key of this.m.keys()) {
+          if (key !== k) {
+            victim = key
+            break
+          }
+        }
+      }
+      if (!victim) break
+      this.drop(victim)
     }
   }
 
@@ -197,7 +231,17 @@ function drawText(
         }
       },
     }
-    cache.set(bucket, el.id, el.v, bmp, pw * ph * 4)
+    const byteSize = pw * ph * 4
+    cache.set(bucket, el.id, el.v, bmp, byteSize)
+    ctx.drawImage(
+      bmp.canvas as unknown as CanvasImageSource,
+      el.x,
+      el.y,
+      bmp.pw / bucket,
+      bmp.ph / bucket,
+    )
+    if (byteSize > cache.cap) bmp.close()
+    return
   }
   ctx.drawImage(
     bmp.canvas as unknown as CanvasImageSource,
@@ -421,9 +465,117 @@ function drawMath(
         bmp.close?.()
       },
     }
-    cache.set(bucket, el.id, el.v, item, pw * ph * 4)
+    const byteSize = pw * ph * 4
+    cache.set(bucket, el.id, el.v, item, byteSize)
+    ctx.drawImage(bmp, el.x + dx, el.y + dy, dw, dh)
+    if (byteSize > cache.cap) item.close()
+    return
   }
   ctx.drawImage(bmp, el.x + dx, el.y + dy, dw, dh)
+}
+
+type ImageEl = Element & { type: 'image' }
+type ImageBucketBitmap = {
+  bmp: CanvasImageSource
+  close(): void
+}
+
+const imagePending = new WeakMap<ImageProvider, Set<string>>()
+
+function drawImage(
+  ctx: CanvasRenderingContext2D,
+  el: ImageEl,
+  platform: Platform,
+  scale: number,
+  cache?: RenderCache,
+) {
+  const provider = platform.images
+  const { blobId, naturalW, naturalH, crop } = el.data
+  const entry = provider?.peek(blobId)
+  if (entry === undefined) {
+    drawPlaceholder(ctx, el.x, el.y, el.w, el.h, scale)
+    if (provider) {
+      let pend = imagePending.get(provider)
+      if (!pend) {
+        pend = new Set()
+        imagePending.set(provider, pend)
+      }
+      if (!pend.has(blobId)) {
+        pend.add(blobId)
+        provider.request(blobId, () => {
+          pend?.delete(blobId)
+        })
+      }
+    }
+    return
+  }
+  imagePending.get(provider as ImageProvider)?.delete(blobId)
+
+  if (entry === 'missing') {
+    drawPlaceholder(
+      ctx,
+      el.x,
+      el.y,
+      el.w,
+      el.h,
+      scale,
+      'missing image',
+      platform,
+    )
+    return
+  }
+
+  const sx = crop ? crop.x : 0
+  const sy = crop ? crop.y : 0
+  const sw = crop ? crop.w : entry.w || naturalW
+  const sh = crop ? crop.h : entry.h || naturalH
+  if (sw <= 0 || sh <= 0) return
+
+  const ratio = Math.max((el.w * scale) / sw, (el.h * scale) / sh)
+  const bucket = zoomBucket(ratio)
+
+  // Zoom-in or 1:1 with source draws the original bitmap directly
+  if (bucket >= 1 || !cache) {
+    ctx.drawImage(entry.bitmap, sx, sy, sw, sh, el.x, el.y, el.w, el.h)
+    return
+  }
+
+  const cropKey = crop ? `${crop.x},${crop.y},${crop.w},${crop.h}` : 'full'
+  const cacheId = `img:${blobId}:${cropKey}`
+  let hit = cache.get<ImageBucketBitmap>(bucket, cacheId, 0)
+  if (!hit) {
+    const bw = Math.max(1, Math.ceil(sw * bucket))
+    const bh = Math.max(1, Math.ceil(sh * bucket))
+    if (bw > MAX_BITMAP || bh > MAX_BITMAP) {
+      ctx.drawImage(entry.bitmap, sx, sy, sw, sh, el.x, el.y, el.w, el.h)
+      return
+    }
+    const c = platform.createCanvas(bw, bh)
+    const g = c.getContext('2d') as CanvasRenderingContext2D
+    g.imageSmoothingEnabled = true
+    g.imageSmoothingQuality = 'high'
+    g.drawImage(entry.bitmap, sx, sy, sw, sh, 0, 0, bw, bh)
+    const frozen = (
+      c as { transferToImageBitmap?: () => ImageBitmap }
+    ).transferToImageBitmap?.()
+    hit = {
+      bmp: (frozen ?? c) as unknown as CanvasImageSource,
+      close() {
+        if (frozen) frozen.close()
+        else {
+          c.width = 0
+          c.height = 0
+        }
+      },
+    }
+    const byteSize = bw * bh * 4
+    cache.set(bucket, cacheId, 0, hit, byteSize, 'bucket')
+    ctx.drawImage(hit.bmp, el.x, el.y, el.w, el.h)
+    if (byteSize > cache.cap) hit.close()
+    return
+  }
+
+  ctx.drawImage(hit.bmp, el.x, el.y, el.w, el.h)
 }
 
 // Geometry in world space, built once per element object (elements are replaced, never mutated). Keyed per platform
@@ -585,7 +737,7 @@ export function render(
   for (const el of visible) {
     // save/restore (and the dash array) only for elements that change alpha, dash or transform: at 5,000 elements
     // they cost about a third of a frame's JS time (task 12). Plain elements set every style they use.
-    if (el.type === 'text' || el.type === 'math') {
+    if (el.type === 'text' || el.type === 'math' || el.type === 'image') {
       const state = el.rotation !== 0 || el.style.opacity !== 1
       if (state) {
         ctx.save()
@@ -599,7 +751,8 @@ export function render(
         }
       }
       if (el.type === 'text') drawText(ctx, el, platform, s, opts.cache)
-      else drawMath(ctx, el, platform, s, opts.cache)
+      else if (el.type === 'math') drawMath(ctx, el, platform, s, opts.cache)
+      else drawImage(ctx, el, platform, s, opts.cache)
       if (state) ctx.restore()
       drawn++
       continue
