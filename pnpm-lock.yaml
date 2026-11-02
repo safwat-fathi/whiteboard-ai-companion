@@ -181,6 +181,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@napi-rs/canvas':
+        specifier: 1.1.0
+        version: 1.1.0
       '@whiteboard/core':
         specifier: workspace:*
         version: link:../../packages/core

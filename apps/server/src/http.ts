@@ -15,6 +15,7 @@ import type { BoardService } from './board-service'
 import type { Config } from './config'
 import { ScopeSchema } from './db'
 import { ApiError, apiError } from './errors'
+import { defaultRect, renderBoardPng } from './export'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 export const MAX_JSON_BYTES = 1024 * 1024 // 1 MB
@@ -144,6 +145,15 @@ function sendBlob(
   )
 }
 
+/** A board id from a path segment; a malformed percent-escape is just an unknown board. */
+function boardId(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    throw apiError('not_found', 'no such board')
+  }
+}
+
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const r = schema.safeParse(value)
   if (r.success) return r.data
@@ -249,13 +259,48 @@ export function createHttpServer(deps: HttpDeps): http.Server {
         const b = parse(CreateBoard, await readJson(req))
         return send(res, 201, boards.createBoard(b.title, b.scope))
       }
-      if (seg.length === 3) {
-        let id: string
-        try {
-          id = decodeURIComponent(seg[2] as string)
-        } catch {
-          throw apiError('not_found', 'no such board')
+      if (seg.length === 4 && seg[3] === 'export.png' && method === 'GET') {
+        const id = boardId(seg[2] as string)
+        const q = new URL(req.url ?? '/', 'http://localhost').searchParams
+        const num = (k: string): number | undefined => {
+          const v = q.get(k)
+          if (v === null) return undefined
+          const n = Number(v)
+          if (v.trim() === '' || !Number.isFinite(n))
+            throw apiError(
+              'validation_failed',
+              `${k} must be a finite number`,
+              { field: k },
+            )
+          return n
         }
+        const [x, y, w, h] = [num('x'), num('y'), num('w'), num('h')]
+        const given = [x, y, w, h].filter((v) => v !== undefined).length
+        if (given !== 0 && given !== 4)
+          throw apiError('validation_failed', 'x, y, w and h go together', {
+            field: 'rect',
+          })
+        const elements = boards.scene(id).elements
+        const rect =
+          x !== undefined &&
+          y !== undefined &&
+          w !== undefined &&
+          h !== undefined
+            ? { x, y, w, h }
+            : defaultRect(elements)
+        const png = await renderBoardPng(elements, rect, num('width') ?? 1024, {
+          blobs: deps.blobs,
+        })
+        res.writeHead(200, {
+          'Content-Type': 'image/png',
+          'Content-Length': String(png.length),
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        })
+        return void res.end(png)
+      }
+      if (seg.length === 3) {
+        const id = boardId(seg[2] as string)
         const missing = () => apiError('not_found', `unknown board ${id}`)
         if (method === 'GET') {
           const b = boards.getBoard(id)
