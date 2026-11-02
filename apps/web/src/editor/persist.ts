@@ -7,7 +7,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from '@whiteboard/core'
-import type { Editor } from './editor'
+import type { Editor, Snapshot } from './editor'
 
 export const SCHEMA_VERSION = 1
 const DB = 'whiteboard'
@@ -41,6 +41,8 @@ export type LoadResult =
       undoDropped: boolean
       /** The stored value as found, for the backup copy when something was dropped. */
       raw: unknown
+      /** The backup of the dropped data could not be written: the board is loaded, but saving stays blocked. */
+      backupFailed?: true
     }
   | { status: 'empty' }
   | {
@@ -117,13 +119,16 @@ const clampCamera = (c: Camera): Camera => ({
   zoom: Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, c.zoom)),
 })
 
-/** Copies a stored record to `${boardId}:backup:${savedAt}-${tag}`; rejects when the write fails. */
+/**
+ * Copies a stored record to `${boardId}:backup:${savedAt}-${tag}`; rejects when the write fails. A record without a valid
+ * savedAt uses 'undated' there, so a fixed tag still gives a fixed key (no new copy per reload).
+ */
 const backup = (
   boardId: string,
   raw: unknown,
   tag: string | number = Date.now(),
 ) => {
-  const at = isObj(raw) && Number(raw.savedAt) ? raw.savedAt : Date.now()
+  const at = isObj(raw) && Number(raw.savedAt) ? raw.savedAt : 'undated'
   return put(`${boardId}:backup:${at}-${tag}`, raw)
 }
 
@@ -253,37 +258,46 @@ export type PersistenceOpts = {
 /**
  * Binds an Editor to one stored board.
  *  load()  reads the record and applies it to the editor (unreadable => editor stays empty and saving is blocked).
- *          If elements or undo entries were dropped it first keeps the stored record as a backup (`canWrite` false skips that
- *          write, for a read-only tab); a failed backup blocks saving like an unreadable record.
+ *          If elements or undo entries were dropped it first keeps the stored record as a backup at
+ *          `${boardId}:backup:${savedAt}-dropped` ('undated' if it has no valid savedAt; a reload before the next save rewrites
+ *          the same key; `canWrite` false skips that write, for a read-only tab); when that write fails the valid elements are still loaded, saving stays blocked
+ *          and the result is 'ok' with `backupFailed`.
  *  start() begins autosave: commits (200 ms) and camera moves (500 ms) debounced; flush on visibilitychange hidden / pagehide.
- *  stop()  ends an open edit (the text tool commits it), flushes anything pending, then detaches all listeners (idempotent).
+ *  stop()  in this order: snapshots the board (open draft included) if a save is pending, ends an open edit (the text tool
+ *          commits it), detaches all listeners, then writes what is pending (idempotent). An error from any of those steps is
+ *          logged, never rethrown; if the snapshot was taken and ending the edit failed, that snapshot is what gets written,
+ *          so the draft stays saved.
  *          Call it before editor.dispose(), which cancels the tool after the listeners are gone.
  *  flush() writes now if there are unsaved changes; a failed write stays pending and retries on the next change.
- *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}-${Date.now()}`; if that write fails it stays blocked.
+ *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}-${Date.now()}` ('undated' in place of
+ *          savedAt when it has none); if that write fails it stays blocked.
  */
 export function createPersistence(
   editor: Editor,
   boardId: string,
   opts: PersistenceOpts = {},
 ) {
-  let blocked: Extract<LoadResult, { status: 'unreadable' }> | null = null
+  // Saving is blocked either by an unreadable record, or by a failed backup of dropped data (the board itself is loaded).
+  let blocked:
+    | Extract<LoadResult, { status: 'unreadable' }>
+    | { status: 'backup-failed' }
+    | null = null
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | undefined
   let pending = 0
   let chain: Promise<void> = Promise.resolve()
   let detach: (() => void) | undefined
 
-  const flush = (): Promise<void> => {
+  const write = (snap?: Snapshot): Promise<void> => {
     clearTimeout(timer)
     timer = undefined
     if (blocked || !dirty) return chain
     dirty = false
-    const snap = editor.getSnapshot()
     const record: BoardRecord = {
       version: SCHEMA_VERSION,
       boardId,
       savedAt: Date.now(),
-      ...snap,
+      ...(snap ?? editor.getSnapshot()),
     }
     chain = chain.then(() =>
       saveBoard(boardId, record).then(opts.onSaved, (err) => {
@@ -294,6 +308,7 @@ export function createPersistence(
     )
     return chain
   }
+  const flush = () => write()
   const schedule = (delay: number) => {
     if (timer && pending < delay) return // an earlier deadline is already set
     clearTimeout(timer)
@@ -308,14 +323,19 @@ export function createPersistence(
   return {
     async load(canWrite = true): Promise<LoadResult> {
       let r = await loadBoard(boardId)
-      // Saving would erase what was dropped for good: keep the stored record first. If that fails, stay blocked, board untouched.
+      // Saving would erase what was dropped for good: keep the stored record first. If that fails, show the valid part but stay blocked, stored record untouched.
       if (r.status === 'ok' && canWrite && (r.dropped || r.undoDropped))
         try {
           await backup(boardId, r.raw, 'dropped') // a fixed tag: reloading before the next save rewrites the same key
         } catch {
-          r = { status: 'unreadable', reason: 'unavailable', raw: r.raw }
+          r = { ...r, backupFailed: true }
         }
-      blocked = r.status === 'unreadable' ? r : null
+      blocked =
+        r.status === 'unreadable'
+          ? r
+          : r.status === 'ok' && r.backupFailed
+            ? { status: 'backup-failed' }
+            : null
       if (r.status === 'ok')
         editor.setScene(
           r.record.elements,
@@ -343,18 +363,30 @@ export function createPersistence(
       }
     },
     stop() {
+      let before: Snapshot | undefined
+      let failed = false
       try {
-        // An open text edit commits on cancel: do it while the listeners are still attached so the flush below saves it.
+        // The board with the open draft as it stands now: a failing commit below drops the draft, and the final write must not
+        // overwrite the autosaved draft with a board that lacks it.
+        if (detach && (timer || dirty)) before = editor.getSnapshot()
+        // An open text edit commits on cancel: do it while the listeners are still attached so the write below saves it.
         if (detach) editor.tool.onCancel?.()
-      } finally {
-        if (timer || dirty) void flush()
-        detach?.()
-        detach = undefined
+      } catch (err) {
+        failed = true
+        console.error('ending the open edit failed', err) // never rethrown: the page cleanup must go on to dispose()
+      }
+      const unsaved = timer || dirty
+      detach?.() // before the write, so nothing that can still throw leaves the listeners attached
+      detach = undefined
+      try {
+        if (unsaved) void write(failed ? before : undefined) // throws synchronously when the snapshot does
+      } catch (err) {
+        console.error('the final save failed', err)
       }
     },
     flush,
     async startEmptyKeepingBackup(): Promise<void> {
-      if (!blocked) return
+      if (blocked?.status !== 'unreadable') return // a failed backup stays blocked: the dropped data is not saved anywhere else
       const raw = blocked.raw
       if (raw !== undefined) await backup(boardId, raw) // throws => stay blocked, original untouched
       blocked = null

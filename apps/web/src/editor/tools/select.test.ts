@@ -284,6 +284,14 @@ describe('select tool', () => {
     expect([...ed.selection]).toEqual(['a', 'b'])
   })
 
+  it('AltGr+A on a Polish layout (ctrl+alt, key ą) does not select all', () => {
+    put(ed, mk('a', 0, 0), mk('b', 200, 0))
+    expect(
+      key(ed.tool, 'ą', { ctrlKey: true, altKey: true, code: 'KeyA' }),
+    ).toBe(false)
+    expect([...ed.selection]).toEqual([])
+  })
+
   it('dragging an arrow endpoint handle unbinds in free space and rebinds on a shape', () => {
     flow()
     put(ed, mk('c', 300, 200))
@@ -325,17 +333,24 @@ describe('select tool', () => {
     const labels = (c: { mock: { calls: { 0: { label: string } }[] } }) =>
       c.mock.calls.map((a) => a[0].label)
 
-    it('dragging where the se/e/s handles would be never resizes', () => {
+    it.each([
+      ['se', 180, 128],
+      ['e', 180, 114],
+      ['s', 140, 128],
+    ])('dragging where the %s handle would be never resizes', (_h, x, y) => {
       put(ed, mkText('t', 100, 100)) // 80 x 28
       sel('t')
       const commit = vi.spyOn(ed, 'commit')
-      for (const from of [
-        [180, 128], // se
-        [180, 114], // e
-        [140, 128], // s
-      ] as [number, number][])
-        drag(ed.tool, [from, [from[0] + 40, from[1] + 30]])
+      drag(ed.tool, [
+        [x as number, y as number],
+        [(x as number) + 40, (y as number) + 30],
+      ])
       expect(labels(commit)).not.toContain('Resize')
+      // whatever the drag did (it may move the text), no committed op touches the size
+      const sizeOps = commit.mock.calls
+        .flatMap((c) => c[0].ops)
+        .filter((op) => op.op === 'patch' && ('w' in op.set || 'h' in op.set))
+      expect(sizeOps).toEqual([])
       expect([get('t').w, get('t').h]).toEqual([80, 28])
     })
 

@@ -50,6 +50,18 @@ describe('resolveDir', () => {
     expect(resolveDir('\uFEFFمرحبا', 'auto')).toBe('rtl')
     expect(resolveDir('\uFB50\uFE8D', 'auto')).toBe('rtl') // Arabic presentation forms stay RTL letters
   })
+  it('non-letters of bidi class R/AL and the direction marks decide like letters (as the textarea does)', () => {
+    expect(resolveDir('\u061F hello', 'auto')).toBe('rtl') // Arabic question mark
+    expect(resolveDir('\u061B abc', 'auto')).toBe('rtl') // Arabic semicolon
+    expect(resolveDir('\u061C abc', 'auto')).toBe('rtl') // Arabic letter mark
+    expect(resolveDir('\u06D4 abc', 'auto')).toBe('rtl') // Arabic full stop
+    for (const ch of ['\u05BE', '\u05C0', '\u05C3', '\u05C6']) // Hebrew maqaf, paseq, sof pasuq, nun hafukha
+      expect(resolveDir(`${ch} abc`, 'auto')).toBe('rtl')
+    expect(resolveDir('\u200Fabc', 'auto')).toBe('rtl') // RLM
+    expect(resolveDir('\u200Eمرحبا', 'auto')).toBe('ltr') // LRM
+    expect(resolveDir('1 \u061F abc', 'auto')).toBe('rtl') // after skipped digits
+    expect(resolveDir('abc \u061F', 'auto')).toBe('ltr') // the first strong one wins
+  })
   it('honours an explicit dir', () => {
     expect(resolveDir('hello', 'rtl')).toBe('rtl')
     expect(resolveDir('مرحبا', 'ltr')).toBe('ltr')

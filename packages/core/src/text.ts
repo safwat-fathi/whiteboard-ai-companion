@@ -19,14 +19,22 @@ const trimBreak = (s: string) => s.replace(/[ \t]+$/, '')
 const LINE_HEIGHT = 1.4
 // RTL blocks: Hebrew..Arabic Extended-A, Hebrew/Arabic presentation forms A, Arabic presentation forms B (without U+FEFF, a format char).
 const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE]/u
+// Non-letters that are strong right-to-left: Hebrew maqaf/paseq/sof pasuq/nun hafukha, Arabic semicolon/letter mark/
+// question mark/full stop, RLM. LRM is the strong left-to-right one.
+const STRONG_RTL = /[\u05BE\u05C0\u05C3\u05C6\u061B\u061C\u061F\u06D4\u200F]/u
+const LRM = '\u200E'
 
 /**
- * `auto` = direction of the first strong character (a letter; digits, punctuation and marks are skipped),
- * `ltr` when there is none.
+ * `auto` = direction of the first strong character, `ltr` when there is none. Strong = a letter, or one of the few
+ * non-letters the textarea (`unicode-bidi: plaintext`) also treats as strong; digits, other punctuation and marks are skipped.
+ * ponytail: an explicit list (no bidi-class lookup in JS regexes); other R/AL non-letters are still skipped: Hebrew
+ * geresh/gershayim (U+05F3/4) and others, e.g. U+060B Afghani sign, U+066D, U+FDFC Rial sign, Syriac/NKo punctuation.
  */
 export function resolveDir(text: string, dir: TextData['dir']): 'ltr' | 'rtl' {
   if (dir !== 'auto') return dir
   for (const ch of text) {
+    if (STRONG_RTL.test(ch)) return 'rtl'
+    if (ch === LRM) return 'ltr'
     if (/\p{L}/u.test(ch)) return RTL.test(ch) ? 'rtl' : 'ltr'
   }
   return 'ltr'

@@ -85,12 +85,18 @@ export default function Page() {
         return // a read-only tab never writes
       }
       p.start()
-      if (r.status === 'ok' && r.dropped)
+      if (r.status === 'ok' && r.backupFailed)
+        note('backup', {
+          text: 'Could not keep a backup copy of your board, so changes are NOT being saved. Reload to try again.',
+          role: 'alert',
+          action: { label: 'Reload', run: reload },
+        })
+      if (r.status === 'ok' && r.dropped && !r.backupFailed)
         note('dropped', {
           text: `${r.dropped} invalid elements were dropped (a backup copy of the stored board was kept)`,
           role: 'status',
         })
-      if (r.status === 'ok' && r.undoDropped)
+      if (r.status === 'ok' && r.undoDropped && !r.backupFailed)
         note('undo-dropped', {
           text: 'Some undo history could not be restored and was dropped (a backup copy of the stored board was kept)',
           role: 'status',
@@ -119,9 +125,16 @@ export default function Page() {
     })()
     return () => {
       stop = true
-      persistence?.stop() // commits an open text edit and saves it; only then dispose() tears the editor down
-      editor?.dispose()
-      releaseBoardLock(BOARD)
+      // Each step in its own try/finally: a throw must not skip dispose() or leave the lock held (a remount would be read-only).
+      try {
+        persistence?.stop() // commits an open text edit and saves it; only then dispose() tears the editor down
+      } finally {
+        try {
+          editor?.dispose()
+        } finally {
+          releaseBoardLock(BOARD)
+        }
+      }
     }
   }, [])
   return (

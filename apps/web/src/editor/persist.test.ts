@@ -290,6 +290,29 @@ describe('dropped data is backed up before saving starts', () => {
     p.stop()
   })
 
+  it.each([
+    ['no savedAt', undefined],
+    ['a savedAt that is not a number', 'soon'],
+    ['a savedAt of 0', 0],
+  ])(
+    'a stored record with %s still gets one backup key, however often it is reloaded',
+    async (_n, savedAt) => {
+      const undated = rec({ elements: [mk('a', 0, 0), { id: 'x' }], savedAt })
+      await raw('local', undated)
+      for (let i = 0; i < 3; i++) {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(Date.now() + i * 5000)
+        await createPersistence(t.ed, 'local').load()
+        vi.useRealTimers()
+      }
+      expect((await rawKeys()).sort()).toEqual([
+        'local',
+        'local:backup:undated-dropped',
+      ])
+      expect(await rawGet('local:backup:undated-dropped')).toEqual(undated)
+    },
+  )
+
   it('does nothing when nothing was dropped, or when this tab may not write', async () => {
     await raw('local', rec({ elements: [mk('a', 0, 0)] }))
     await createPersistence(t.ed, 'local').load()
@@ -299,21 +322,27 @@ describe('dropped data is backed up before saving starts', () => {
     expect(await rawKeys()).toEqual(['local'])
   })
 
-  it('a failed backup write blocks saving and leaves the stored record untouched', async () => {
+  it('a failed backup write still loads the valid elements, blocks saving and leaves the stored record untouched', async () => {
     await raw('local', original())
     vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementationOnce(() => {
       throw new DOMException('full', 'QuotaExceededError')
     })
     const p = createPersistence(t.ed, 'local')
     expect(await p.load()).toMatchObject({
-      status: 'unreadable',
-      reason: 'unavailable',
+      status: 'ok',
+      dropped: 1,
+      backupFailed: true,
     })
+    expect([...t.ed.scene.els.keys()]).toEqual(['a']) // the board is not empty
     p.start()
     put(t.ed, mk('b', 1, 1))
     await p.flush()
+    await p.startEmptyKeepingBackup() // not an unreadable record: nothing to unblock
+    put(t.ed, mk('c', 2, 2))
+    await p.flush()
     p.stop()
     expect(await rawGet('local')).toEqual(original())
+    expect(await rawKeys()).toEqual(['local'])
   })
 })
 
@@ -359,12 +388,16 @@ describe('autosave scheduling', () => {
     ],
     ['pagehide', () => window.dispatchEvent(new Event('pagehide'))],
   ])('flushes immediately on %s', async (_n, fire) => {
+    await loadBoard('local') // creates the database, so polling it below cannot race the first write
+    vi.useFakeTimers(FAKE) // the 200 ms debounce must not be what saves
     const p = createPersistence(t.ed, 'local')
     p.start()
     put(t.ed, mk('a', 0, 0))
     fire()
-    await p.flush()
-    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+    vi.useRealTimers() // drops the pending fake debounce timer; no explicit flush: only the event's own flush can write
+    await vi.waitFor(async () =>
+      expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] }),
+    )
     p.stop()
     Object.defineProperty(document, 'visibilityState', {
       value: 'visible',
@@ -555,21 +588,22 @@ describe('an open text draft', () => {
   })
 
   it('pagehide flushes the draft; an empty draft adds no element', async () => {
+    // Types `v`, fires a real pagehide with the debounce timer faked and then dropped, and waits for the store: nothing
+    // but the pagehide listener can have saved it (no explicit flush).
+    const hideWith = async (v: string, want: string[]) => {
+      vi.useFakeTimers(FAKE)
+      typeInto(v)
+      window.dispatchEvent(new Event('pagehide'))
+      vi.useRealTimers()
+      await vi.waitFor(async () => expect(await stored()).toEqual(want))
+    }
+    await loadBoard('local') // creates the database, so polling it cannot race the first write
     const p = createPersistence(t.ed, 'local')
     p.start()
     startText()
-    typeInto('  ')
-    window.dispatchEvent(new Event('pagehide'))
-    await p.flush()
-    expect(await stored()).toEqual([]) // a board with no elements: no empty text element
-    typeInto('hello')
-    window.dispatchEvent(new Event('pagehide'))
-    await p.flush()
-    expect(await stored()).toEqual(['hello'])
-    typeInto('')
-    window.dispatchEvent(new Event('pagehide'))
-    await p.flush()
-    expect(await stored()).toEqual([])
+    await hideWith('  ', []) // a board with no elements: no empty text element
+    await hideWith('hello', ['hello'])
+    await hideWith('', [])
     p.stop()
   })
 
@@ -618,6 +652,97 @@ describe('stop', () => {
     }
     expect(saved.elements.map((x) => x.data.text)).toEqual(['last words'])
     expect(saved.undo.undo.map((x) => x.original.label)).toEqual(['Add Text'])
+  })
+})
+
+describe('stop when ending the open edit throws', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('does not rethrow, still flushes the pending change and detaches', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    put(t.ed, mk('a', 0, 0))
+    vi.spyOn(t.ed.tool, 'onCancel').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    expect(() => p.stop()).not.toThrow()
+    expect(err).toHaveBeenCalled() // logged, not swallowed silently
+    await p.flush() // waits for the write stop() started
+    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+    put(t.ed, mk('b', 20, 0)) // detached: this change is not picked up
+    await p.flush()
+    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+    expect(() => p.stop()).not.toThrow() // still idempotent
+  })
+
+  it('a snapshot that throws before the edit is ended is logged too, and the listeners still detach', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    put(t.ed, mk('a', 0, 0))
+    vi.spyOn(t.ed, 'getSnapshot').mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    expect(() => p.stop()).not.toThrow()
+    expect(err).toHaveBeenCalled()
+    await p.flush()
+    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+    put(t.ed, mk('b', 20, 0)) // detached: not picked up
+    await p.flush()
+    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+  })
+
+  it('a snapshot that keeps throwing never escapes stop(), and the listeners are already detached when the write fails', async () => {
+    vi.useFakeTimers(FAKE)
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    put(t.ed, mk('a', 0, 0))
+    vi.spyOn(t.ed, 'getSnapshot').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    expect(() => p.stop()).not.toThrow() // the final write throws too
+    expect(err).toHaveBeenCalledTimes(2) // the snapshot before ending the edit, and the write
+    expect(vi.getTimerCount()).toBe(0)
+    put(t.ed, mk('b', 20, 0))
+    expect(vi.getTimerCount()).toBe(0) // detached: this change schedules nothing
+    expect(() => p.stop()).not.toThrow()
+  })
+
+  it('a commit that throws while ending a text edit saves the board with the draft, not without it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const draft = async () =>
+      (
+        (await rawGet('local')) as { elements: { data: { text: string } }[] }
+      ).elements.map((e) => e.data.text)
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    t.ed.setTool('text')
+    const at = { x: 9, y: 9 }
+    const e = {
+      screen: at,
+      world: at,
+      shift: false,
+      alt: false,
+      button: 0,
+      pointerType: 'mouse',
+    }
+    t.ed.tool.onPointerDown(e)
+    t.ed.tool.onPointerUp(e)
+    const ta = t.ed.host.querySelector('textarea') as HTMLTextAreaElement
+    ta.value = 'saved by the debounce'
+    ta.dispatchEvent(new Event('input'))
+    await p.flush()
+    expect(await draft()).toEqual(['saved by the debounce'])
+    ta.value = 'typed after that'
+    ta.dispatchEvent(new Event('input'))
+    vi.spyOn(t.ed, 'commit').mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    expect(() => p.stop()).not.toThrow()
+    await p.flush()
+    expect(await draft()).toEqual(['typed after that'])
   })
 })
 

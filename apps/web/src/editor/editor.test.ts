@@ -314,6 +314,16 @@ describe('Editor', () => {
       expect(ids()).toEqual(['a'])
     })
 
+    it('AltGr (reported as ctrl+alt) never maps by position: Polish AltGr+Z is not an undo', () => {
+      ed.commit(add('a'))
+      key('ż', { ctrlKey: true, altKey: true, code: 'KeyZ' })
+      expect(ids()).toEqual(['a'])
+      ed.undoOnce()
+      key('ż', { ctrlKey: true, altKey: true, shiftKey: true, code: 'KeyZ' })
+      key('ź', { ctrlKey: true, altKey: true, code: 'KeyY' }) // not a redo either
+      expect(ids()).toEqual([])
+    })
+
     it('the layout letter wins while it is Latin (Dvorak, AZERTY); named keys never map', () => {
       key('p', { code: 'KeyR' }) // Dvorak: the key at QWERTY R types p
       expect(ed.tool.id).toBe('hand')
@@ -415,6 +425,27 @@ describe('Editor', () => {
     ed.invalidate()
     expect(ed.camera.y).toBe(0)
     expect(frames).toHaveLength(0)
+  })
+
+  it("dispose still tears everything down when the tool's onCancel throws", () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    ed.tools.other = stub(() => {
+      throw new Error('boom')
+    })
+    ed.tool = ed.tools.other
+    expect(() => ed.dispose()).not.toThrow()
+    expect(err).toHaveBeenCalled() // logged, not swallowed silently
+    expect(host.querySelector('canvas')).toBeNull() // the canvases are gone
+    frames.length = 0
+    host.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: 10, cancelable: true }),
+    )
+    key('z', { ctrlKey: true })
+    ed.invalidate()
+    expect(ed.camera.y).toBe(0) // the listeners are gone
+    expect(frames).toHaveLength(0)
+    ed.tool = ed.tools.hand as typeof ed.tool // the afterEach dispose must not log again
+    err.mockRestore()
   })
 
   it('a devicePixelRatio change resizes the canvases and renders', () => {
