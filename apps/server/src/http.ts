@@ -3,8 +3,14 @@ import http, {
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http'
-import type { BlobStore } from '@whiteboard/core'
+import {
+  BlobError,
+  type BlobStore,
+  hashBytes,
+  sniffMime,
+} from '@whiteboard/core'
 import { z } from 'zod'
+import { MAX_BLOB_BYTES } from './blobs'
 import type { BoardService } from './board-service'
 import type { Config } from './config'
 import { ScopeSchema } from './db'
@@ -115,6 +121,27 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   } catch {
     throw apiError('validation_failed', 'the body is not valid JSON')
   }
+}
+
+/** Image bytes with every header that stops a browser from treating them as anything but an image. */
+function sendBlob(
+  res: ServerResponse,
+  bytes: Uint8Array,
+  mime: string,
+  head: boolean,
+) {
+  res.writeHead(200, {
+    'Content-Type': mime,
+    'Content-Length': String(bytes.length),
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'",
+    'Cache-Control': 'public, max-age=31536000, immutable', // the id is the hash of the bytes
+  })
+  res.end(
+    head
+      ? undefined
+      : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+  )
 }
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -245,6 +272,43 @@ export function createHttpServer(deps: HttpDeps): http.Server {
           if (!boards.deleteBoard(id)) throw missing()
           return send(res, 204)
         }
+      }
+    }
+    if (seg[1] === 'blobs') {
+      if (seg.length === 2 && method === 'POST') {
+        // R4: the raw bytes are the body; the claimed Content-Type is ignored and the real type is sniffed.
+        const bytes = await readBody(req, MAX_BLOB_BYTES)
+        try {
+          const existed = await deps.blobs.has(await hashBytes(bytes))
+          const id = await deps.blobs.put(
+            bytes,
+            req.headers['content-type'] ?? '',
+          )
+          return send(res, existed ? 200 : 201, {
+            id,
+            mime: sniffMime(bytes),
+            bytes: bytes.length,
+          })
+        } catch (e) {
+          if (e instanceof BlobError && e.code === 'unsupported')
+            throw apiError('validation_failed', e.message, { field: 'body' })
+          if (e instanceof BlobError && e.code === 'too-large')
+            throw apiError('payload_too_large', e.message, {
+              limit: MAX_BLOB_BYTES,
+            })
+          throw e
+        }
+      }
+      if (seg.length === 3 && (method === 'GET' || method === 'HEAD')) {
+        let id: string
+        try {
+          id = decodeURIComponent(seg[2] as string)
+        } catch {
+          throw apiError('not_found', 'no such blob')
+        }
+        const blob = await deps.blobs.get(id) // an id that is not a SHA-256 hex is simply absent
+        if (!blob) throw apiError('not_found', 'no such blob')
+        return sendBlob(res, blob.bytes, blob.mime, method === 'HEAD')
       }
     }
     throw notFound()
