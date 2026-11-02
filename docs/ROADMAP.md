@@ -45,24 +45,24 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Goal:** M0 can start without waiting on anyone.
 - **Do:**
   1. Review and approve PLAN rev 2 (its header says "awaiting your review"). **Done 2026-11-01:** taken as approved when you asked to commit and start.
-  2. Hand over the three inputs from PLAN §19. **(a)** 2–3 real PDFs (one text-heavy, one math/diagram-heavy, an Arabic one if relevant) plus ~10 questions per book with the page where each answer lives; this is also the retrieval eval set. Say if any book is EPUB (§5, D). **(b)** The VPS plan: provider, a Debian or Ubuntu LTS image (not Alpine), and a domain or Tailscale. **(c)** Your OpenRouter key in the server `.env` only, with a credit limit set in OpenRouter.
+  2. Hand over the three inputs from PLAN §19. **(a)** 2–3 real PDFs (one text-heavy, one math/diagram-heavy, an Arabic one if relevant) plus ~10 questions per book with the page where each answer lives; this is also the retrieval eval set. Say if any book is EPUB (§5, D). **(b)** *Optional, deferred:* a VPS plan (provider, Debian or Ubuntu LTS, domain or Tailscale). Not needed to build; **the app working locally is the priority.** **(c)** Your OpenRouter key in the server `.env` only, with a credit limit set in OpenRouter.
   3. Write M0's task-level plan (superpowers:writing-plans), PLAN §20 step 3. **Written 2026-11-01:** [2026-11-01-m0-spikes.md](./superpowers/plans/2026-11-01-m0-spikes.md), awaiting your review.
   4. Optional (PLAN §20 step 2): export the Claude Doc to `docs/engine-design.md` and record your five answers in its Open questions.
   5. Commit the docs. **Done 2026-11-01** (`1c6abfb` on `main`; M0 work is on branch `m0-spikes`).
-- **Gate:** PLAN rev 2 approved and M0's task plan written. S1 needs nothing, S3 needs the key, S5 needs the VPS. S2 and S4 need the books and can arrive during M0.
+- **Gate:** PLAN rev 2 approved and M0's task plan written. S1 needs nothing, S3 needs the key, S5 (VPS) is optional and deferred. S2 and S4 need the books and can arrive during M0.
 - **Risks:** books arrive late → S2 and S4 slip and M4 inherits the risk; S1, S3, S5 still run.
 - **Status:** ◐ Open: the plan review, and inputs (a), (b), (c) above.
 
 ### M0 · Spikes *(2 wks · ends wk 2)*
 
 - **Goal:** replace every **[spike]** in the plan with a measurement, so M1 onward builds on facts.
-- **Builds:** S1–S5 from [testing-spikes](./plans/testing-spikes.md). **S1** canvas performance, plus Arabic and MathJax on a server canvas, plus the leaf-library choice (F12). **S2** extraction rungs R1–R4 on your books. **S3** the OpenRouter loop: tool calling, image in a tool result vs a follow-up message, caching, cost arriving in streaming mode, Arabic quality, `data_collection: "deny"`. **S4** embeddings and exact-search latency. **S5** deploy dry-run: WebSocket and SSE behind Caddy basic auth on the real VPS.
+- **Builds:** S1–S5 from [testing-spikes](./plans/testing-spikes.md). **S1** canvas performance, plus Arabic and MathJax on a server canvas, plus the leaf-library choice (F12). **S2** extraction rungs R1–R4 on your books. **S3** the OpenRouter loop: tool calling, image in a tool result vs a follow-up message, caching, cost arriving in streaming mode, Arabic quality, `data_collection: "deny"`. **S4** embeddings and exact-search latency. **S5** deploy dry-run on a VPS: *optional, deferred; not a gate for M0 or M3*.
 - **Needs:** K (see its gate).
 - **Gate (§17):** 5,000 elements @ 60 fps; Arabic server render OK or fallback chosen; extraction default, models and embedding chosen; deploy dry-run (WS + SSE behind basic auth) works.
 - **Scripts:** each spike's "Done when" row; the *Engine* benchmark numbers (also first ink ≤ 16 ms, 20,000-element board opens in < 2 s). **[my call]** Record results as a short line under each spike in testing-spikes.md and each decision in PLAN §19.
 - **Decisions closed:** render path (main thread vs worker) and snapshot path; Arabic font; `rbush` and `perfect-freehand` vs in-house; extraction default per book type and page-routing thresholds; tutor, cheap and vision models and the snapshot-adapter behaviour; embedding model, `k`, `EMBED_DIMS` (or `sqlite-vec` scheduled); access gate (basic auth vs Tailscale or cookie); keep or drop the `web` process (Next.js vs static export or Vite SPA).
 - **Risks:** Arabic shaping on a server canvas (S1; ladder: server canvas → open tab → headless Chromium); large boards miss the frame budget (S1; worker-canvas path); PDF math and Arabic extraction (S2); cost surprise (S3 replaces the estimates with measured cost per turn); model and AI SDK churn (S3); basic auth + WebSocket (S5; Tailscale or signed cookie).
-- **Demo:** measured numbers, and a hello-world NestJS (WebSocket + SSE) and Next behind Caddy on the VPS.
+- **Demo:** measured numbers, and (S5 only if a VPS exists) a hello-world NestJS (WebSocket + SSE) and Next behind Caddy on the VPS.
 - **Replan:** re-estimate every later phase now (§17); see §6.
 - **Status:** ☐
 
@@ -93,14 +93,14 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 
 ### M3 · Server *(2.5 wks · ends wk 8.5)*
 
-- **Goal:** the board lives on a server, survives restarts, syncs between tabs, and runs on the VPS behind the gate.
-- **Builds:** WebSocket gateway · Board service (validate → seq → apply → store → broadcast) · SQLite op log + snapshots + migrations (`0001_init`) · blobs on disk · snapshot renderer (core `render()` on `@napi-rs/canvas`) · access gate + Origin checks · systemd + Caddy deploy scripts · **first VPS deploy**. → [deployment](./plans/deployment.md), [database](./plans/database.md), [api](./plans/api.md), [auth-security](./plans/auth-security.md).
-- **Needs:** M1 and M2 (store, ops and validation; `render()` and math for the server picture); the S1 and S5 decisions. An off-box backup remote for `rclone` (§5, C).
-- **Gate (§17):** Two tabs stay in sync; survives restart; VPS reachable only through the gate; server PNG matches browser.
-- **Scripts:** *Deployment* (VPS serves only through the gate; services survive a reboot); *Security* (foreign Origin rejected on WebSocket and POST); WebSocket ordering test (two clients, interleaved batches, identical final scene); migration test on a copy of a DB.
+- **Goal:** the board lives on a server, survives restarts, syncs between tabs, and runs locally. VPS deploy is optional and later.
+- **Builds:** WebSocket gateway · Board service (validate → seq → apply → store → broadcast) · SQLite op log + snapshots + migrations (`0001_init`) · blobs on disk · snapshot renderer (core `render()` on `@napi-rs/canvas`) · access gate + Origin checks · systemd + Caddy deploy scripts · deploy scripts (written, run on a VPS only when one exists). → [deployment](./plans/deployment.md), [database](./plans/database.md), [api](./plans/api.md), [auth-security](./plans/auth-security.md).
+- **Needs:** M1 and M2 (store, ops and validation; `render()` and math for the server picture); the S1 decision (S5 only if run). An off-box backup remote for `rclone` (§5, C).
+- **Gate (§17):** Two tabs stay in sync; survives restart; the gate works locally (shared secret, Origin checks); server PNG matches browser.
+- **Scripts:** *Deployment* (local `pnpm dev` works; VPS checks run only if a VPS exists); *Security* (foreign Origin rejected on WebSocket and POST); WebSocket ordering test (two clients, interleaved batches, identical final scene); migration test on a copy of a DB.
 - **Also here [my call]:** `deploy.sh`, `backup.sh` and the backup timer ship with the first deploy so data is protected from day one (deployment.md VPS step 8); the restore drill stays in M7. `board_ops` carries `turn_id`, `label`, `bounds` and `touched_ids` from `0001_init`, and the Board service fills `bounds` for every batch, so M5's Locate needs no backfill.
 - **Risks:** basic auth + WebSocket misbehaves (S5 fallback: Tailscale or signed cookie); Arabic shaping on the server canvas (S1 ladder). If S1 picked a snapshot fallback, rescope the last gate clause (§6).
-- **Demo:** two browser tabs editing one board at the VPS URL behind the gate; restart the server and the board is still there.
+- **Demo:** two browser tabs editing one board on localhost; restart the server and the board is still there.
 - **Status:** ☐
 
 ### M4 · Library *(2.5 wks · ends wk 11)*
@@ -250,4 +250,5 @@ Gathered from the docs; none of it is scheduled. Non-goals stay in PLAN §2.3.
 | Date | Phase | Note |
 |---|---|---|
 | 2026-11-01 | – | Roadmap drafted from PLAN rev 2 and the 14 aspect files. Nothing started. |
+| 2026-11-02 | K | S1 and S4a done and merged to `main`. Decision: **VPS is not a must-have**; S5 and the first VPS deploy are optional and deferred, a working local app is the priority. Remaining M0 inputs: OpenRouter key (S3), books (S2, S4b). |
 | 2026-11-01 | K | Docs committed (`1c6abfb`). PLAN rev 2 taken as approved. M0 task plan written, awaiting review. Open inputs: OpenRouter key (S3), VPS (S5), books and questions (S2, S4b); S1 and S4a need none. |

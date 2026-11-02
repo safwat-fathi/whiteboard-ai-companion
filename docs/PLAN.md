@@ -271,7 +271,7 @@ Five M0 spikes: **S1** canvas performance + Arabic/MathJax on a server canvas; *
 
 **Inputs I need before M0** (not now)
 1. 2–3 real books as PDFs (tell me if any are EPUB and I will pull EPUB into M4): one text-heavy, one math/diagram-heavy, and an Arabic one if relevant, plus ~10 questions per book with the page where each answer lives. This is also the retrieval eval set.
-2. VPS plan: provider, a Debian or Ubuntu LTS image (not Alpine: native modules ship glibc binaries), and a domain (or Tailscale).
+2. *(Optional, deferred; local app first)* VPS plan: provider, a Debian or Ubuntu LTS image (not Alpine: native modules ship glibc binaries), and a domain (or Tailscale).
 3. Your OpenRouter key in the server `.env` only, with a credit limit set in OpenRouter.
 
 ---
