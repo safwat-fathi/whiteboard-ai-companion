@@ -47,6 +47,10 @@ const typing = (t: EventTarget | null) =>
   t instanceof HTMLElement &&
   (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
 
+// An allowlist: a mouse (or a test's bare MouseEvent) has Space, touch and pen have no keyboard.
+const touchOrPen = (e: PointerEvent) =>
+  e.pointerType === 'touch' || e.pointerType === 'pen'
+
 const canvas = (z: number) => {
   const c = document.createElement('canvas')
   c.style.cssText = `position:absolute;inset:0;width:100%;height:100%;z-index:${z}`
@@ -92,7 +96,8 @@ export class Editor {
   private disposed = false
   private space = false
   private hoverCursor = ''
-  private panning: Point | null = null
+  /** The pointer dragging the canvas and where it was last seen; one pointer at a time. */
+  private panning: { id: number; at: Point } | null = null
   private off: (() => void)[] = []
   private unDpr?: () => void
   private flight: {
@@ -164,7 +169,7 @@ export class Editor {
     on(this.overlay, 'pointerup', (e: PointerEvent) => this.onPointer('up', e))
     on(this.overlay, 'pointerleave', () => this.tool.onPointerLeave?.())
     on(this.overlay, 'dblclick', (e: MouseEvent) => {
-      if (this.readOnly) return
+      if (this.readOnly || this.space) return
       const screen = this.toScreen(e.clientX, e.clientY)
       this.tool.onDoubleClick?.({
         screen,
@@ -176,8 +181,9 @@ export class Editor {
       })
     })
     // A cancelled gesture (touch palm rejection, lost capture) must not commit.
-    on(this.overlay, 'pointercancel', () => {
-      this.panning = null
+    on(this.overlay, 'pointercancel', (e: PointerEvent) => {
+      if (this.panning && e.pointerId !== this.panning.id) return // another finger's gesture, never the tool's
+      this.setPanning(null)
       this.tool.onCancel?.()
     })
     // The window-level key listeners assume one Editor per page.
@@ -187,7 +193,7 @@ export class Editor {
     })
     const release = () => {
       this.setSpace(false)
-      this.panning = null
+      this.setPanning(null)
     }
     on(window, 'blur', release)
     on(document, 'visibilitychange', () => {
@@ -478,11 +484,18 @@ export class Editor {
     this.applyCursor()
   }
 
-  /** The one place the board cursor is decided: Space held (grabbing) > a tool's hover cursor > the tool's own cursor > the arrow. */
+  /** The one place the board cursor is decided: Space held or a pan under way (grabbing) > a tool's hover cursor > the tool's own cursor > the arrow. */
   private applyCursor(): void {
-    this.overlay.style.cursor = this.space
-      ? 'grabbing'
-      : this.hoverCursor || this.tool.cursor || ''
+    this.overlay.style.cursor =
+      this.space || this.panning
+        ? 'grabbing'
+        : this.hoverCursor || this.tool.cursor || ''
+  }
+
+  private setPanning(p: Editor['panning']): void {
+    const was = !!this.panning
+    this.panning = p
+    if (was !== !!p) this.applyCursor()
   }
 
   private setSpace(on: boolean): void {
@@ -822,14 +835,20 @@ export class Editor {
   private onPointer(kind: 'down' | 'move' | 'up', e: PointerEvent) {
     if (kind === 'down') this.cancelFlight()
     const screen = this.toScreen(e.clientX, e.clientY)
-    if (this.panning || (kind === 'down' && this.space)) {
-      if (kind === 'down') {
-        this.panning = screen
+    const pan = this.panning
+    if (
+      pan ||
+      (kind === 'down' &&
+        (this.space || (touchOrPen(e) && this.tool === this.tools.hand)))
+    ) {
+      if (!pan) {
+        this.setPanning({ id: e.pointerId, at: screen })
         this.overlay.setPointerCapture?.(e.pointerId)
-      } else if (this.panning) {
+      } else if (e.pointerId === pan.id) {
         if (kind === 'move')
-          this.panBy(screen.x - this.panning.x, screen.y - this.panning.y)
-        this.panning = kind === 'up' ? null : screen
+          this.panBy(screen.x - pan.at.x, screen.y - pan.at.y)
+        if (kind === 'up') this.setPanning(null)
+        else pan.at = screen
       }
       return
     }
@@ -857,10 +876,11 @@ export class Editor {
       // Only claim Space when focus is on the board, so buttons and links keep Space activation.
       const t = e.target
       if (
-        t === document.body ||
-        t === this.host ||
-        t === this.sceneCanvas ||
-        t === this.overlay
+        !mod && // Ctrl+Space switches the input language on macOS: no keyup would follow
+        (t === document.body ||
+          t === this.host ||
+          t === this.sceneCanvas ||
+          t === this.overlay)
       ) {
         this.setSpace(true)
         e.preventDefault()

@@ -104,6 +104,23 @@ const spaceUp = (t: EventTarget = document.body) =>
   t.dispatchEvent(
     new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }),
   )
+/** A real PointerEvent on the overlay: touch and pen carry a pointerType and an id (the MouseEvents of `ptr` carry neither). */
+const tptr = (
+  type: string,
+  x: number,
+  y: number,
+  pointerType: string,
+  pointerId = 1,
+) =>
+  (host.querySelectorAll('canvas')[1] as HTMLCanvasElement).dispatchEvent(
+    new PointerEvent(type, {
+      clientX: x,
+      clientY: y,
+      pointerType,
+      pointerId,
+      bubbles: true,
+    }),
+  )
 const cursor = () =>
   (host.querySelectorAll('canvas')[1] as HTMLCanvasElement).style.cursor
 const ptr = (type: string, x: number, y: number) =>
@@ -499,6 +516,10 @@ describe('Editor', () => {
       ['hand', 'grab'],
       ['select', ''],
       ['rect', ''],
+      ['text', ''],
+      ['math', ''],
+      ['image', ''],
+      ['crop', ''],
     ])(
       'Space shows the closed hand and drags pan whatever the tool (%s); keyup restores the tool cursor',
       (id, base) => {
@@ -589,6 +610,126 @@ describe('Editor', () => {
       expect(cursor()).toBe('grab')
     })
 
+    it.each(['touch', 'pen'])(
+      'a %s Hand drag pans without Space; a mouse one does not',
+      (pt) => {
+        tptr('pointerdown', 100, 100, pt)
+        tptr('pointermove', 70, 90, pt)
+        expect(cursor()).toBe('grabbing')
+        tptr('pointerup', 70, 90, pt)
+        expect(ed.camera).toEqual({ x: 30, y: 10, zoom: 1 })
+        expect(cursor()).toBe('grab')
+        for (const t of ['mouse', '', 'unknown']) {
+          tptr('pointerdown', 100, 100, t)
+          tptr('pointermove', 0, 0, t)
+          tptr('pointerup', 0, 0, t)
+        }
+        expect(ed.camera).toEqual({ x: 30, y: 10, zoom: 1 })
+      },
+    )
+
+    it('touch and pen drags pan only with the Hand tool', () => {
+      for (const id of ['select', 'rect', 'text']) {
+        ed.setTool(id)
+        for (const pt of ['touch', 'pen']) {
+          tptr('pointerdown', 100, 100, pt)
+          tptr('pointermove', 70, 90, pt)
+          tptr('pointerup', 70, 90, pt)
+          expect(ed.camera, `${id} ${pt}`).toEqual({ x: 0, y: 0, zoom: 1 })
+        }
+      }
+    })
+
+    it('a second pointer neither moves the anchor nor ends the pan', () => {
+      tptr('pointerdown', 100, 100, 'touch', 1)
+      tptr('pointermove', 90, 100, 'touch', 1)
+      expect(ed.camera.x).toBe(10)
+      tptr('pointerdown', 300, 300, 'touch', 2)
+      tptr('pointermove', 200, 300, 'touch', 2)
+      tptr('pointercancel', 200, 300, 'touch', 2)
+      tptr('pointerup', 200, 300, 'touch', 2)
+      expect(ed.camera).toEqual({ x: 10, y: 0, zoom: 1 })
+      expect(cursor()).toBe('grabbing')
+      tptr('pointermove', 80, 100, 'touch', 1)
+      expect(ed.camera.x).toBe(20) // from the first finger's anchor
+      tptr('pointerup', 80, 100, 'touch', 1)
+      expect(cursor()).toBe('grab')
+    })
+
+    it('a Space pan is single-pointer too', () => {
+      space()
+      tptr('pointerdown', 100, 100, 'mouse', 1)
+      tptr('pointerdown', 300, 300, 'touch', 2)
+      tptr('pointermove', 200, 300, 'touch', 2)
+      tptr('pointermove', 90, 100, 'mouse', 1)
+      expect(ed.camera).toEqual({ x: 10, y: 0, zoom: 1 })
+    })
+
+    it('releasing Space mid-drag keeps the closed hand until the pointer is up', () => {
+      space()
+      ptr('pointerdown', 100, 100)
+      spaceUp()
+      expect(cursor()).toBe('grabbing')
+      ptr('pointermove', 90, 100)
+      expect(ed.camera.x).toBe(10) // the pan carries on
+      expect(cursor()).toBe('grabbing')
+      ptr('pointerup', 90, 100)
+      expect(cursor()).toBe('grab')
+    })
+
+    it('a cancelled pointer ends the pan and restores the cursor', () => {
+      space()
+      ptr('pointerdown', 100, 100)
+      ptr('pointercancel', 100, 100)
+      expect(cursor()).toBe('grabbing') // Space is still held
+      ptr('pointermove', 50, 100)
+      expect(ed.camera.x).toBe(0)
+      spaceUp()
+      expect(cursor()).toBe('grab')
+
+      tptr('pointerdown', 100, 100, 'touch')
+      expect(cursor()).toBe('grabbing')
+      tptr('pointercancel', 100, 100, 'touch')
+      expect(cursor()).toBe('grab')
+      tptr('pointermove', 50, 100, 'touch')
+      expect(ed.camera.x).toBe(0)
+    })
+
+    it('a tool switch while Space is held keeps the closed hand', () => {
+      space()
+      ed.setTool('rect')
+      expect(cursor()).toBe('grabbing')
+      key('h')
+      expect(cursor()).toBe('grabbing')
+      spaceUp()
+      expect(cursor()).toBe('grab')
+    })
+
+    it('Space-held double-click starts no tool action', () => {
+      const dbl = vi.fn()
+      ed.tools.other = { ...stub(), onDoubleClick: dbl }
+      ed.setTool('other')
+      const over = host.querySelectorAll('canvas')[1] as HTMLCanvasElement
+      const dblclick = () =>
+        over.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      space()
+      dblclick()
+      expect(dbl).not.toHaveBeenCalled()
+      spaceUp()
+      dblclick()
+      expect(dbl).toHaveBeenCalledTimes(1)
+    })
+
+    it.each(['ctrlKey', 'metaKey'])(
+      '%s+Space is not claimed (the OS input-language switch): no grabbing, nothing to get stuck',
+      (mod) => {
+        expect(space(undefined, { [mod]: true })).toBe(true) // not prevented
+        expect(cursor()).toBe('grab')
+        drag([100, 100], [70, 90])
+        expect(ed.camera).toEqual({ x: 0, y: 0, zoom: 1 })
+      },
+    )
+
     it('read-only: Hand stays selectable and Space-drag pans, a plain drag does not', () => {
       ed.readOnly = true
       ed.setTool('rect')
@@ -603,6 +744,10 @@ describe('Editor', () => {
       expect(ed.camera.x).toBe(10)
       spaceUp()
       expect(cursor()).toBe('grab')
+      tptr('pointerdown', 10, 10, 'touch') // touch has no Space key: it drags
+      tptr('pointermove', 0, 0, 'touch')
+      tptr('pointerup', 0, 0, 'touch')
+      expect(ed.camera.x).toBe(20)
     })
   })
 
