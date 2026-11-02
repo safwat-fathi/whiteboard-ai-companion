@@ -101,11 +101,14 @@ describe('validateBatch', () => {
       ).toBe(k)
   })
   it('nullable field keeps null as a value', () => {
-    expect(
-      validateBatch(
-        batch([{ op: 'patch', id: 'a1', set: { 'style.fill': null } }]),
-      ),
-    ).toBeTruthy()
+    const out = validateBatch(
+      batch([{ op: 'patch', id: 'a1', set: { 'style.fill': null } }]),
+    )
+    expect(out.ops[0]).toMatchObject({ set: { 'style.fill': null } })
+  })
+  it('non-array ops give OpError on ops', () => {
+    for (const ops of [5, true, {}, [null, 3]])
+      expect(fieldOf({ batchId: 'b1', label: 't', ops })).toMatch(/^ops/)
   })
   it('treats null on optional patch fields as unset', () => {
     for (const k of ['parentId', 'data.start', 'data.radius'])

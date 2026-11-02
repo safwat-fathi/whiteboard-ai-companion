@@ -50,10 +50,16 @@ function checkPatch(set: Record<string, unknown>) {
 
 export function validateBatch(input: unknown): Batch {
   // zod's record silently drops an own `__proto__` key, so reject it from the raw input.
-  for (const op of (input as { ops?: { op?: string; set?: object }[] } | null)
-    ?.ops ?? [])
-    if (op?.op === 'patch' && op.set && Object.hasOwn(op.set, '__proto__'))
-      throw new OpError('__proto__', 'is not a patchable field')
+  const ops = (input as { ops?: unknown } | null)?.ops
+  if (Array.isArray(ops))
+    for (const op of ops as ({ op?: unknown; set?: unknown } | null)[])
+      if (
+        op?.op === 'patch' &&
+        typeof op.set === 'object' &&
+        op.set &&
+        Object.hasOwn(op.set, '__proto__')
+      )
+        throw new OpError('__proto__', 'is not a patchable field')
   const r = BatchSchema.safeParse(input)
   if (!r.success) {
     const { path, message } = r.error.issues[0] as z.core.$ZodIssue
