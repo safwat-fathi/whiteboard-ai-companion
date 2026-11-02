@@ -47,6 +47,10 @@ const typing = (t: EventTarget | null) =>
   t instanceof HTMLElement &&
   (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
 
+// An allowlist: a mouse (or a test's bare MouseEvent) has Space, touch and pen have no keyboard.
+const touchOrPen = (e: PointerEvent) =>
+  e.pointerType === 'touch' || e.pointerType === 'pen'
+
 const canvas = (z: number) => {
   const c = document.createElement('canvas')
   c.style.cssText = `position:absolute;inset:0;width:100%;height:100%;z-index:${z}`
@@ -91,7 +95,9 @@ export class Editor {
   private sceneDirty = true
   private disposed = false
   private space = false
-  private panning: Point | null = null
+  private hoverCursor = ''
+  /** The pointer dragging the canvas and where it was last seen; one pointer at a time. */
+  private panning: { id: number; at: Point } | null = null
   private off: (() => void)[] = []
   private unDpr?: () => void
   private flight: {
@@ -137,6 +143,7 @@ export class Editor {
       Object.entries(toolFactories).map(([id, make]) => [id, make(this)]),
     )
     this.tool = this.tools.hand as Tool
+    this.applyCursor()
 
     if (getComputedStyle(host).position === 'static')
       host.style.position = 'relative'
@@ -162,7 +169,7 @@ export class Editor {
     on(this.overlay, 'pointerup', (e: PointerEvent) => this.onPointer('up', e))
     on(this.overlay, 'pointerleave', () => this.tool.onPointerLeave?.())
     on(this.overlay, 'dblclick', (e: MouseEvent) => {
-      if (this.readOnly) return
+      if (this.readOnly || this.space) return
       const screen = this.toScreen(e.clientX, e.clientY)
       this.tool.onDoubleClick?.({
         screen,
@@ -174,18 +181,19 @@ export class Editor {
       })
     })
     // A cancelled gesture (touch palm rejection, lost capture) must not commit.
-    on(this.overlay, 'pointercancel', () => {
-      this.panning = null
+    on(this.overlay, 'pointercancel', (e: PointerEvent) => {
+      if (this.panning && e.pointerId !== this.panning.id) return // another finger's gesture, never the tool's
+      this.setPanning(null)
       this.tool.onCancel?.()
     })
     // The window-level key listeners assume one Editor per page.
     on(window, 'keydown', (e: KeyboardEvent) => this.onKeyDown(e))
     on(window, 'keyup', (e: KeyboardEvent) => {
-      if (e.code === 'Space') this.space = false
+      if (e.code === 'Space') this.setSpace(false)
     })
     const release = () => {
-      this.space = false
-      this.panning = null
+      this.setSpace(false)
+      this.setPanning(null)
     }
     on(window, 'blur', release)
     on(document, 'visibilitychange', () => {
@@ -276,6 +284,7 @@ export class Editor {
     this.cancelFlight()
     this.tool.onCancel?.()
     this.tool = next
+    this.applyCursor()
     this.invalidate()
     for (const fn of this.toolListeners) fn()
   }
@@ -469,9 +478,30 @@ export class Editor {
     this.request()
   }
 
-  /** CSS cursor over the board; '' is the default arrow. Tools set it and reset it in `onCancel`. */
+  /** A tool's hover cursor over the board ('' is none); a tool that sets one resets it in `onCancel`. */
   setCursor(cursor: string): void {
-    this.overlay.style.cursor = cursor
+    this.hoverCursor = cursor
+    this.applyCursor()
+  }
+
+  /** The one place the board cursor is decided: Space held or a pan under way (grabbing) > a tool's hover cursor > the tool's own cursor > the arrow. */
+  private applyCursor(): void {
+    this.overlay.style.cursor =
+      this.space || this.panning
+        ? 'grabbing'
+        : this.hoverCursor || this.tool.cursor || ''
+  }
+
+  private setPanning(p: Editor['panning']): void {
+    const was = !!this.panning
+    this.panning = p
+    if (was !== !!p) this.applyCursor()
+  }
+
+  private setSpace(on: boolean): void {
+    if (this.space === on) return
+    this.space = on
+    this.applyCursor()
   }
 
   private request(): void {
@@ -809,14 +839,24 @@ export class Editor {
   private onPointer(kind: 'down' | 'move' | 'up', e: PointerEvent) {
     if (kind === 'down') this.cancelFlight()
     const screen = this.toScreen(e.clientX, e.clientY)
-    if (this.panning || (kind === 'down' && this.space)) {
-      if (kind === 'down') {
-        this.panning = screen
-        this.overlay.setPointerCapture?.(e.pointerId)
-      } else if (this.panning) {
+    const pan = this.panning
+    if (
+      pan ||
+      (kind === 'down' &&
+        (this.space || (touchOrPen(e) && this.tool === this.tools.hand)))
+    ) {
+      if (!pan) {
+        try {
+          this.overlay.setPointerCapture?.(e.pointerId)
+        } catch {
+          return // the pointer is already gone (NotFoundError): a pan started now would never see its pointerup
+        }
+        this.setPanning({ id: e.pointerId, at: screen })
+      } else if (e.pointerId === pan.id) {
         if (kind === 'move')
-          this.panBy(screen.x - this.panning.x, screen.y - this.panning.y)
-        this.panning = kind === 'up' ? null : screen
+          this.panBy(screen.x - pan.at.x, screen.y - pan.at.y)
+        if (kind === 'up') this.setPanning(null)
+        else pan.at = screen
       }
       return
     }
@@ -844,12 +884,14 @@ export class Editor {
       // Only claim Space when focus is on the board, so buttons and links keep Space activation.
       const t = e.target
       if (
-        t === document.body ||
-        t === this.host ||
-        t === this.sceneCanvas ||
-        t === this.overlay
+        !mod && // Ctrl+Space switches the input language on macOS and Alt+Space opens the window menu on Windows/Linux: no keyup would follow
+        !e.altKey &&
+        (t === document.body ||
+          t === this.host ||
+          t === this.sceneCanvas ||
+          t === this.overlay)
       ) {
-        this.space = true
+        this.setSpace(true)
         e.preventDefault()
       }
     } else if (mod && k === 'z') {

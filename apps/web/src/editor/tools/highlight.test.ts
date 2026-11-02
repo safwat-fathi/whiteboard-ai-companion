@@ -204,8 +204,9 @@ describe('hover', () => {
     ptr('pointermove', 10, 10)
     expect(cursor()).toBe('pointer')
     ed.setTool('hand')
-    expect(cursor()).toBe('')
+    expect(cursor()).toBe('grab') // the tool's own cursor, the hover is gone
     ed.setTool('select')
+    expect(cursor()).toBe('')
     expect(hasStroke(draw(), COLORS.hover)).toBe(false)
 
     ptr('pointermove', 10, 10)
