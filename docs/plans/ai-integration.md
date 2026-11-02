@@ -17,13 +17,15 @@ Each default below supports tool calling and image input (embeddings are listed 
 
 | Role           | Env                    | Default (candidate)           | $/M in / out | Use                                                 |
 | -------------- | ---------------------- | ----------------------------- | ------------ | --------------------------------------------------- |
-| Tutor          | `TUTOR_MODEL`          | `anthropic/claude-sonnet-5.5` | 2.00 / 10.00 | Chat, tool loop, vision, 1M context, prompt caching |
-| Tutor fallback | `TUTOR_FALLBACK_MODEL` | `google/gemini-3.8-flash`     | 0.75 / 3.75  | One retry on provider errors                        |
+| Tutor (English) | `TUTOR_MODEL`         | `anthropic/claude-haiku-5.5`  | 0.10 / 0.50  | English boards: chat, tool loop, vision, prompt caching **(S3, 2026-11-02)** |
+| Tutor (Arabic)  | `TUTOR_MODEL_AR`      | `google/gemini-3.8-flash`     | 0.75 / 3.75  | Arabic boards; Haiku answers Arabic prompts in English **(S3)** |
+| Reviewer (optional) | `REVIEWER_MODEL`  | `anthropic/claude-sonnet-5.5` | 2.00 / 10.00 | Best Arabic (4.5/5); second-pass review if built **(S3)** |
+| Tutor fallback | `TUTOR_FALLBACK_MODEL` | the other tutor               |              | One retry on provider errors                        |
 | Cheap          | `CHEAP_MODEL`          | `anthropic/claude-haiku-5.5`  | 0.10 / 0.50  | Summaries, rolling memory, TOC inference            |
 | Vision         | `VISION_MODEL`         | `google/gemini-3.8-flash`     | 0.75 / 3.75  | Page transcription (rung R4)                        |
 | Embeddings     | `EMBED_MODEL`          | `baai/bge-m3`                 | 0.01 / –     | Indexing and queries (1024-d, multilingual)         |
 
-**S3 compares three tutor candidates on your questions** (e.g. Sonnet 5.5, Gemini 3.7 Flash, `openai/gpt-6-luna`) and picks by quality on your books, Arabic included, not by brand.
+**S3 compared** Sonnet 5.5, Gemini 3.8 Flash, GPT-6 Luna and Haiku 5.5 ([results](../../spikes/s3-openrouter/RESULT.md)); originally planned as: S3 compares three tutor candidates on your questions** (e.g. Sonnet 5.5, Gemini 3.7 Flash, `openai/gpt-6-luna`) and picks by quality on your books, Arabic included, not by brand.
 
 **Cost envelope** (estimates from catalog prices; S3 replaces them with measured numbers):
 

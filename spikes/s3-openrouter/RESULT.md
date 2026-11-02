@@ -4,15 +4,15 @@ Run 2026-11-02, `ai` 7.0.159, `@openrouter/ai-sdk-provider` 3.1.0, `run.ts`. Tot
 
 | Check | sonnet-5.5 | gemini-3.8-flash | gpt-6-luna | haiku-5.5 |
 |---|---|---|---|---|
-| streamingCost (cost > 0 on every step) | PASS | PASS | PASS | n/a |
+| streamingCost (cost > 0 on every step) | PASS | PASS | PASS | PASS |
 | toolLoop (2+ valid calls, final text) | PASS, 4 calls, $0.0118 | PASS, 5 calls, $0.0049 | PASS, 3 calls, $0.0002 | PASS, 3 calls, $0.0005 |
-| dataCollection `deny` still routes | PASS (Claude Platform on AWS) | PASS (Google) | PASS (OpenAI) | n/a |
-| image in tool result | PASS | PASS | PASS | n/a |
-| image in follow-up user message | PASS | PASS | PASS | n/a |
-| cache, turn 2 (≈17k-token prefix) | PASS, 17,433 cached | PASS, automatic (also on turn 1) | PASS, 13,930 cached | n/a |
+| dataCollection `deny` still routes | PASS (Claude Platform on AWS) | PASS (Google) | PASS (OpenAI) | PASS |
+| image in tool result | PASS | PASS | PASS | PASS |
+| image in follow-up user message | PASS | PASS | PASS | PASS |
+| cache, turn 2 (≈17k-token prefix) | PASS, 17,433 cached | PASS, automatic (also on turn 1) | PASS, 13,930 cached | PASS, 17,433 cached |
 | cache, 1 h TTL, hit after 6 min | PASS, 20,233 cached | n/a | n/a | n/a |
 | cheap summary (150-400 tok) | n/a | $0.0076 | $0.0004 | $0.0006 |
-| Arabic (3 prompts) | `out/arabic-*.md`, **rating pending** | pending | pending | pending |
+| Arabic (3 prompts), your rating | **4.5** | **3.5** (mixed Arabic and English) | not rated | **3** (answered in English) |
 
 ## Findings
 - **Cost arrives per step while streaming**: `providerMetadata.openrouter.usage.cost` in `onStepFinish` was present and > 0 for every step on every model. The design in ai-integration.md holds. The provider already defaults to `compatibility: 'strict'` in 3.1.0 (the doc said `compatible`); passing it explicitly is harmless.
@@ -22,9 +22,11 @@ Run 2026-11-02, `ai` 7.0.159, `@openrouter/ai-sdk-provider` 3.1.0, `run.ts`. Tot
 - Gemini printed a warning that some `reasoning_details` were dropped for missing signatures (provider issues #418, #423); the tool loop still passed.
 - Embedding models are not in `/api/v1/models`; S4b tests them through the embeddings endpoint.
 
-## Decisions
-- `tutor`: `anthropic/claude-sonnet-5.5` (final pick waits on your Arabic ratings and quality on real questions)
-- `tutorFallback`: `google/gemini-3.8-flash`
-- `cheap`: `anthropic/claude-haiku-5.5`
-- `snapshotAdapter`: `tool-result-image` (works on all three tested; the follow-up user message stays as the fallback for a model that rejects it)
-- `costPerTurnUsd`: simple 2-step tool turn ≈ $0.012 on Sonnet, $0.005 on Gemini Flash. The real 6-step turn with a 60k scope pack is still to be measured in M5; the $0.05-0.25 estimate stands, dominated by the first-turn cache write.
+## Decisions (your call, 2026-11-02)
+- **Arabic tutor (main):** `google/gemini-3.8-flash`. **English tutor:** `anthropic/claude-haiku-5.5`. The language is picked per board or message. Haiku ignores Arabic prompts (replies in English), so it must not serve Arabic boards.
+- **Reviewer (optional, if we build one):** `anthropic/claude-sonnet-5.5`, the best Arabic (4.5) and the strongest model tested.
+- `tutorFallback`: the other of the two tutors (Haiku <-> Gemini Flash); for a retry on provider errors.
+- `cheap`: `anthropic/claude-haiku-5.5` (unchanged).
+- `snapshotAdapter`: `tool-result-image` (works on all four; the follow-up user message stays as the fallback for a model that rejects it).
+- `costPerTurnUsd`: simple 2-step tool turn ≈ $0.0005 on Haiku, $0.005 on Gemini Flash, $0.012 on Sonnet. The real 6-step turn with a 60k scope pack is still to be measured in M5.
+- Open: GPT-6 Luna was not rated for Arabic; it is the cheapest (≈ $0.0002 per tool turn) and could replace Gemini if its Arabic is good. Gemini's mixed-language replies may be fixable with a system-prompt rule ("answer entirely in the user's language").

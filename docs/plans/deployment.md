@@ -19,7 +19,7 @@ Dev: the browser at `http://localhost:3000` calls the server at `NEXT_PUBLIC_API
 | Key                                                    | Default                                                   | Meaning                                               |
 | ------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------- |
 | `OPENROUTER_API_KEY`                                   | –                                                         | Server only. Never in the browser, repo, logs or chat |
-| `TUTOR_MODEL` · `TUTOR_FALLBACK_MODEL`                 | `anthropic/claude-sonnet-5.5` · `google/gemini-3.8-flash` | Candidates; S3 confirms                               |
+| `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `TUTOR_FALLBACK_MODEL` · `REVIEWER_MODEL` | `anthropic/claude-haiku-5.5` · `google/gemini-3.8-flash` · the other tutor · `anthropic/claude-sonnet-5.5` | S3: English / Arabic / retry / optional reviewer |
 | `CHEAP_MODEL`                                          | `anthropic/claude-haiku-5.5`                              | Summaries, rolling memory, TOC inference              |
 | `VISION_MODEL`                                         | `google/gemini-3.8-flash`                                 | Page transcription (rung R4)                          |
 | `EMBED_MODEL` · `EMBED_DIMS`                           | `baai/bge-m3` · `1024`                                    | Fixed per book once indexed                           |
