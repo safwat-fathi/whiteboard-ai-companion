@@ -1,6 +1,6 @@
 # Bench: real renderer against S1
 
-Run with `pnpm bench` (builds the app, then Playwright starts `next start` on :3100, runs `/bench?n=5000` and `/bench?n=20000` five times each in headed Google Chrome at DPR 2 and DPR 1, and stops the server). Raw per-run JSON goes to `test-results/` (git-ignored). The page is `apps/web/app/bench/page.tsx`, the method is `apps/web/src/bench/run.ts`, the scene generator is `apps/web/src/bench/scene.ts`.
+Run with `pnpm bench` (it runs `next build`, which overwrites `.next`: stop any `next dev` on :3000 first; builds the app, then Playwright starts `next start` on :3100, runs `/bench?n=5000` and `/bench?n=20000` five times each in headed Google Chrome at DPR 2 and DPR 1, and stops the server). Raw per-run JSON goes to `test-results/` (git-ignored). The page is `apps/web/app/bench/page.tsx`, the method is `apps/web/src/bench/run.ts`, the scene generator is `apps/web/src/bench/scene.ts`.
 
 ## Environment
 
@@ -78,8 +78,8 @@ bench.accept.dpr2.zoom: FAIL, 35.4 fps against 36.6 (87% of S1), 1.2 fps short a
 bench.accept.dpr1.pan: PASS, 43.1 against 39.0 (99.5% of S1)
 bench.accept.dpr1.zoom: PASS, 44.7 against 40.1 (100.4% of S1)
 bench.accept.firstInk: FAIL on the literal metric at DPR 2 (p95 16.5 ms against 16; DPR 1 passes with 15.4). The cause is the display, not the Editor: the next rAF waits for the 60 Hz vsync (the wait is uniform from 0 to 16.7 ms, p95 16.5), and the Editor's own frame takes 0.1 ms at p95 with no scene repaint. S1's Chrome ran the rAF at once after an idle dispatch (wait p95 0.6 to 1.0 ms); this Playwright-launched Chrome does not. Judged on the Editor's work it is PASS by two orders of magnitude; the controller decides which definition is the bar
-bench.accept.open20k: PASS at both DPRs, 1797.7 ms at DPR 2 and 1749.5 ms at DPR 1, against < 2000 (S1 1412 and 1397; headroom about 10% at DPR 2)
-bench.accept.verdict: pan passes at both DPRs, zoom passes at DPR 1 and misses the 90% bar at DPR 2 by 1.2 fps; first ink passes only if the vsync wait is not counted; open 20k passes. No variant reaches 60 fps (S1 did not either)
+bench.accept.open20k: BORDERLINE, not a clean PASS. 1797.7 ms at DPR 2 and 1749.5 ms at DPR 1 against < 2000 (S1 1412 and 1397) when the 20,000 scene replaces the 5,000 scene on a warm page (JIT warm, about 17 s of rendering before the timer). The n=20000 runs, where the 20,000 scene replaces a populated 20,000 scene, read 2,267 ms (DPR 2) and 2,271 ms (DPR 1), over the bar. The two being nearly equal across DPRs points at a DPR-independent cost (GC or heap growth), not bitmap closing, so the "replacing a populated scene" explanation is a guess. Also outside the timer: the IndexedDB read and `safeParse` (about 31 ms, persist.ts). A truly cold page load of a saved 20,000 board was not isolated here; Task 13's gate (reload) or the manual demo is where to time it
+bench.accept.verdict: pan passes at both DPRs, zoom passes at DPR 1 and misses the 90% bar at DPR 2 by 1.2 fps; first ink passes only if the vsync wait is not counted; open 20k is 1.75 to 1.80 s warm and 2.27 s in the heavier variant, so it is on the bar rather than clearly under it. No variant reaches 60 fps (S1 did not either)
 
 ## Decisions / needs-user-decision
 

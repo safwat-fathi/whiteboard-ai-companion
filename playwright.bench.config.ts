@@ -17,7 +17,7 @@ export default defineConfig({
     baseURL: 'http://localhost:3100',
     channel: 'chrome',
     headless: false,
-    launchOptions: { args: ['--window-size=1440,990'] }, // about 1440x876 inner, like S1's window
+    launchOptions: { args: ['--window-size=1440,990'] }, // about 1440x903 inner (S1: 1440x876); the page draws on a fixed 1440x900 host anyway
   },
   projects: [
     // The Mac's own window and Retina DPR 2 (no emulation); the page draws on a fixed 1440x900 CSS px host anyway.
