@@ -1036,14 +1036,11 @@ describe('image rendering and RenderCache tiers', () => {
       request: (id, cb) => {
         requests++
         ready.push(() => {
-          cache.set(
-            1,
-            `orig:${id}`,
-            0,
-            { bitmap: src as unknown as CanvasImageSource, close() {} },
-            256 * 256 * 4,
-            'original',
-          )
+          const orig = {
+            bitmap: src as unknown as CanvasImageSource,
+            close() {},
+          }
+          cache.set(1, `orig:${id}`, 0, orig, 256 * 256 * 4, 'original')
           cb()
         })
       },
