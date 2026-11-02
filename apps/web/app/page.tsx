@@ -50,7 +50,7 @@ export default function Page() {
         onSaved: () => note('save', null),
       })
       persistence = p
-      const r = await p.load()
+      const r = await p.load(locked) // a read-only tab never writes, not even a backup
       if (stop) return
       editor.readOnly = !locked
       setBoard({ editor, readOnly: !locked })
@@ -68,7 +68,7 @@ export default function Page() {
       p.start()
       if (r.status === 'ok' && r.dropped)
         note('dropped', {
-          text: `${r.dropped} invalid elements were dropped`,
+          text: `${r.dropped} invalid elements were dropped (a backup copy of the stored board was kept)`,
           role: 'status',
         })
       if (r.status === 'unreadable') {

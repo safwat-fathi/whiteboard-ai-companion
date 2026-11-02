@@ -39,6 +39,8 @@ export type LoadResult =
       record: BoardRecord
       dropped: number
       undoDropped: boolean
+      /** The stored value as found, for the backup copy when something was dropped. */
+      raw: unknown
     }
   | { status: 'empty' }
   | {
@@ -115,6 +117,12 @@ const clampCamera = (c: Camera): Camera => ({
   zoom: Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, c.zoom)),
 })
 
+/** Copies a stored record to `${boardId}:backup:${savedAt}-${now}`; rejects when the write fails. */
+const backup = (boardId: string, raw: unknown) => {
+  const at = isObj(raw) && Number(raw.savedAt) ? raw.savedAt : Date.now()
+  return put(`${boardId}:backup:${at}-${Date.now()}`, raw)
+}
+
 export function saveBoard(boardId: string, record: BoardRecord): Promise<void> {
   return put(boardId, record).then(() => {})
 }
@@ -157,6 +165,7 @@ export async function loadBoard(boardId: string): Promise<LoadResult> {
     status: 'ok',
     dropped,
     undoDropped,
+    raw,
     record: {
       version: SCHEMA_VERSION,
       boardId,
@@ -238,6 +247,8 @@ export type PersistenceOpts = {
 /**
  * Binds an Editor to one stored board.
  *  load()  reads the record and applies it to the editor (unreadable => editor stays empty and saving is blocked).
+ *          If elements or undo entries were dropped it first keeps the stored record as a backup (`canWrite` false skips that
+ *          write, for a read-only tab); a failed backup blocks saving like an unreadable record.
  *  start() begins autosave: commits (200 ms) and camera moves (500 ms) debounced; flush on visibilitychange hidden / pagehide.
  *  stop()  ends an open edit (the text tool commits it), flushes anything pending, then detaches all listeners (idempotent).
  *          Call it before editor.dispose(), which cancels the tool after the listeners are gone.
@@ -289,8 +300,15 @@ export function createPersistence(
   }
 
   return {
-    async load(): Promise<LoadResult> {
-      const r = await loadBoard(boardId)
+    async load(canWrite = true): Promise<LoadResult> {
+      let r = await loadBoard(boardId)
+      // Saving would erase what was dropped for good: keep the stored record first. If that fails, stay blocked, board untouched.
+      if (r.status === 'ok' && canWrite && (r.dropped || r.undoDropped))
+        try {
+          await backup(boardId, r.raw)
+        } catch {
+          r = { status: 'unreadable', reason: 'unavailable', raw: r.raw }
+        }
       blocked = r.status === 'unreadable' ? r : null
       if (r.status === 'ok')
         editor.setScene(
@@ -332,10 +350,7 @@ export function createPersistence(
     async startEmptyKeepingBackup(): Promise<void> {
       if (!blocked) return
       const raw = blocked.raw
-      if (raw !== undefined) {
-        const at = isObj(raw) && Number(raw.savedAt) ? raw.savedAt : Date.now()
-        await put(`${boardId}:backup:${at}-${Date.now()}`, raw) // throws => stay blocked, original untouched
-      }
+      if (raw !== undefined) await backup(boardId, raw) // throws => stay blocked, original untouched
       blocked = null
       touch(COMMIT_MS)()
     },

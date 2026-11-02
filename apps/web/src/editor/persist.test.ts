@@ -172,6 +172,58 @@ describe('corrupt record', () => {
   })
 })
 
+describe('dropped data is backed up before saving starts', () => {
+  const original = () =>
+    rec({ elements: [mk('a', 0, 0), { id: 'x' }], savedAt: 42 })
+  const backupKeys = async () =>
+    (await rawKeys()).filter((k) => k.startsWith('local:backup:42-'))
+
+  it('writes the stored record as found, loads the valid elements, and the next save leaves the backup alone', async () => {
+    await raw('local', original())
+    const p = createPersistence(t.ed, 'local')
+    const r = await p.load()
+    expect(r).toMatchObject({ status: 'ok', dropped: 1 })
+    expect([...t.ed.scene.els.keys()]).toEqual(['a'])
+    const [key, ...more] = await backupKeys()
+    expect(more).toEqual([])
+    expect(await rawGet(key as string)).toEqual(original())
+    p.start()
+    t.ed.panBy(5, 0)
+    await p.flush()
+    expect(
+      ((await rawGet('local')) as { elements: unknown[] }).elements,
+    ).toHaveLength(1) // the invalid element is gone from the live record
+    expect(await rawGet(key as string)).toEqual(original()) // but not from the backup
+    p.stop()
+  })
+
+  it('does nothing when nothing was dropped, or when this tab may not write', async () => {
+    await raw('local', rec({ elements: [mk('a', 0, 0)] }))
+    await createPersistence(t.ed, 'local').load()
+    expect(await rawKeys()).toEqual(['local'])
+    await raw('local', original())
+    await createPersistence(t.ed, 'local').load(false)
+    expect(await rawKeys()).toEqual(['local'])
+  })
+
+  it('a failed backup write blocks saving and leaves the stored record untouched', async () => {
+    await raw('local', original())
+    vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementationOnce(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+    const p = createPersistence(t.ed, 'local')
+    expect(await p.load()).toMatchObject({
+      status: 'unreadable',
+      reason: 'unavailable',
+    })
+    p.start()
+    put(t.ed, mk('b', 1, 1))
+    await p.flush()
+    p.stop()
+    expect(await rawGet('local')).toEqual(original())
+  })
+})
+
 describe('autosave scheduling', () => {
   it('debounces many commits into one write', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
