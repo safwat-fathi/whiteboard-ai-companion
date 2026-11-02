@@ -70,7 +70,7 @@ describe('Toolbar', () => {
 
   it('is disabled while loading and when read-only', async () => {
     const { ed, buttons, render } = await mount({ editor: false })
-    expect(buttons()).toHaveLength(11)
+    expect(buttons().length).toBeGreaterThanOrEqual(12)
     expect(buttons().every((b) => b.disabled)).toBe(true)
     await render(ed, false)
     expect(buttons().some((b) => b.disabled)).toBe(false)

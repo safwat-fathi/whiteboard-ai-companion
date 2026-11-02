@@ -80,6 +80,16 @@ export function Toolbar({
           </button>
         )
       })}
+      <button
+        type="button"
+        className="tb-btn"
+        aria-label="Image"
+        title="Image (I)"
+        disabled={off}
+        onClick={() => editor?.openImagePicker()}
+      >
+        Image
+      </button>
       {(
         [
           ['Undo', 'Z', () => editor?.undoOnce()],

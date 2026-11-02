@@ -46,6 +46,7 @@ export default function Page() {
       if (stop) return // cleanup already released the lock
       // Platform is created after fonts load: text layout is memoised per Platform object.
       editor = new Editor(host.current, { platform: browserPlatform() })
+      editor.onNotice = (text) => note('notice', { text, role: 'alert' })
       editor.readOnly = true // until load() resolves: a pre-load edit would be wiped by setScene
       const p = createPersistence(editor, BOARD, {
         onSaveError: () =>

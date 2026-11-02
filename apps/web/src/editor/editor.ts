@@ -1,10 +1,14 @@
 import {
   applyBatch,
   type Batch,
+  type BlobStore,
   type Camera,
+  cacheBudgetBytes,
   createScene,
+  DEFAULT_STYLE,
   type Element,
   type Id,
+  newId,
   OpError,
   ordered,
   type Platform,
@@ -19,9 +23,13 @@ import {
   UndoManager,
   type Viewport,
   worldToScreen,
+  zBetween,
   zoomAt,
 } from '@whiteboard/core'
+import { createIdbBlobStore } from './blobs'
+import { createBitmapProvider, importImage } from './images'
 import { shortcutKey } from './keys'
+import { createWebMathProvider } from './math'
 import { browserPlatform } from './platform'
 import { type Tool, type ToolEvent, tools as toolFactories } from './tools'
 import type { TextTool } from './tools/text'
@@ -53,12 +61,19 @@ export class Editor {
   lastRender: (RenderStats & { ms: number }) | null = null
 
   readonly index = new SpatialIndex() // tools read it (pick/search)
-  private cache = new RenderCache()
+  private cache: RenderCache
   /** Bytes held by the render cache (read by the /bench page). */
   get cacheBytes(): number {
     return this.cache.bytes
   }
+  get cacheCap(): number {
+    return this.cache.cap
+  }
+  readonly blobs: BlobStore
   readonly platform: Platform
+  onNotice?: (message: string) => void
+  private pickerAt: Point | undefined
+  private fileInput?: HTMLInputElement
   private listeners = new Set<() => void>()
   private camListeners = new Set<() => void>()
   private toolListeners = new Set<() => void>()
@@ -75,12 +90,28 @@ export class Editor {
 
   constructor(
     readonly host: HTMLElement,
-    opts: { board?: Scene; platform?: Platform } = {},
+    opts: { board?: Scene; platform?: Platform; blobs?: BlobStore } = {},
   ) {
     this.scene = opts.board ?? createScene()
     this.index.load([...this.scene.els.values()])
     this.undo = new UndoManager(this.scene)
-    this.platform = opts.platform ?? browserPlatform()
+    const deviceMemoryGB = (
+      globalThis.navigator as { deviceMemory?: number } | undefined
+    )?.deviceMemory
+    const initialDpr =
+      typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
+    this.cache = new RenderCache(
+      cacheBudgetBytes({ deviceMemoryGB, dpr: initialDpr }),
+    )
+    this.blobs = opts.blobs ?? createIdbBlobStore()
+    const basePlatform = opts.platform ?? browserPlatform()
+    this.platform = {
+      ...basePlatform,
+      math: basePlatform.math ?? createWebMathProvider(() => this.invalidate()),
+      images:
+        basePlatform.images ??
+        createBitmapProvider(this.blobs, this.cache, () => this.invalidate()),
+    }
     this.tools = Object.fromEntries(
       Object.entries(toolFactories).map(([id, make]) => [id, make(this)]),
     )
@@ -138,6 +169,39 @@ export class Editor {
     on(window, 'blur', release)
     on(document, 'visibilitychange', () => {
       if (document.visibilityState === 'hidden') release()
+    })
+    on(host, 'dragover', (e: DragEvent) => {
+      e.preventDefault()
+    })
+    on(host, 'drop', (e: DragEvent) => {
+      e.preventDefault()
+      const files = e.dataTransfer?.files ? [...e.dataTransfer.files] : []
+      if (!files.length) return
+      const at = this.screenToWorldPoint(e.clientX, e.clientY)
+      void this.addImages(files, at)
+    })
+    on(window, 'paste', (e: ClipboardEvent) => {
+      if (typing(e.target)) return
+      const files: File[] = []
+      const items = e.clipboardData?.items
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i]
+          if (item && item.kind === 'file' && item.type.startsWith('image/')) {
+            const f = item.getAsFile()
+            if (f) files.push(f)
+          }
+        }
+      }
+      if (!files.length && e.clipboardData?.files) {
+        for (let i = 0; i < e.clipboardData.files.length; i++) {
+          const f = e.clipboardData.files[i]
+          if (f?.type.startsWith('image/')) files.push(f)
+        }
+      }
+      if (!files.length) return
+      e.preventDefault()
+      void this.addImages(files)
     })
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.resize())
@@ -200,6 +264,160 @@ export class Editor {
     if (this.readOnly || el?.type !== 'text' || el.locked) return
     this.setTool('text')
     ;(this.tools.text as TextTool).edit(el)
+  }
+
+  openImagePicker(at?: Point): void {
+    if (this.readOnly) return
+    this.pickerAt = at
+    if (!this.fileInput) {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/png,image/jpeg,image/webp,image/gif'
+      input.multiple = true
+      input.style.display = 'none'
+      input.addEventListener('change', () => {
+        const files = input.files ? [...input.files] : []
+        input.value = ''
+        const target = this.pickerAt
+        this.pickerAt = undefined
+        if (files.length) void this.addImages(files, target)
+      })
+      this.host.append(input)
+      this.fileInput = input
+    }
+    this.fileInput.click()
+  }
+
+  async addImages(
+    files: File[],
+    at?: Point,
+  ): Promise<{ added: Id[]; failed: { name: string; message: string }[] }> {
+    const failed: { name: string; message: string }[] = []
+    if (this.readOnly) {
+      const msg = 'Board is read-only'
+      for (const f of files) {
+        failed.push({ name: f.name || 'image', message: msg })
+        this.onNotice?.(`${f.name || 'image'}: ${msg}`)
+      }
+      return { added: [], failed }
+    }
+    if (!files.length) return { added: [], failed: [] }
+
+    type Imported = {
+      name: string
+      blobId: string
+      naturalW: number
+      naturalH: number
+      w: number
+      h: number
+    }
+    const succeeded: Imported[] = []
+    const maxVpW =
+      this.viewport.width > 0
+        ? (this.viewport.width * 0.6) / this.camera.zoom
+        : Number.POSITIVE_INFINITY
+
+    for (const file of files) {
+      const name = file.name || 'image'
+      try {
+        const { blobId, naturalW, naturalH } = await importImage(
+          file,
+          this.blobs,
+        )
+        const w = Math.max(
+          1,
+          Math.round(Math.min(naturalW, 480 / this.camera.zoom, maxVpW)),
+        )
+        const h = Math.max(1, Math.round((w * naturalH) / naturalW))
+        succeeded.push({ name, blobId, naturalW, naturalH, w, h })
+      } catch (e) {
+        const message =
+          e instanceof Error ? e.message : 'Could not import image'
+        failed.push({ name, message })
+        this.onNotice?.(`${name}: ${message}`)
+      }
+    }
+
+    if (!succeeded.length) return { added: [], failed }
+
+    const anchor =
+      at ??
+      screenToWorld(
+        { x: this.viewport.width / 2, y: this.viewport.height / 2 },
+        this.camera,
+        this.viewport,
+      )
+
+    const cols = Math.min(4, succeeded.length)
+    const rows = Math.ceil(succeeded.length / 4)
+    const colW = Array.from({ length: cols }, (_, c) => {
+      let m = 0
+      for (let i = c; i < succeeded.length; i += 4) {
+        m = Math.max(m, succeeded[i]?.w ?? 0)
+      }
+      return m
+    })
+    const rowH = Array.from({ length: rows }, (_, r) => {
+      let m = 0
+      for (let c = 0; c < 4; c++) {
+        const item = succeeded[r * 4 + c]
+        if (item) m = Math.max(m, item.h)
+      }
+      return m
+    })
+
+    const gap = 24
+    let lastZ = ordered(this.scene).at(-1)?.z ?? null
+    const added: Id[] = []
+    const els: Element[] = succeeded.map((item, i) => {
+      const id = newId()
+      added.push(id)
+      lastZ = zBetween(lastZ, null)
+      let x: number
+      let y: number
+      if (succeeded.length === 1) {
+        x = Math.round(anchor.x - item.w / 2)
+        y = Math.round(anchor.y - item.h / 2)
+      } else {
+        const col = i % 4
+        const row = Math.floor(i / 4)
+        let ox = 0
+        for (let c = 0; c < col; c++) ox += (colW[c] ?? 0) + gap
+        let oy = 0
+        for (let r = 0; r < row; r++) oy += (rowH[r] ?? 0) + gap
+        x = Math.round(anchor.x + ox)
+        y = Math.round(anchor.y + oy)
+      }
+      return {
+        id,
+        type: 'image',
+        x,
+        y,
+        w: item.w,
+        h: item.h,
+        rotation: 0,
+        z: lastZ,
+        style: { ...DEFAULT_STYLE },
+        locked: false,
+        author: { kind: 'human', id: 'local' },
+        v: 0,
+        data: {
+          blobId: item.blobId,
+          naturalW: item.naturalW,
+          naturalH: item.naturalH,
+          alt: item.name.slice(0, 500),
+        },
+      }
+    })
+
+    this.commit({
+      batchId: newId(),
+      label: els.length === 1 ? 'Add image' : `Add ${els.length} images`,
+      ops: els.map((el) => ({ op: 'add' as const, el })),
+    })
+    this.selection = new Set(added)
+    this.invalidateOverlay()
+    return { added, failed }
   }
 
   /** The scene or camera changed: the next frame repaints the scene canvas and the overlay. */
