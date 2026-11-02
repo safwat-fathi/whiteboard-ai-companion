@@ -305,14 +305,22 @@ describe('Editor', () => {
       expect(ids()).toEqual(['a'])
     })
 
-    it('the layout letter wins while it is Latin (Dvorak, AZERTY), and punctuation never stands in', () => {
+    it('shifted and other non-letter keys of the layout map by position too (Arabic Shift+Z types ~)', () => {
+      ed.commit(add('a'))
+      key('ئ', { ctrlKey: true, code: 'KeyZ' })
+      expect(ids()).toEqual([])
+      key('~', { ctrlKey: true, shiftKey: true, code: 'KeyZ' }) // redo
+      expect(ids()).toEqual(['a'])
+    })
+
+    it('the layout letter wins while it is Latin (Dvorak, AZERTY); named keys never map', () => {
       key('p', { code: 'KeyR' }) // Dvorak: the key at QWERTY R types p
       expect(ed.tool.id).toBe('hand')
       key('a', { code: 'KeyQ' }) // AZERTY: a is at QWERTY Q
       expect(ed.tool.id).toBe('arrow')
-      ed.commit(add('a'))
-      key(';', { ctrlKey: true, code: 'KeyZ' }) // Dvorak: Ctrl+; sits on the QWERTY Z key
-      expect(ids()).toEqual(['a'])
+      key('Process', { code: 'KeyR' }) // an IME is handling the key
+      key('Dead', { code: 'KeyR' })
+      expect(ed.tool.id).toBe('arrow')
     })
 
     it('nothing fires while a textarea is focused', () => {

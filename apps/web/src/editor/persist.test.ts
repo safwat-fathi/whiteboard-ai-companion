@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
-import { ElementSchema, ZOOM_MAX, ZOOM_MIN } from '@whiteboard/core'
+import { ElementSchema, ordered, ZOOM_MAX, ZOOM_MIN } from '@whiteboard/core'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -223,6 +223,41 @@ describe('stored undo history is validated entry by entry', () => {
     expect(() => t.ed.undoOnce()).not.toThrow()
     expect(t.ed.undo.canUndo).toBe(false) // the entry is consumed
     expect((t.ed.scene.els.get('a') as { w: number }).w).toBe(100)
+  })
+})
+
+describe('stored undo entries with hostile patch paths', () => {
+  it.each([
+    ['a path through a number', { 'x.y': 1 }],
+    ['a path through a string leaf', { 'data.kind.foo': 1 }],
+    ['an unknown field', { nope: 1 }],
+    ['a protected field', { id: 'z' }],
+    ['__proto__', JSON.parse('{"__proto__": {"x": 1}}')],
+  ])('%s: undo does not throw and changes nothing', async (_n, back) => {
+    const undo = {
+      undo: [
+        {
+          original: {
+            batchId: 'o',
+            label: 'Move',
+            ops: [{ op: 'patch', id: 'a', set: { w: 100 } }],
+          },
+          inverse: {
+            batchId: 'i',
+            label: 'Undo Move',
+            ops: [{ op: 'patch', id: 'a', set: back }],
+          },
+        },
+      ],
+      redo: [],
+      maxDepth: 200,
+    }
+    await raw('local', rec({ elements: [mk('a', 10, 10)], undo, savedAt: 7 }))
+    const p = createPersistence(t.ed, 'local')
+    await p.load()
+    const before = structuredClone(ordered(t.ed.scene))
+    expect(() => t.ed.undoOnce()).not.toThrow()
+    expect(ordered(t.ed.scene)).toEqual(before)
   })
 })
 
