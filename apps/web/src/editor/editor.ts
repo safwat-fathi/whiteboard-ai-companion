@@ -32,6 +32,7 @@ import { shortcutKey } from './keys'
 import { createWebMathProvider } from './math'
 import { browserPlatform } from './platform'
 import { type Tool, type ToolEvent, tools as toolFactories } from './tools'
+import type { CropTool } from './tools/crop'
 import type { MathTool } from './tools/math'
 import type { TextTool } from './tools/text'
 
@@ -278,6 +279,14 @@ export class Editor {
     if (this.readOnly || el?.type !== 'math' || el.locked) return
     this.setTool('math')
     ;(this.tools.math as MathTool).edit(el)
+  }
+
+  /** Enters non-destructive crop mode for an image element (double-click in the select tool). */
+  editCrop(id: Id): void {
+    const el = this.scene.els.get(id)
+    if (this.readOnly || el?.type !== 'image' || el.locked) return
+    this.setTool('crop')
+    ;(this.tools.crop as CropTool).edit(el)
   }
 
   openImagePicker(at?: Point): void {

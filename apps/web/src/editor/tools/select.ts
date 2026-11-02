@@ -241,6 +241,7 @@ export const selectTool = (ed: Editor): Tool => {
       const hit = ed.index.pick(e.world, z(), ed.scene)
       if (hit?.type === 'text') ed.editText(hit.id)
       else if (hit?.type === 'math') ed.editMath(hit.id)
+      else if (hit?.type === 'image') ed.editCrop(hit.id)
     },
     onKey(e: KeyboardEvent) {
       const one = single()
