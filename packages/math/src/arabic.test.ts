@@ -13,7 +13,13 @@ describe('Arabic guard', () => {
   })
 
   it('rejects Arabic inside \\text{}, bare Arabic, and Arabic-Indic digits with the P2 message', async () => {
-    for (const input of ['\\text{مرحبا}', 'مرحبا', 'x = ٣']) {
+    for (const input of [
+      '\\text{مرحبا}',
+      'مرحبا',
+      'x = ٣',
+      '\\text{مساحة الدائرة} = \\pi r^2',
+      '\\text{السرعة}=\\frac{\\text{المسافة}}{\\text{الزمن}}',
+    ]) {
       const res = await renderMath(input, opts)
       expect(res).toEqual({ ok: false, error: ARABIC_ERROR })
     }

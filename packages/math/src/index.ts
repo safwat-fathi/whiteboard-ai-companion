@@ -6,14 +6,28 @@ import {
   isMathJaxLoaded,
   MAX_LATEX,
 } from './config'
+import {
+  type AffineMatrix,
+  drawMathPaths,
+  fixViewBox,
+  type MathPathItem,
+  type MathPaths,
+  svgToPaths,
+} from './svg'
 
 export {
+  type AffineMatrix,
   ARABIC_ERROR,
   containsArabic,
+  drawMathPaths,
+  fixViewBox,
   getAsyncLoadedModules,
   getConversionCount,
   isMathJaxLoaded,
   MAX_LATEX,
+  type MathPathItem,
+  type MathPaths,
+  svgToPaths,
 }
 
 export type MathOpts = { display: boolean; color: string }
