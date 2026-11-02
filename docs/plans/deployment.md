@@ -16,29 +16,31 @@ Dev: the browser at `http://localhost:3000` calls the server at `NEXT_PUBLIC_API
 
 ## Configuration (`deploy/.env.example`)
 
-| Key                                                    | Default                                                   | Meaning                                               |
-| ------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------- |
-| `OPENROUTER_API_KEY`                                   | –                                                         | Server only. Never in the browser, repo, logs or chat |
-| `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `TUTOR_FALLBACK_MODEL` · `REVIEWER_MODEL` | `anthropic/claude-haiku-5.5` · `google/gemini-3.8-flash` · the other tutor · `anthropic/claude-sonnet-5.5` | S3: English / Arabic / retry / optional reviewer |
-| `CHEAP_MODEL`                                          | `anthropic/claude-haiku-5.5`                              | Summaries, rolling memory, TOC inference              |
-| `VISION_MODEL`                                         | `google/gemini-3.8-flash`                                 | Page transcription (rung R4)                          |
-| `EMBED_MODEL` · `EMBED_DIMS`                           | `baai/bge-m3` · `1024`                                    | Fixed per book once indexed                           |
-| `DATA_DIR`                                             | `./data` (VPS: `/var/lib/whiteboard`)                     | SQLite file, blobs, backups                           |
-| `PORT`                                                 | `4000`                                                    | Server port                                           |
-| `PUBLIC_ORIGIN`                                        | `http://localhost:3000` (VPS: `https://<domain>`)         | Allowed Origin for WebSocket and non-GET requests     |
-| `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD` | `12` · `0.50` · `5`                                       | Tutor caps                                            |
-| `CHAPTER_STUFF_MAX_TOKENS`                             | `60000`                                                   | Whole-chapter scope pack limit                        |
-| `TUTOR_STUB`                                           | `0`                                                       | `1` replays scripted tool calls (tests)               |
+| Key                                                    | Default                                                                                                                               | Meaning                                                                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `META_API_KEY`                                         | –                                                                                                                                     | Meta Model API key (all LLM/vision calls). Server only. Never in the browser, repo, logs or chat          |
+| `META_API_BASE_URL`                                    | `https://api.llama.com/compat/v1`                                                                                                     | Meta OpenAI-compatible API endpoint                                                                       |
+| `OPENROUTER_API_KEY`                                   | –                                                                                                                                     | Used exclusively for `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and M0 spike benchmarks         |
+| `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `TUTOR_FALLBACK_MODEL` · `REVIEWER_MODEL` | `Llama-4-Maverick-17B-128E-Instruct-FP8` · `Llama-4-Maverick-17B-128E-Instruct-FP8` · `Llama-4-Scout-17B-16E-Instruct-FP8` · `Llama-4-Maverick-17B-128E-Instruct-FP8` | Active Meta AI models (also supports `Llama-3.3-70B-Instruct`). *(S3 OpenRouter baseline: `anthropic/claude-haiku-5.5` · `google/gemini-3.8-flash` · `anthropic/claude-sonnet-5.5`)* |
+| `CHEAP_MODEL`                                          | `Llama-4-Scout-17B-16E-Instruct-FP8`                                                                                                  | Summaries, rolling memory, TOC inference *(S3 baseline: `anthropic/claude-haiku-5.5`)*                    |
+| `VISION_MODEL`                                         | `Llama-4-Maverick-17B-128E-Instruct-FP8`                                                                                              | Page transcription & canvas inspection (`Llama-3.2-90B-Vision-Instruct` / `11B` also supported; *S2 baseline: `google/gemini-3.8-flash`*) |
+| `EMBED_MODEL` · `EMBED_DIMS`                           | `baai/bge-m3` · `1024`                                                                                                                | Fixed per book once indexed (via OpenRouter `/api/v1/embeddings`)                                         |
+| `DATA_DIR`                                             | `./data` (VPS: `/var/lib/whiteboard`)                                                                                                 | SQLite file, blobs, backups                                                                               |
+| `PORT`                                                 | `4000`                                                                                                                                | Server port                                                                                               |
+| `PUBLIC_ORIGIN`                                        | `http://localhost:3000` (VPS: `https://<domain>`)                                                                                     | Allowed Origin for WebSocket and non-GET requests                                                         |
+| `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD` | `12` · `0.50` · `5`                                                                                                                   | Tutor caps                                                                                                |
+| `CHAPTER_STUFF_MAX_TOKENS`                             | `60000`                                                                                                                               | Whole-chapter scope pack limit                                                                            |
+| `TUTOR_STUB`                                           | `0`                                                                                                                                   | `1` replays scripted tool calls (tests)                                                                   |
 
 Web-only: `NEXT_PUBLIC_API_BASE` (in `apps/web/.env.local`).
 
 ## Local
 
-Prerequisites: Node 22+, pnpm 12 (`corepack enable`), an OpenRouter key. Nothing else.
+Prerequisites: Node 22+, pnpm 12 (`corepack enable`), a Meta API key (`META_API_KEY`), and an OpenRouter key (`OPENROUTER_API_KEY`, for `baai/bge-m3` embeddings). Nothing else.
 
 ```
 pnpm install
-cp deploy/.env.example .env      # set OPENROUTER_API_KEY
+cp deploy/.env.example .env      # set META_API_KEY and OPENROUTER_API_KEY
 pnpm dev                         # web :3000, server :4000, data in ./data
 ```
 
@@ -126,7 +128,7 @@ On start the server runs pending migrations after copying the DB to `DATA_DIR/ba
 ## Operations
 
 - Logs: `journalctl -u whiteboard-server -f`. Logs never contain keys, prompts or book text (see [auth-security](./auth-security.md)).
-- Health: `GET /api/health` (DB open, migrations current, OpenRouter key present).
+- Health: `GET /api/health` (DB open, migrations current, `META_API_KEY` and `OPENROUTER_API_KEY` present).
 - Disk: watch `blobs/` (context pictures and page rasters accumulate; no garbage collection in v1, add a cleanup script when it passes ~5 GB).
 - Upgrading Node: install the new LTS, `pnpm install --frozen-lockfile` (native modules re-fetch prebuilt binaries), restart.
 

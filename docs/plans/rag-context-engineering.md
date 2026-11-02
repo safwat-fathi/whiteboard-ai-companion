@@ -68,10 +68,9 @@ Book passages and board text are **data**. They are wrapped in delimiters (`<boo
 
 ## Prompt caching
 
-- **Anthropic:** explicit `cache_control` on the scope-pack block (up to four breakpoints; or top-level for automatic placement; try both in S3). Default TTL 5 minutes; a 1-hour TTL costs 2× on the write but study sessions pause, so use it for scope packs **[S3: confirm the provider passes `ttl`]**. Cache reads cost 0.1× input.
-- **OpenAI, Gemini, DeepSeek, Moonshot, Grok:** automatic; keep the prefix byte-identical (stable order, no timestamps in parts 1–3).
-- OpenRouter keeps requests on one provider for 10 idle minutes, which helps keep caches warm.
-- **Check:** turn 2 shows `usage.prompt_tokens_details.cached_tokens > 0`; the footer shows cached tokens.
+- **Meta Model API / OpenAI-compatible providers:** keep the system prompt prefix (parts 1–3: charter, student profile, scope pack) byte-identical across steps and turns (stable order, no timestamps in parts 1–3) so automatic prefix caching can hit where supported.
+- **M0 Spike S3 benchmark notes (OpenRouter):** Anthropic models use explicit `cache_control` on the scope-pack block with a 1-hour `ttl` (verified in S3: `17,433` cached tokens on turn 2 and `20,233` cached after 6 min; cache reads cost 0.1× input); Gemini and OpenAI cache automatically.
+- **Check:** when the provider reports `usage.prompt_tokens_details.cached_tokens > 0`, the message footer displays cached tokens.
 
 ## Memory
 

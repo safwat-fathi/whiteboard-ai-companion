@@ -17,7 +17,7 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
   | `turn_busy` | 409 | A tutor turn is already running on this board |
   | `budget_exceeded` | 429 | Daily or per-turn cap hit; `details.cap` says which |
   | `payload_too_large` | 413 | Over the size limit ([auth-security](./auth-security.md)) |
-  | `upstream_error` | 502 | OpenRouter/provider failure after retries |
+  | `upstream_error` | 502 | Meta Model API / OpenRouter provider failure after retries |
   | `ingest_failed` | 422 | Book could not be processed; `details` has the step |
 
 - Pagination: `?before=<cursor>&limit=<n>`; responses carry `next` when more exist.
@@ -26,7 +26,7 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/health` | DB open, migrations current, OpenRouter key present |
+| `GET /api/health` | DB open, migrations current, `META_API_KEY` and `OPENROUTER_API_KEY` present |
 | `GET /api/boards` · `POST /api/boards {title, scope}` | List / create |
 | `GET /api/boards/:id` · `PATCH` · `DELETE` | Metadata, title, scope |
 | `GET /api/boards/:id/messages` | Chat history (paged) |

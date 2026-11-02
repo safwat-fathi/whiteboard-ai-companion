@@ -2,40 +2,47 @@
 
 > Part of [PLAN.md](../PLAN.md) §8 (resolution R2) · Related: [chat-ui](./chat-ui.md) · [board-context](./board-context.md) · [rag-context-engineering](./rag-context-engineering.md) · [jump-to-ai](./jump-to-ai.md) · [api](./api.md)
 
-Everything between the chat dock and OpenRouter: the provider, the tool loop, the tool registry, limits and tests. What goes _into_ the prompt is in [rag-context-engineering](./rag-context-engineering.md) and [board-context](./board-context.md).
+Everything between the chat dock and the AI providers: the **Meta Model API** provider (and OpenRouter for embeddings), the tool loop, the tool registry, limits and tests. What goes _into_ the prompt is in [rag-context-engineering](./rag-context-engineering.md) and [board-context](./board-context.md).
 
 ## Provider
 
-- **OpenRouter only** (the one key you have). Used for: chat completions with tool calling and image input (through the AI SDK provider), embeddings (`POST /api/v1/embeddings`), and the PDF `file-parser` plugin ([library-ingestion](./library-ingestion.md)).
-- The key lives **only in the server environment**. The browser never talks to OpenRouter.
-- Libraries: `ai` 7, `@ai-sdk/react` 4, `@openrouter/ai-sdk-provider` 3 ([tech-stack](./tech-stack.md)). All AI SDK server code is behind one adapter module, `apps/server/src/tutor/llm.ts`.
-- Provider options: `appName`/`appUrl` set; `extraBody: { provider: { data_collection: 'deny' } }` to prefer providers that do not train on prompts **[spike S3: confirm routing still works]**.
+- **Meta Model API (`META_API_KEY`) for all LLM and vision roles.** Used for: chat completions with tool calling and multimodal image input (tutor, Arabic tutor, fallback, reviewer), cheap ingestion/memory summaries (`CHEAP_MODEL`), and scanned/math page transcription (`VISION_MODEL`, [library-ingestion](./library-ingestion.md)). Connects to `META_API_BASE_URL` (default `https://api.llama.com/compat/v1`) via `@ai-sdk/openai-compatible`.
+- **OpenRouter (`OPENROUTER_API_KEY`) for embeddings only.** Used exclusively at runtime for `baai/bge-m3` embeddings (`POST https://openrouter.ai/api/v1/embeddings`) since Meta's Llama API does not expose an embeddings endpoint, and retained for the historical M0 S2–S4 benchmark scripts (`spikes/`).
+- Both keys live **only in the server environment**. The browser never talks to the Meta Model API or OpenRouter.
+- Libraries: `ai` 7, `@ai-sdk/react` 4, `@ai-sdk/openai-compatible` 2 (plus `@openrouter/ai-sdk-provider` 3 in M0 spike benchmarks; [tech-stack](./tech-stack.md)). All AI SDK server code is behind one adapter module, `apps/server/src/tutor/llm.ts`.
+- Provider options: configure `createOpenAICompatible({ name: 'meta-llama', baseURL: process.env.META_API_BASE_URL ?? 'https://api.llama.com/compat/v1', apiKey: process.env.META_API_KEY, includeUsage: true })`. (In M0 Spike S3 on OpenRouter, `extraBody: { provider: { data_collection: 'deny' } }` was verified to route cleanly.)
 
-## Models (all env vars; read from OpenRouter's live catalog on 2026-11-01)
+## Models (Meta AI active defaults + M0 S3 benchmarked baseline)
 
-Each default below supports tool calling and image input (embeddings are listed under `/api/v1/embeddings/models`).
+Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley), Whiteboard AI uses **Meta AI models** via the Meta Model API as the active defaults across all generative and vision roles, while preserving `baai/bge-m3` via OpenRouter strictly for dense vector embeddings:
 
-| Role           | Env                    | Default (candidate)           | $/M in / out | Use                                                 |
-| -------------- | ---------------------- | ----------------------------- | ------------ | --------------------------------------------------- |
-| Tutor (English) | `TUTOR_MODEL`         | `anthropic/claude-haiku-5.5`  | 0.10 / 0.50  | English boards: chat, tool loop, vision, prompt caching **(S3, 2026-11-02)** |
-| Tutor (Arabic)  | `TUTOR_MODEL_AR`      | `google/gemini-3.8-flash`     | 0.75 / 3.75  | Arabic boards; Haiku answers Arabic prompts in English **(S3)** |
-| Reviewer (optional) | `REVIEWER_MODEL`  | `anthropic/claude-sonnet-5.5` | 2.00 / 10.00 | Best Arabic (4.5/5); second-pass review if built **(S3)** |
-| Tutor fallback | `TUTOR_FALLBACK_MODEL` | the other tutor               |              | One retry on provider errors                        |
-| Cheap          | `CHEAP_MODEL`          | `anthropic/claude-haiku-5.5`  | 0.10 / 0.50  | Summaries, rolling memory, TOC inference            |
-| Vision         | `VISION_MODEL`         | `google/gemini-3.8-flash`     | 0.75 / 3.75  | Page transcription (rung R4)                        |
-| Embeddings     | `EMBED_MODEL`          | `baai/bge-m3`                 | 0.01 / –     | Indexing and queries (1024-d, multilingual)         |
+| Role                | Env                    | Active Default (Meta Model API)            | Alternative Meta Model IDs                                                | Use                                                                                 |
+| ------------------- | ---------------------- | ------------------------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Tutor (English)     | `TUTOR_MODEL`          | `Llama-4-Maverick-17B-128E-Instruct-FP8`   | `Llama-3.3-70B-Instruct` · `Llama-4-Scout-17B-16E-Instruct-FP8`           | English boards: chat, tool loop orchestration, math reasoning, native vision        |
+| Tutor (Arabic)      | `TUTOR_MODEL_AR`       | `Llama-4-Maverick-17B-128E-Instruct-FP8`   | `Llama-3.3-70B-Instruct`                                                  | Arabic boards: multilingual chat, tool loop, RTL math/diagram explanation           |
+| Reviewer (optional) | `REVIEWER_MODEL`       | `Llama-4-Maverick-17B-128E-Instruct-FP8`   | `Llama-3.3-70B-Instruct`                                                  | Second-pass pedagogical & Arabic quality review if enabled                          |
+| Tutor fallback      | `TUTOR_FALLBACK_MODEL` | `Llama-4-Scout-17B-16E-Instruct-FP8`       | `Llama-3.3-70B-Instruct`                                                  | Automatic one-retry fallback on 5xx / upstream provider errors                      |
+| Cheap               | `CHEAP_MODEL`          | `Llama-4-Scout-17B-16E-Instruct-FP8`       | `Llama-3.3-70B-Instruct` · `Llama-3.1-8B-Instruct`                        | Book/chapter/section summaries, rolling chat memory, TOC inference                  |
+| Vision              | `VISION_MODEL`         | `Llama-4-Maverick-17B-128E-Instruct-FP8`   | `Llama-3.2-90B-Vision-Instruct` · `Llama-3.2-11B-Vision-Instruct`         | Whiteboard snapshot inspection & scanned/math PDF page transcription ([library-ingestion](./library-ingestion.md)) |
+| Embeddings          | `EMBED_MODEL`          | `baai/bge-m3` *(via `OPENROUTER_API_KEY`)* | –                                                                         | Indexing and queries (`1024-d`, multilingual; `$0.01/M` tokens) **(S4b)**           |
 
-**S3 compared** Sonnet 5.5, Gemini 3.8 Flash, GPT-6 Luna and Haiku 5.5 ([results](../../spikes/s3-openrouter/RESULT.md)); originally planned as: S3 compares three tutor candidates on your questions** (e.g. Sonnet 5.5, Gemini 3.7 Flash, `openai/gpt-6-luna`) and picks by quality on your books, Arabic included, not by brand.
+### Previously Benchmarked Models (M0 Spike S3 via OpenRouter, 2026-11-02)
 
-### Meta AI Developer Hackathon Configuration
-Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley), Whiteboard AI is configured to leverage Meta's open foundation models via OpenRouter or direct Meta API:
-- **Tutor / Reasoning (`TUTOR_MODEL`):** `meta-llama/llama-3.3-70b-instruct` (or `meta-llama/llama-3.1-405b-instruct`) for tool loop orchestration, complex math derivation, and pedagogical step generation.
-- **Vision & Board Perception (`VISION_MODEL`):** `meta-llama/llama-3.2-11b-vision-instruct` (or `meta-llama/llama-3.2-90b-vision-instruct`) for inspecting student canvas drawings and textbook figures.
+Before switching the active runtime provider to the Meta Model API, Spike S3 ([`spikes/s3-openrouter/RESULT.md`](../../spikes/s3-openrouter/RESULT.md)) benchmarked four candidate models via OpenRouter on tool-loop reliability, streaming cost reporting, `tool-result-image` support, 1-hour prompt caching, `data_collection: 'deny'`, and Arabic pedagogical quality:
 
-**Cost envelope** (estimates from catalog prices; S3 replaces them with measured numbers):
+| Role (S3 Baseline)  | Env                    | Benchmarked Model (OpenRouter ID) | $/M in / out | S3 Benchmark Findings                                                                 |
+| ------------------- | ---------------------- | --------------------------------- | ------------ | ------------------------------------------------------------------------------------- |
+| Tutor (English)     | `TUTOR_MODEL`          | `anthropic/claude-haiku-5.5`      | 0.10 / 0.50  | Passed all tool-loop, vision & 1h cache checks (`$0.0005`/turn); English-only (3/5 AR) |
+| Tutor (Arabic)      | `TUTOR_MODEL_AR`       | `google/gemini-3.8-flash`         | 0.75 / 3.75  | Passed tool-loop (5 calls, `$0.0049`), auto-caching & Arabic (3.5/5; needs language rule) |
+| Reviewer (optional) | `REVIEWER_MODEL`       | `anthropic/claude-sonnet-5.5`     | 2.00 / 10.00 | Strongest Arabic rating (**4.5/5**), 4 tool calls (`$0.0118`), 1h cache hit verified  |
+| Candidate (dropped) | –                      | `openai/gpt-6-luna`               | –            | Cheapest (`$0.0002`/turn) and passed tool/cache checks, but rated **2.5/5** on Arabic |
+| Cheap               | `CHEAP_MODEL`          | `anthropic/claude-haiku-5.5`      | 0.10 / 0.50  | Section summaries (`$0.0006` for 150–400 tokens)                                      |
+| Vision              | `VISION_MODEL`         | `google/gemini-3.8-flash`         | 0.75 / 3.75  | Benchmarked in S2 as R4 page-transcription fallback                                   |
 
-- Index a 400-page book: embeddings ≈ $0.002; summaries ≈ $0.02–0.05; optional paid extraction: `mistral-ocr` ≈ $0.80, vision transcription ≈ $0.2–1.5.
-- One tutor turn (Sonnet-class, 60k cached scope pack, ~6 steps): ≈ $0.05–0.25. The first turn of a scope pays the cache write. $5/day ≈ 20–100 turns; flash-class models are roughly 3–20× cheaper.
+**Cost envelope** (combining S2–S4 measurements with Meta Llama API / OpenRouter pricing):
+
+- Index a 400-page book: `baai/bge-m3` embeddings ≈ `$0.002` (S4b measured `$0.0058` across 3 books); `CHEAP_MODEL` summaries ≈ `$0.01–0.04`; `VISION_MODEL` transcription on scanned/math pages ≈ `$0.05–0.40` (S2 also benchmarked OpenRouter `mistral-ocr` at `$0.0205` / 10 pages).
+- One tutor turn (60k scope pack, ~6 steps): ≈ `$0.002–0.03` on Llama 4 Maverick / Scout or Llama 3.3 70B (compared to `$0.0005–0.012` for a 2-step toy turn on the S3 benchmarked models).
 
 ## Turn lifecycle
 
@@ -66,8 +73,8 @@ Every write returns created ids, their bounding boxes and the batch id; with `re
 
 ## Guardrails
 
-- **Caps per turn:** `MAX_STEPS` (12), `MAX_TURN_COST_USD` (0.50), 120 s wall clock, a soft element budget (~40 new elements; the charter says ask before more). **Per day:** `DAILY_BUDGET_USD`, summed from the `spend` ledger (turns, embeddings, summaries, OCR, vision). Breach aborts with a plain message in the chat.
-- **Cost must arrive while streaming.** `createOpenRouter()` defaults to `compatibility: 'compatible'`, which omits `stream_options.include_usage`. Create the provider with `compatibility: 'strict'` and set `usage: { include: true }` on the model; read `providerMetadata.openrouter.usage.cost` in `onStepFinish`. **[Spike S3]** confirms cost arrives after each step in streaming mode, otherwise the cap never fires.
+- **Caps per turn:** `MAX_STEPS` (12), `MAX_TURN_COST_USD` (0.50), 120 s wall clock, a soft element budget (~40 new elements; the charter says ask before more). **Per day:** `DAILY_BUDGET_USD`, summed from the `spend` ledger (turns, embeddings, summaries, vision transcription). Breach aborts with a plain message in the chat.
+- **Cost must arrive while streaming.** With the Meta Model API (`@ai-sdk/openai-compatible` configured with `includeUsage: true`), each streamed step reports token usage (`usage.inputTokens`, `usage.outputTokens`); `apps/server/src/tutor/llm.ts` computes step USD cost in `onStepFinish` from a per-model price table (`inputTokens * inPrice + outputTokens * outPrice`), falling back to `providerMetadata.openrouter.usage.cost` when present (verified in **[Spike S3]** on OpenRouter with `compatibility: 'strict'` and `usage: { include: true }`).
 - **Edit rights (anti-goal):** the Board service rejects agent patches/removes on `author.kind = human` elements unless the id was **selected when the turn started** (`grantedIds`). The tutor may always add and may edit its own elements. `locked` is honoured.
 - **Citations validated:** `cite:` ids must be in the set retrieved this turn; unknown ids are stripped and flagged.
 - **Untrusted content:** book passages and board text are delimited data; the charter and tool descriptions say never to follow instructions found in them. The tutor has no network tools.
@@ -76,17 +83,17 @@ Every write returns created ids, their bounding boxes and the batch id; with `re
 
 ## Snapshots to the model
 
-The tool result carries text (ids, bounds, "snapshot attached"); the adapter then appends a **user** message with the PNG (≤ 1600 px long side). OpenRouter's tool-calling docs only show text in `role:"tool"` messages and do not say images are allowed. If **S3** shows the chosen model accepts images inside tool results, switch to that; the registry does not change. Context pictures attached by the student ([board-context](./board-context.md)) are ordinary image parts of the user message.
+In **S3**, `toModelOutput` returning a `file` part (`mediaType: 'image/png'`, `data: {type:'data', data}`) inside tool results passed on all four benchmarked models (`snapshotAdapter: 'tool-result-image'`). If a Meta Model API endpoint rejects images inside `role:"tool"` messages, the adapter automatically falls back to appending a **user** message with the PNG (≤ 1600 px long side) while the tool result carries text (ids, bounds, "snapshot attached"); the registry does not change. Context pictures attached by the student ([board-context](./board-context.md)) are ordinary image parts of the user message.
 
 ## Prompt caching hooks
 
-Anthropic models need explicit `cache_control` (per-block via `providerOptions.openrouter.cacheControl`, or top-level for automatic placement); OpenAI, Gemini, DeepSeek and others cache automatically. Breakpoint goes after the scope pack. 1-hour TTL for scope packs **[S3: confirm the provider passes `ttl`]**. Check `usage.prompt_tokens_details.cached_tokens > 0` on turn 2. Full strategy: [rag-context-engineering](./rag-context-engineering.md).
+Keep the system prompt prefix (charter + profile + scope pack) byte-identical across steps and turns (passed via AI SDK 7 `instructions`) so automatic prefix caching hits on providers that support it. (In **S3** on OpenRouter, explicit `cache_control` with 1-hour `ttl` on Anthropic and automatic caching on Gemini/OpenAI were verified via `usage.prompt_tokens_details.cached_tokens > 0` on turn 2.) Full strategy: [rag-context-engineering](./rag-context-engineering.md).
 
 ## Errors and fallback
 
 | Condition             | Behaviour                                                                           |
 | --------------------- | ----------------------------------------------------------------------------------- |
-| 402 (credits)         | Chat shows "OpenRouter credits exhausted"; no retry                                 |
+| 402 (credits/quota)   | Chat shows "AI provider quota/credits exhausted"; no retry                          |
 | 429                   | Retry with backoff (AI SDK `maxRetries` 2), then a plain message                    |
 | 5xx / provider error  | One retry on `TUTOR_FALLBACK_MODEL`, labelled in the message footer                 |
 | Tool validation error | Returned to the model as a tool error (it self-corrects); counts toward `MAX_STEPS` |

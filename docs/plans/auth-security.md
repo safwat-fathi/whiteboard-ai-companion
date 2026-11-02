@@ -2,13 +2,13 @@
 
 > Part of [PLAN.md](../PLAN.md) §16 · Related: [deployment](./deployment.md) · [api](./api.md) · [ai-integration](./ai-integration.md) · [math-renderer](./math-renderer.md) · [database](./database.md)
 
-**Answer 3: no login or signup for now.** That is fine on localhost. On a VPS it would leave an open endpoint that spends your OpenRouter credits and serves your books (finding F3), so v1 has an **access gate** instead of accounts.
+**Answer 3: no login or signup for now.** That is fine on localhost. On a VPS it would leave an open endpoint that spends your Meta Model API / OpenRouter credits and serves your books (finding F3), so v1 has an **access gate** instead of accounts.
 
 ## Assets and threats
 
 | Asset | Threats | Controls |
 |---|---|---|
-| OpenRouter key and credits | Leaked key; strangers using the chat endpoint; runaway tool loops | Key only in server env; gate; per-turn and per-day caps; credit limit on the key |
+| `META_API_KEY` & `OPENROUTER_API_KEY` and credits | Leaked keys; strangers using the chat/ingest endpoints; runaway tool loops | Keys only in server env; gate; per-turn and per-day caps; credit/rate limits on the keys |
 | Books and boards (private study material) | Scanners; other sites using your cached login; backups leaking | Gate; Origin checks; backups stay off public storage |
 | The student's trust in the AI | Prompt injection via book/board text; fabricated citations | Delimited untrusted data; no network tools; validated `cite:` ids; edit-rights guard |
 | The server | Malicious uploads; hostile LaTeX; oversized payloads | Magic-byte checks; MathJax allowlist; limits table; non-root units |
@@ -30,14 +30,14 @@ There are no users. `author` is derived by the server from the channel: **WebSoc
 
 ## Secrets and privacy
 
-- `OPENROUTER_API_KEY` exists only in the server environment (`/etc/whiteboard/env`, mode 0640 on the VPS; `.env` locally, gitignored). It is never sent to the browser, written to logs, stored in the DB or pasted into chat. If it ever leaks: revoke and rotate in OpenRouter.
-- Set a **credit limit** on the key in OpenRouter as the outer fence behind the in-app budgets.
-- **Privacy:** prompts, selected board content, pictures and retrieved book passages go to OpenRouter and the model provider. Request `provider.data_collection: "deny"` **[spike S3: confirm routing still works]**. The board-context "What the AI sees" preview makes the outgoing context visible ([board-context](./board-context.md)).
+- `META_API_KEY` (all LLM/vision calls) and `OPENROUTER_API_KEY` (`baai/bge-m3` embeddings only) exist only in the server environment (`/etc/whiteboard/env`, mode 0640 on the VPS; `.env` locally, gitignored). Neither key is ever sent to the browser, written to logs, stored in the DB or pasted into chat. If a key ever leaks: revoke and rotate in the Meta developer portal / OpenRouter.
+- Set a **spend / rate limit** on the keys as the outer fence behind the in-app budgets.
+- **Privacy:** prompts, selected board content, pictures and retrieved book passages go to the Meta Model API (`https://api.llama.com/compat/v1`); book chunks and search queries go to OpenRouter's embeddings endpoint (`provider.data_collection: "deny"`, verified in **spike S3/S4b**). The board-context "What the AI sees" preview makes the outgoing context visible ([board-context](./board-context.md)).
 - Logs contain ids, timings, token counts and costs; never keys, prompts, book text or board text.
 
 ## Budgets
 
-Per turn: `MAX_STEPS`, `MAX_TURN_COST_USD`, 120 s. Per day: `DAILY_BUDGET_USD` summed from the `spend` ledger, which includes embeddings, summaries, OCR and vision. Paid ingestion rungs show an estimate first and cannot start if they would exceed the daily cap. 80% of the daily cap shows a warning in the top bar.
+Per turn: `MAX_STEPS`, `MAX_TURN_COST_USD`, 120 s. Per day: `DAILY_BUDGET_USD` summed from the `spend` ledger, which includes embeddings, summaries and vision page transcription. Paid ingestion rungs show an estimate first and cannot start if they would exceed the daily cap. 80% of the daily cap shows a warning in the top bar.
 
 ## Content safety
 

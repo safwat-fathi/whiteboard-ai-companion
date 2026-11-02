@@ -44,13 +44,13 @@
 
 ## 0. Context and TL;DR
 
-**Hackathon alignment.** Built specifically for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley). Whiteboard AI tackles visual, multimodal AI education: an interactive whiteboard where Meta's Llama models (e.g. Llama 3.3 70B for tool loop reasoning, Llama 3.2 Vision for canvas & diagram inspection) act as a personal tutor explaining complex textbooks with formulas, diagrams, and verifiable page citations.
+**Hackathon alignment.** Built specifically for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley). Whiteboard AI tackles visual, multimodal AI education: an interactive whiteboard where Meta's Llama models via the **Meta Model API** (`Llama-4-Maverick-17B-128E-Instruct-FP8`, `Llama-4-Scout-17B-16E-Instruct-FP8`, `Llama-3.3-70B-Instruct`, and `Llama-3.2-Vision`) act as a personal tutor explaining complex textbooks with formulas, diagrams, and verifiable page citations.
 
 **Context.** The design doc specifies a from-scratch infinite canvas plus 16 MCP tools, and assumes an *external* AI client does the thinking. The product is now a **study companion**: a student uploads books, picks a topic / chapter / whole book, and chats with an AI tutor that explains on a shared whiteboard with page citations. This plan (1) validates the doc against that product and your answers, and (2) adds what is missing.
 
 - **The engine design is sound and mostly stays.** Your answers delete a lot of it: accounts, roles, JWT, OAuth, Redis, S3, multi-instance, and now Docker and Postgres.
-- **Biggest gap:** no built-in AI. A tutor needs a chat dock in the UI and a server-side agent loop over OpenRouter (§8–9), the whiteboard as its context (§10), a book library with hybrid retrieval (§11–12), and jump-to-AI-work (§13).
-- **"No login" is fine on localhost, not on a VPS** that holds your OpenRouter key and your books. One shared-secret gate fixes it (§16).
+- **Biggest gap:** no built-in AI. A tutor needs a chat dock in the UI and a server-side agent loop over the Meta Model API (§8–9), the whiteboard as its context (§10), a book library with hybrid retrieval (§11–12), and jump-to-AI-work (§13).
+- **"No login" is fine on localhost, not on a VPS** that holds your `META_API_KEY` / `OPENROUTER_API_KEY` and your books. One shared-secret gate fixes it (§16).
 - **Re-sequenced** so a usable tutor lands at ≈ week 15 of ≈ 20 full-time-engineer weeks. The doc's 14 weeks covered engine + MCP only (§17).
 - **I need from you before M0** (not now): 2–3 real books and ~10 questions per book (§19).
 
@@ -155,8 +155,8 @@ NestJS server (one Node process) ───────────────�
                    (ingestion runs in a worker thread)
   Snapshot render  core render() on @napi-rs/canvas
    │                                         │
-SQLite file (WAL) + blobs on disk        OpenRouter (chat + tools + vision,
- under DATA_DIR                           embeddings, PDF parser) — key lives only here
+SQLite file (WAL) + blobs on disk        Meta Model API (chat + tools + vision + page OCR; META_API_KEY)
+ under DATA_DIR                          + OpenRouter (baai/bge-m3 embeddings only; OPENROUTER_API_KEY)
 ```
 
 Human ops (WebSocket) and tutor ops (in-process) enter the **same** Board service, so they share validation, ordering, undo and broadcast. Repo layout and stack: [tech-stack](./plans/tech-stack.md).
@@ -165,7 +165,7 @@ Human ops (WebSocket) and tutor ops (in-process) enter the **same** Board servic
 
 ## 4. Tech stack → [plans/tech-stack.md](./plans/tech-stack.md)
 
-TypeScript + pnpm workspace (`packages/core`, `apps/web`, `apps/server`). Next.js 16 (client-only editor), NestJS 12, SQLite via better-sqlite3, zod 4, AI SDK 7 + OpenRouter provider, MathJax 4, `@napi-rs/canvas`, `pdfjs-dist`, dagre. Versions checked on npm 2026-11-01. pnpm only (no npm/yarn/`npx`). No Docker, no database server, no queue.
+TypeScript + pnpm workspace (`packages/core`, `apps/web`, `apps/server`). Next.js 16 (client-only editor), NestJS 12, SQLite via better-sqlite3, zod 4, AI SDK 7 + `@ai-sdk/openai-compatible` (Meta Model API) + OpenRouter embeddings, MathJax 4, `@napi-rs/canvas`, `pdfjs-dist`, dagre. Versions checked on npm 2026-11-01. pnpm only (no npm/yarn/`npx`). No Docker, no database server, no queue.
 
 ## 5. Run and deploy, no Docker → [plans/deployment.md](./plans/deployment.md)
 
@@ -183,7 +183,7 @@ LaTeX in, MathJax v4 TeX → SVG → cached bitmap out; the same `renderMath()` 
 
 ## 8. AI integration (tutor agent) → [plans/ai-integration.md](./plans/ai-integration.md)
 
-OpenRouter only; key server-side. AI SDK 7 tool loop behind one adapter module; one tool registry in `packages/core` (18 tools: board read/write, `add_diagram`, `add_book_figure`, book tools) with an AI SDK adapter now and an MCP adapter later. Every write = one labelled batch stamped with the turn. Caps per turn and per day, edit-rights guard, snapshots to the model as follow-up images, prompt caching, fallback model, stub tutor for tests. Models are env vars.
+Meta Model API (`META_API_KEY`, `https://api.llama.com/compat/v1`) for all LLM/vision calls (`OPENROUTER_API_KEY` retained strictly for `baai/bge-m3` embeddings and M0 benchmark scripts); keys server-side only. AI SDK 7 tool loop behind one adapter module; one tool registry in `packages/core` (18 tools: board read/write, `add_diagram`, `add_book_figure`, book tools) with an AI SDK adapter now and an MCP adapter later. Every write = one labelled batch stamped with the turn. Caps per turn and per day, edit-rights guard, snapshots to the model (`tool-result-image` with follow-up user message fallback), prompt caching, fallback model, stub tutor for tests. Models are env vars defaulting to Meta AI models (`Llama-4-Maverick-17B-128E-Instruct-FP8`, `Llama-4-Scout-17B-16E-Instruct-FP8`, `Llama-3.3-70B-Instruct`, `Llama-3.2-Vision`), with M0 S3 OpenRouter benchmarked models documented alongside.
 
 ## 9. In-app chat UI → [plans/chat-ui.md](./plans/chat-ui.md)
 
@@ -195,7 +195,7 @@ Every turn includes a budgeted **board digest** (header, counts, viewport, selec
 
 ## 11. Library and ingestion → [plans/library-ingestion.md](./plans/library-ingestion.md)
 
-PDF-only v1. Upload → estimate and preview → index. Extraction ladder R1 (local `pdfjs-dist`) → R3 (OpenRouter `mistral-ocr`, $2/1,000 pages) for scans and math-dense pages → R4 (vision transcription) as the fallback for pages R3 gets wrong, routed per page (S2 dropped the free `cloudflare-ai` rung). Structure from the PDF outline with printed page labels. Heading-aware chunks, multilingual embeddings via OpenRouter, FTS5 index, bottom-up summaries. Ingestion runs in a worker thread; steps are resumable.
+PDF-only v1. Upload → estimate and preview → index. Extraction ladder R1 (local `pdfjs-dist`) → R4 (`VISION_MODEL` via Meta Model API on `@napi-rs/canvas` page PNGs) for scanned and math-dense pages, routed per page (S2 dropped the free `cloudflare-ai` rung R2 and benchmarked OpenRouter `mistral-ocr` R3 and `gemini-3.8-flash` R4 as the M0 baseline). Structure from the PDF outline with printed page labels. Heading-aware chunks, multilingual `baai/bge-m3` embeddings via OpenRouter (`OPENROUTER_API_KEY`), FTS5 index, bottom-up summaries via `CHEAP_MODEL` on Meta Model API. Ingestion runs in a worker thread; steps are resumable.
 
 ## 12. RAG and context engineering → [plans/rag-context-engineering.md](./plans/rag-context-engineering.md)
 
@@ -252,7 +252,7 @@ Five M0 spikes: **S1** canvas performance + Arabic/MathJax on a server canvas; *
 1. **SQLite** (better-sqlite3 13, WAL) + FTS5 + exact in-memory cosine search instead of Postgres + pgvector, because of R1. `sqlite-vec` is the upgrade path; the Postgres revert path is in [database](./plans/database.md).
 2. **Native deploy:** systemd + Caddy; deploy by `git pull` + `pnpm build`; automatic DB backup before migrations.
 3. Next.js + NestJS kept as in the doc (a static export or Vite SPA served by Caddy is an optional M0 simplification).
-4. In-app tutor via AI SDK 7 + OpenRouter provider behind one adapter module.
+4. In-app tutor via AI SDK 7 + Meta Model API (`@ai-sdk/openai-compatible`, `META_API_KEY`) behind one adapter module (`OPENROUTER_API_KEY` retained strictly for `baai/bge-m3` embeddings and M0 spike benchmarks).
 5. **The chat dock is the only AI entry point in v1;** the MCP endpoint is optional M7 and the tool registry is built for it from day one.
 6. **Board context:** digest always; selection default = structure + picture; viewport and whole board are opt-in; pictures rendered in the browser; selection grants edit rights for that turn.
 7. Milestones re-sequenced: tutor slice before pen and charts.
@@ -279,14 +279,15 @@ Five M0 spikes: **S1** canvas performance + Arabic/MathJax on a server canvas; *
 28. **The TeX package list drops `noundefined`,** so undefined control sequences (`\href`, `\require`, …) throw and `renderMath` returns the message; math bitmaps beyond 4096 px draw as `Path2D` vectors. (Planning calls P1 and P6 in the M2 task plan.)
 29. **M0 spikes (S1–S4) closed:**
     - **S1:** main-thread rendering with cached bitmaps (`OffscreenCanvas` worker was slower); `rbush` and `perfect-freehand` kept; `@napi-rs/canvas` server snapshots with bundled `IBM Plex Sans Arabic`.
-    - **S2:** R1 (`pdfjs-dist`, stripping raw `\x00–\x1F` and PUA `\uE000–\uF8FF`) for text PDFs; R2 (`cloudflare-ai`) dropped; R3 (`mistral-ocr`, `$0.0205` / 10 pages, one `text` element per page in `annotations[0].file.content` between `<file>` and `</file>`) for scanned/Arabic/math-dense pages; R4 (`gemini-3.8-flash`) fallback; slice PDFs with `pdf-lib` `copyPages`.
-    - **S3:** OpenRouter streaming step cost (`providerMetadata.openrouter.usage.cost`), 1 h prompt cache, `tool-result-image` (`toModelOutput` with `file` part), and `data_collection: "deny"` verified; `google/gemini-3.8-flash` (Arabic tutor), `anthropic/claude-haiku-5.5` (English tutor + `cheap`), `anthropic/claude-sonnet-5.5` (optional reviewer), plus Meta Llama hackathon config.
+    - **S2:** R1 (`pdfjs-dist`, stripping raw `\x00–\x1F` and PUA `\uE000–\uF8FF`) for text PDFs; R2 (`cloudflare-ai`) dropped; R3 (`mistral-ocr`, `$0.0205` / 10 pages, one `text` element per page in `annotations[0].file.content` between `<file>` and `</file>`) and R4 (`gemini-3.8-flash`) benchmarked on scanned/Arabic/math-dense pages; slice PDFs with `pdf-lib` `copyPages`.
+    - **S3:** OpenRouter streaming step cost (`providerMetadata.openrouter.usage.cost`), 1 h prompt cache, `tool-result-image` (`toModelOutput` with `file` part), and `data_collection: "deny"` verified across `google/gemini-3.8-flash` (Arabic tutor), `anthropic/claude-haiku-5.5` (English tutor + `cheap`), `anthropic/claude-sonnet-5.5` (optional reviewer), and `openai/gpt-6-luna` (dropped on Arabic).
     - **S4:** `baai/bge-m3` (`EMBED_DIMS = 1024`, `k = 8`), exact in-memory cosine search (`0.51 ms` p95 at 600 chunks, `83.6 ms` p95 / `390.6 MiB` at 100k chunks), `100%` vector@8 (`MRR 0.947`), `93.3%` hybrid@8 (`96.7%` with `±1` neighbours) across `ck12`, `alg1` and `arabic`; retry `429`/`5xx` with backoff. S5 (VPS deploy dry-run) stays deferred.
+30. **Post-M0 provider switch to Meta Model API (2026-11-02):** All runtime LLM and vision calls now target the **Meta Model API** (`META_API_KEY`, `META_API_BASE_URL=https://api.llama.com/compat/v1` via `@ai-sdk/openai-compatible`) using Meta AI models (`Llama-4-Maverick-17B-128E-Instruct-FP8` for `TUTOR_MODEL`, `TUTOR_MODEL_AR`, `VISION_MODEL`, `REVIEWER_MODEL`; `Llama-4-Scout-17B-16E-Instruct-FP8` / `Llama-3.3-70B-Instruct` for `CHEAP_MODEL` and `TUTOR_FALLBACK_MODEL`; `Llama-3.2-90B-Vision-Instruct` / `11B` also supported). Scanned/math PDF pages after R1 route directly to R4 (`VISION_MODEL` via Meta Model API), step USD cost is computed from token `usage` in `llm.ts`, and `OPENROUTER_API_KEY` is retained strictly for `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and the M0 benchmark scripts.
 
 **Inputs I need before M0** (not now)
 1. 2–3 real books as PDFs (tell me if any are EPUB and I will pull EPUB into M4): one text-heavy, one math/diagram-heavy, and an Arabic one if relevant, plus ~10 questions per book with the page where each answer lives. This is also the retrieval eval set.
 2. *(Optional, deferred; local app first)* VPS plan: provider, a Debian or Ubuntu LTS image (not Alpine: native modules ship glibc binaries), and a domain (or Tailscale).
-3. Your OpenRouter key in the server `.env` only, with a credit limit set in OpenRouter.
+3. Your `META_API_KEY` (for Meta Model API LLM/vision calls) and `OPENROUTER_API_KEY` (for `baai/bge-m3` embeddings) in the server `.env` only, with spend limits set on the keys.
 
 ---
 
