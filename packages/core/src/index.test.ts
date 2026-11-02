@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { mk } from './fixtures'
 import { bounds } from './geometry'
 import { SpatialIndex } from './index'
 import { createScene } from './scene'
+import { mk } from './test-utils'
 
 const prng = (seed: number) => () => {
   seed = (seed * 1664525 + 1013904223) >>> 0
@@ -67,6 +67,14 @@ describe('SpatialIndex', () => {
     expect(
       idx.search({ minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 }),
     ).toEqual([])
+  })
+
+  it('indexes elements with empty points and still searches', () => {
+    const idx = new SpatialIndex()
+    const bad = mk('bad', { x: 5, y: 5, data: { kind: 'arrow' } })
+    idx.load([bad, mk('a', { x: 0, y: 0, w: 10, h: 10 })])
+    idx.upsert(bad)
+    expect(idx.search({ minX: 0, minY: 0, maxX: 20, maxY: 20 })).toHaveLength(2)
   })
 
   it('pick returns the higher z of two overlapping elements', () => {

@@ -34,8 +34,12 @@ const worldPoints = (el: Element): Point[] =>
     : []
 
 export function bounds(el: Element): Rect {
+  // Linear elements ignore rotation. Empty/missing points fall back to a degenerate rect at (x, y) so bounds stay finite.
+  const lin = worldPoints(el)
   const pts = isLinear(el)
-    ? worldPoints(el)
+    ? lin.length
+      ? lin
+      : [{ x: el.x, y: el.y }]
     : [
         { x: el.x, y: el.y },
         { x: el.x + el.w, y: el.y },
@@ -64,6 +68,8 @@ function segDist(p: Point, a: Point, b: Point): number {
 }
 
 const polyDist = (p: Point, pts: Point[], closed: boolean) => {
+  const a = pts[0]
+  if (pts.length === 1 && a) return segDist(p, a, a) // one point: degenerate segment
   let d = Infinity
   for (let i = 0; i < pts.length - (closed ? 0 : 1); i++)
     d = Math.min(
@@ -87,7 +93,7 @@ function inside(p: Point, pts: Point[]): boolean {
   return hit
 }
 
-// Outline of a closed shape in the unrotated frame. ponytail: ellipse is a 64-gon; corner radius ignored.
+// Outline of a closed shape in the unrotated frame. ponytail: ellipse is a 64-gon (error ~0.0012*r); corner radius ignored.
 function outline(el: Element): Point[] {
   const { x, y, w, h } = el
   const kind = el.type === 'shape' ? el.data.kind : 'rect'
@@ -136,15 +142,18 @@ export function hitTest(el: Element, p: Point, tolWorld: number): boolean {
     )
   const pts = outline(el)
   if (el.style.fill !== null && inside(q, pts)) return true
-  return polyDist(q, pts, true) <= tolWorld
+  return polyDist(q, pts, true) <= tolWorld + el.style.strokeWidth / 2
 }
 
-/** Binding fractions are of the target's UNROTATED box, then rotated about its centre. */
+/**
+ * Binding fractions are of the target's UNROTATED box, then rotated about its centre.
+ * A linear target ignores rotation (treated as 0), consistent with bounds/hitTest.
+ */
 export const resolveEnd = (b: Binding, target: Element): Point =>
   rot(
     { x: target.x + b.fx * target.w, y: target.y + b.fy * target.h },
     centre(target),
-    target.rotation,
+    isLinear(target) ? 0 : target.rotation,
   )
 
 /**
@@ -173,13 +182,17 @@ export function routeArrow(arrow: Element, scene: Scene): [number, number][] {
 
 const MIN = 1
 
-/** `to` is a world point; the handle acts in the element's rotated frame, the opposite anchor stays fixed in world space. */
+/**
+ * Linear elements (line/arrow) are never box-resized or rotated in M1: returns `{}`. The select tool
+ * must show endpoint handles for them and edit `data.points` itself.
+ * `to` is a world point; the handle acts in the element's rotated frame, the opposite anchor stays fixed in world space. */
 export function resizeBox(
   el: Element,
   handle: Handle,
   to: Point,
   keepAspect: boolean,
 ): Patch {
+  if (isLinear(el)) return {}
   const q = toLocal(el, to)
   const west = handle.includes('w')
   const east = handle.includes('e')
@@ -229,7 +242,9 @@ export function resizeBox(
   return { x: c.x - w / 2, y: c.y - h / 2, w, h }
 }
 
-export function rotateTo(_el: Element, angle: number, snap15: boolean): Patch {
+/** Returns `{}` for linear elements (see resizeBox). */
+export function rotateTo(el: Element, angle: number, snap15: boolean): Patch {
+  if (isLinear(el)) return {}
   const step = Math.PI / 12
   return { rotation: (snap15 ? Math.round(angle / step) * step : angle) + 0 }
 }

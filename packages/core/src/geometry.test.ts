@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { mk } from './fixtures'
 import {
   bounds,
   hitTest,
@@ -10,13 +9,19 @@ import {
 } from './geometry'
 import { applyBatch, createScene } from './scene'
 import { DEFAULT_STYLE, type Element } from './schema'
+import { mk } from './test-utils'
 
 const R45 = Math.PI / 4
 
 describe('hitTest', () => {
   for (const zoom of [0.05, 1, 20]) {
     it(`rotated rect tip hits, 7px outside misses at zoom ${zoom}`, () => {
-      const el = mk('a', { x: 100, y: 100, rotation: R45 })
+      const el = mk('a', {
+        x: 100,
+        y: 100,
+        rotation: R45,
+        style: { ...DEFAULT_STYLE, strokeWidth: 0 },
+      })
       const c = { x: 150, y: 110 }
       const d = Math.SQRT1_2
       const tol = 6 / zoom
@@ -38,6 +43,26 @@ describe('hitTest', () => {
     expect(hitTest(open, { x: 50, y: 50 }, 6)).toBe(false)
     expect(hitTest(open, { x: 2, y: 50 }, 6)).toBe(true)
     expect(hitTest(filled, { x: 50, y: 50 }, 6)).toBe(true)
+  })
+
+  it('unfilled outline tolerance includes half the stroke width', () => {
+    const el = mk('a', {
+      w: 100,
+      h: 100,
+      style: { ...DEFAULT_STYLE, strokeWidth: 10 },
+    })
+    expect(hitTest(el, { x: 104, y: 50 }, 6 / 20)).toBe(true)
+    expect(hitTest(el, { x: 108, y: 50 }, 6 / 20)).toBe(false)
+  })
+
+  it('one-point line is a hittable degenerate segment', () => {
+    const l = mk('l', {
+      x: 10,
+      y: 10,
+      data: { kind: 'line', points: [[0, 0]] },
+    })
+    expect(hitTest(l, { x: 12, y: 10 }, 3)).toBe(true)
+    expect(hitTest(l, { x: 30, y: 10 }, 3)).toBe(false)
   })
 
   it('ellipse and diamond', () => {
@@ -102,6 +127,16 @@ describe('bounds', () => {
     expect(b.maxX).toBeCloseTo(60)
     expect(b.minY).toBeCloseTo(-40)
     expect(b.maxY).toBeCloseTo(60)
+  })
+
+  it('linear bounds are finite for empty or missing points', () => {
+    for (const data of [
+      { kind: 'arrow' as const },
+      { kind: 'line' as const, points: [] },
+    ]) {
+      const b = bounds(mk('l', { x: 5, y: 6, data }))
+      expect(Object.values(b).every(Number.isFinite)).toBe(true)
+    }
   })
 
   it('arrow bounds are points plus half stroke', () => {
@@ -240,6 +275,20 @@ describe('resizeBox / rotateTo', () => {
     const p = resizeBox(mk('a'), 'nw', { x: -5, y: -5 }, false)
     expect(Object.keys(p).sort()).toEqual(['h', 'w', 'x', 'y'])
     expect(Object.keys(rotateTo(mk('a'), 1, false))).toEqual(['rotation'])
+  })
+
+  it('linear elements are not resized or rotated', () => {
+    const a = mk('l', {
+      data: {
+        kind: 'arrow',
+        points: [
+          [0, 0],
+          [10, 10],
+        ],
+      },
+    })
+    expect(resizeBox(a, 'se', { x: 50, y: 50 }, false)).toEqual({})
+    expect(rotateTo(a, 1, false)).toEqual({})
   })
 
   it('rotateTo snap15 gives multiples of pi/12', () => {

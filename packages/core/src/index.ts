@@ -28,6 +28,7 @@ export class SpatialIndex {
     this.items.delete(id)
   }
 
+  /** Results are snapshots from upsert time; callers re-read current elements from the scene. */
   search(r: Rect): Element[] {
     return this.tree.search(r).map((i) => i.el)
   }
