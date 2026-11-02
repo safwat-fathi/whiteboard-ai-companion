@@ -84,12 +84,18 @@ export default function Page() {
         return // a read-only tab never writes
       }
       p.start()
-      if (r.status === 'ok' && r.dropped)
+      if (r.status === 'ok' && r.backupFailed)
+        note('backup', {
+          text: 'Could not keep a backup copy of your board, so changes are NOT being saved. Reload to try again.',
+          role: 'alert',
+          action: { label: 'Reload', run: reload },
+        })
+      if (r.status === 'ok' && r.dropped && !r.backupFailed)
         note('dropped', {
           text: `${r.dropped} invalid elements were dropped (a backup copy of the stored board was kept)`,
           role: 'status',
         })
-      if (r.status === 'ok' && r.undoDropped)
+      if (r.status === 'ok' && r.undoDropped && !r.backupFailed)
         note('undo-dropped', {
           text: 'Some undo history could not be restored and was dropped (a backup copy of the stored board was kept)',
           role: 'status',

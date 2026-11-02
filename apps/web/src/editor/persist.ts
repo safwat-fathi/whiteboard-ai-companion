@@ -41,6 +41,8 @@ export type LoadResult =
       undoDropped: boolean
       /** The stored value as found, for the backup copy when something was dropped. */
       raw: unknown
+      /** The backup of the dropped data could not be written: the board is loaded, but saving stays blocked. */
+      backupFailed?: true
     }
   | { status: 'empty' }
   | {
@@ -257,7 +259,8 @@ export type PersistenceOpts = {
  * Binds an Editor to one stored board.
  *  load()  reads the record and applies it to the editor (unreadable => editor stays empty and saving is blocked).
  *          If elements or undo entries were dropped it first keeps the stored record as a backup (`canWrite` false skips that
- *          write, for a read-only tab); a failed backup blocks saving like an unreadable record.
+ *          write, for a read-only tab); when that write fails the valid elements are still loaded, saving stays blocked
+ *          and the result is 'ok' with `backupFailed`.
  *  start() begins autosave: commits (200 ms) and camera moves (500 ms) debounced; flush on visibilitychange hidden / pagehide.
  *  stop()  ends an open edit (the text tool commits it), flushes anything pending, then detaches all listeners (idempotent).
  *          Call it before editor.dispose(), which cancels the tool after the listeners are gone.
@@ -269,7 +272,11 @@ export function createPersistence(
   boardId: string,
   opts: PersistenceOpts = {},
 ) {
-  let blocked: Extract<LoadResult, { status: 'unreadable' }> | null = null
+  // Saving is blocked either by an unreadable record, or by a failed backup of dropped data (the board itself is loaded).
+  let blocked:
+    | Extract<LoadResult, { status: 'unreadable' }>
+    | { status: 'backup-failed' }
+    | null = null
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | undefined
   let pending = 0
@@ -311,14 +318,19 @@ export function createPersistence(
   return {
     async load(canWrite = true): Promise<LoadResult> {
       let r = await loadBoard(boardId)
-      // Saving would erase what was dropped for good: keep the stored record first. If that fails, stay blocked, board untouched.
+      // Saving would erase what was dropped for good: keep the stored record first. If that fails, show the valid part but stay blocked, stored record untouched.
       if (r.status === 'ok' && canWrite && (r.dropped || r.undoDropped))
         try {
           await backup(boardId, r.raw, 'dropped') // a fixed tag: reloading before the next save rewrites the same key
         } catch {
-          r = { status: 'unreadable', reason: 'unavailable', raw: r.raw }
+          r = { ...r, backupFailed: true }
         }
-      blocked = r.status === 'unreadable' ? r : null
+      blocked =
+        r.status === 'unreadable'
+          ? r
+          : r.status === 'ok' && r.backupFailed
+            ? { status: 'backup-failed' }
+            : null
       if (r.status === 'ok')
         editor.setScene(
           r.record.elements,
@@ -357,7 +369,7 @@ export function createPersistence(
     },
     flush,
     async startEmptyKeepingBackup(): Promise<void> {
-      if (!blocked) return
+      if (blocked?.status !== 'unreadable') return // a failed backup stays blocked: the dropped data is not saved anywhere else
       const raw = blocked.raw
       if (raw !== undefined) await backup(boardId, raw) // throws => stay blocked, original untouched
       blocked = null

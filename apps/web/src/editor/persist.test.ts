@@ -322,21 +322,27 @@ describe('dropped data is backed up before saving starts', () => {
     expect(await rawKeys()).toEqual(['local'])
   })
 
-  it('a failed backup write blocks saving and leaves the stored record untouched', async () => {
+  it('a failed backup write still loads the valid elements, blocks saving and leaves the stored record untouched', async () => {
     await raw('local', original())
     vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementationOnce(() => {
       throw new DOMException('full', 'QuotaExceededError')
     })
     const p = createPersistence(t.ed, 'local')
     expect(await p.load()).toMatchObject({
-      status: 'unreadable',
-      reason: 'unavailable',
+      status: 'ok',
+      dropped: 1,
+      backupFailed: true,
     })
+    expect([...t.ed.scene.els.keys()]).toEqual(['a']) // the board is not empty
     p.start()
     put(t.ed, mk('b', 1, 1))
     await p.flush()
+    await p.startEmptyKeepingBackup() // not an unreadable record: nothing to unblock
+    put(t.ed, mk('c', 2, 2))
+    await p.flush()
     p.stop()
     expect(await rawGet('local')).toEqual(original())
+    expect(await rawKeys()).toEqual(['local'])
   })
 })
 
