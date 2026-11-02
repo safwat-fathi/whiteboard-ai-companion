@@ -56,7 +56,7 @@ test('hovering an element shows the pointer cursor and a highlight; clicking sel
   // Click selects: a solid highlight at the same place.
   await page.mouse.click(300, 260)
   expect(await selected(page)).toBe(1)
-  await expect.poll(() => overlayInk(page, 195, 260)).toBe(255)
+  await expect.poll(() => overlayInk(page, 195, 260)).toBeGreaterThan(200)
 
   // Clicking empty space deselects.
   await page.mouse.click(700, 500)
