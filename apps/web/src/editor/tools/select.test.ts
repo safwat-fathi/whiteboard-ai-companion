@@ -284,6 +284,14 @@ describe('select tool', () => {
     expect([...ed.selection]).toEqual(['a', 'b'])
   })
 
+  it('AltGr+A on a Polish layout (ctrl+alt, key ą) does not select all', () => {
+    put(ed, mk('a', 0, 0), mk('b', 200, 0))
+    expect(
+      key(ed.tool, 'ą', { ctrlKey: true, altKey: true, code: 'KeyA' }),
+    ).toBe(false)
+    expect([...ed.selection]).toEqual([])
+  })
+
   it('dragging an arrow endpoint handle unbinds in free space and rebinds on a shape', () => {
     flow()
     put(ed, mk('c', 300, 200))
