@@ -93,8 +93,8 @@ function inside(p: Point, pts: Point[]): boolean {
   return hit
 }
 
-// Outline of a closed shape in the unrotated frame. ponytail: ellipse is a 64-gon (error ~0.0012*r); corner radius ignored.
-function outline(el: Element): Point[] {
+/** Outline of a closed shape in the unrotated frame; hit testing and the editor's selection outline both trace it. ponytail: ellipse is a 64-gon (error ~0.0012*r); corner radius ignored. */
+export function outline(el: Element): Point[] {
   const { x, y, w, h } = el
   const kind = el.type === 'shape' ? el.data.kind : 'rect'
   if (kind === 'diamond')

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bounds,
   hitTest,
+  outline,
   resizeBox,
   rotateTo,
   routeArrow,
@@ -317,5 +318,36 @@ describe('resizeBox / rotateTo', () => {
       expect(Math.abs(r / step - Math.round(r / step))).toBeLessThan(1e-9)
     }
     expect(rotateTo(mk('a'), 0.3, false).rotation).toBe(0.3)
+  })
+})
+
+describe('outline', () => {
+  const shape = (kind: 'rect' | 'diamond' | 'triangle' | 'ellipse') =>
+    mk('a', { x: 10, y: 20, w: 100, h: 60, data: { kind } })
+
+  it('is the closed polygon of the unrotated frame (what hit testing and selection outlines trace)', () => {
+    expect(outline(shape('rect'))).toEqual([
+      { x: 10, y: 20 },
+      { x: 110, y: 20 },
+      { x: 110, y: 80 },
+      { x: 10, y: 80 },
+    ])
+    expect(outline(shape('diamond'))).toEqual([
+      { x: 60, y: 20 },
+      { x: 110, y: 50 },
+      { x: 60, y: 80 },
+      { x: 10, y: 50 },
+    ])
+    expect(outline(shape('triangle'))).toEqual([
+      { x: 60, y: 20 },
+      { x: 110, y: 80 },
+      { x: 10, y: 80 },
+    ])
+    expect(outline(shape('ellipse'))).toHaveLength(64)
+  })
+
+  it('ignores rotation', () => {
+    const r = mk('a', { x: 10, y: 20, w: 100, h: 60, rotation: 1 })
+    expect(outline(r)).toEqual(outline({ ...r, rotation: 0 }))
   })
 })
