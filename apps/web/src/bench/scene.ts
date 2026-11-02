@@ -155,6 +155,181 @@ export function makeScene(
 
 const area = (b: Rect) => (b.maxX - b.minX) * (b.maxY - b.minY)
 
+// ---- M2 scenes: math, text and image grids (and the 10% math + image mix). The browser prepares what they need
+// (MathJax metrics, imported image blobs) and passes it in, so this file stays free of DOM and providers.
+
+type World = { x: number; y: number; w: number; h: number }
+type Cell = { x: number; y: number; w: number; h: number }
+export type MathMetrics = { width: number; height: number; depth: number }
+export type BenchImage = { blobId: string; w: number; h: number }
+
+/** Ten fixture-style equations; element i uses `mathLatex(i)`, so all 200 differ (no shared bitmap or layout). */
+const EQUATIONS = [
+  '\\frac{a+b}{c+d}',
+  '\\sqrt{x^2+y^2}',
+  '\\sum_{i=1}^{n} i=\\frac{n(n+1)}{2}',
+  '\\int_0^\\infty e^{-x^2}\\,dx',
+  '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}',
+  'x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}',
+  '\\lim_{x\\to 0}\\frac{\\sin x}{x}=1',
+  '\\mathbb{N}\\subset\\mathbb{R}^n',
+  '\\ce{2H2 + O2 -> 2H2O}',
+  '\\boldsymbol{\\alpha}+\\boldsymbol{\\beta}',
+]
+export const mathLatex = (i: number) =>
+  `${EQUATIONS[i % EQUATIONS.length]}+${i}`
+export const MATH_SIZE = 12
+const TEXT_SIZE = 14
+
+function grid(n: number, world: World): Cell[] {
+  const cols = Math.max(1, Math.round(Math.sqrt((n * world.w) / world.h)))
+  const cw = world.w / cols
+  const ch = world.h / Math.ceil(n / cols)
+  return Array.from({ length: n }, (_, i) => ({
+    x: world.x + (i % cols) * cw,
+    y: world.y + Math.floor(i / cols) * ch,
+    w: cw,
+    h: ch,
+  }))
+}
+
+function frame(id: string, z: string, cell: Cell) {
+  return {
+    id,
+    ...cell,
+    rotation: 0,
+    z,
+    style: {
+      stroke: '#1e1e1e',
+      fill: null as string | null,
+      strokeWidth: 2,
+      opacity: 1,
+      dash: 'solid' as const,
+    },
+    locked: false,
+    author: { kind: 'human' as const, id: 'bench' },
+    v: 0,
+  }
+}
+
+function mathEl(
+  id: string,
+  z: string,
+  at: Cell,
+  i: number,
+  metrics: (latex: string) => MathMetrics,
+): Element {
+  const latex = mathLatex(i)
+  const m = metrics(latex)
+  return {
+    ...frame(id, z, at),
+    type: 'math',
+    w: m.width * MATH_SIZE,
+    h: (m.height + m.depth) * MATH_SIZE,
+    data: { latex, display: true, size: MATH_SIZE },
+  }
+}
+
+function imageEl(
+  id: string,
+  z: string,
+  at: Cell,
+  img: BenchImage,
+  scale = 0.95,
+): Element {
+  const s = Math.min((at.w * scale) / img.w, (at.h * scale) / img.h)
+  return {
+    ...frame(id, z, at),
+    type: 'image',
+    w: img.w * s,
+    h: img.h * s,
+    data: { blobId: img.blobId, naturalW: img.w, naturalH: img.h },
+  }
+}
+
+export function makeMathScene(
+  n: number,
+  world: World,
+  metrics: (latex: string) => MathMetrics,
+): Element[] {
+  let z: string | null = null
+  return grid(n, world).map((at, i) => {
+    z = zBetween(z, null)
+    return mathEl(`m${i}`, z, at, i, metrics)
+  })
+}
+
+/** The baseline for makeMathScene: short distinct Latin strings of about the same box size. */
+export function makeTextScene(
+  n: number,
+  world: World,
+  platform: Platform,
+): Element[] {
+  let z: string | null = null
+  return grid(n, world).map((at, i): Element => {
+    z = zBetween(z, null)
+    const word = (j: number) =>
+      `${SYLLABLES[(i + j) % SYLLABLES.length]}${SYLLABLES[(i * 7 + j * 3) % SYLLABLES.length]}`
+    const el: Element = {
+      ...frame(`t${i}`, z, at),
+      type: 'text',
+      data: {
+        text: `${word(0)} ${word(1)} ${i}`,
+        size: TEXT_SIZE,
+        align: 'left',
+        dir: 'ltr',
+      },
+    }
+    const lay = layoutText(el, platform)
+    el.w = lay.width
+    el.h = lay.height
+    return el
+  })
+}
+
+export function makeImageScene(
+  n: number,
+  world: World,
+  images: BenchImage[],
+): Element[] {
+  let z: string | null = null
+  return grid(n, world).map((at, i) => {
+    z = zBetween(z, null)
+    return imageEl(`i${i}`, z, at, images[i % images.length] as BenchImage)
+  })
+}
+
+/** The M1 scene with its last 10% replaced by 5% math and 5% images scattered over the same world. */
+export function makeMixedScene(
+  n: number,
+  seed: number,
+  world: World,
+  platform: Platform,
+  metrics: (latex: string) => MathMetrics,
+  images: BenchImage[],
+): Element[] {
+  const base = makeScene(Math.round(n * 0.9), seed, world, platform)
+  const r = rng(seed + 1000)
+  const extra = Math.round(n * 0.05)
+  let z = base.at(-1)?.z ?? null
+  const at = (): Cell => ({
+    x: world.x + r() * (world.w - 60),
+    y: world.y + r() * (world.h - 60),
+    w: 60,
+    h: 40,
+  })
+  const out: Element[] = [...base]
+  for (let i = 0; i < extra; i++) {
+    z = zBetween(z, null)
+    out.push(mathEl(`mm${i}`, z, at(), i, metrics))
+    z = zBetween(z, null)
+    out.push(
+      imageEl(`mi${i}`, z, at(), images[i % images.length] as BenchImage, 1),
+    )
+  }
+  return out
+}
+
 /** Counts for the mix, and how many times the bounding boxes cover the world rect. */
 export function describeScene(els: Element[], world: { w: number; h: number }) {
   const shapes = els.filter(

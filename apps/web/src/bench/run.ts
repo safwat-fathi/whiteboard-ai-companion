@@ -1,8 +1,18 @@
 import type { Camera, Element } from '@whiteboard/core'
 import type { Editor } from '../editor/editor'
+import { importImage } from '../editor/images'
 import { browserPlatform } from '../editor/platform'
 import type { Tool } from '../editor/tools'
-import { describeScene, makeScene } from './scene'
+import {
+  type BenchImage,
+  describeScene,
+  makeImageScene,
+  makeMathScene,
+  makeMixedScene,
+  makeScene,
+  makeTextScene,
+  mathLatex,
+} from './scene'
 
 // The S1 method (spikes/s1-canvas/web/bench.ts + render.ts measureFrames) run against a real Editor on a fixed
 // 1440x900 CSS px host, so results do not depend on the window. Core's camera (x, y) is the top-left corner
@@ -79,20 +89,89 @@ const foreground = () =>
 const frameEnd = () =>
   new Promise<number>((r) => requestAnimationFrame(() => r(performance.now())))
 
+export type BenchKind = 'mix' | 'math200' | 'text200' | 'images50' | 'mixed5000'
+
+/** Ten synthetic images, 1,000 to 4,000 px on the long edge, imported through the real pipeline (limits, hashing). */
+async function importBenchImages(editor: Editor): Promise<BenchImage[]> {
+  const out: BenchImage[] = []
+  for (let k = 0; k < 10; k++) {
+    const w = 1000 + Math.round((k * 3000) / 9)
+    const h = Math.round((w * 3) / 4)
+    const c = document.createElement('canvas')
+    c.width = w
+    c.height = h
+    const g = c.getContext('2d') as CanvasRenderingContext2D
+    g.fillStyle = `hsl(${k * 36} 60% 85%)`
+    g.fillRect(0, 0, w, h)
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = `hsl(${(k * 36 + i * 9) % 360} 70% ${30 + (i % 5) * 10}%)`
+      g.fillRect(
+        ((i * 97) % 90) * (w / 100),
+        ((i * 53) % 90) * (h / 100),
+        w / 10,
+        h / 10,
+      )
+    }
+    const blob = await new Promise<Blob>((res, rej) =>
+      c.toBlob(
+        (b) => (b ? res(b) : rej(new Error('toBlob failed'))),
+        'image/png',
+      ),
+    )
+    const { blobId, naturalW, naturalH } = await importImage(
+      new File([blob], `bench-${k}.png`, { type: 'image/png' }),
+      editor.blobs,
+    )
+    out.push({ blobId, w: naturalW, h: naturalH })
+  }
+  return out
+}
+
+/** Asks the Editor's own math provider for every formula first, so scene boxes come from real metrics. */
+async function mathMetrics(editor: Editor, count: number) {
+  const math = editor.platform.math
+  if (!math) throw new Error('no math provider')
+  const color = '#1e1e1e'
+  for (let i = 0; i < count; i++)
+    await new Promise<void>((r) => math.request(mathLatex(i), true, color, r))
+  return (latex: string) => {
+    const e = math.peek(latex, true, color)
+    if (!e?.ok) throw new Error(`math failed: ${latex}`)
+    return e
+  }
+}
+
 export async function runBench(
   editor: Editor,
   n: number,
   requestedDpr: string | null,
   alive: { stop: boolean },
+  kind: BenchKind = 'mix',
 ) {
   const stopIf = () => {
     if (alive.stop) throw new Error('stopped')
   }
-  const world = worldOf(n)
+  const world = worldOf(kind === 'mix' ? n : 5000)
   const cx = world.w / 2
   const cy = world.h / 2
   const genPlatform = browserPlatform() // a separate Platform: the Editor's layout memo starts cold
-  const els = makeScene(n, n === 20000 ? 2 : 1, world, genPlatform)
+  let els: Element[]
+  if (kind === 'mix')
+    els = makeScene(n, n === 20000 ? 2 : 1, world, genPlatform)
+  else if (kind === 'text200') els = makeTextScene(200, world, genPlatform)
+  else if (kind === 'math200')
+    els = makeMathScene(200, world, await mathMetrics(editor, 200))
+  else if (kind === 'images50')
+    els = makeImageScene(50, world, await importBenchImages(editor))
+  else
+    els = makeMixedScene(
+      5000,
+      1,
+      world,
+      genPlatform,
+      await mathMetrics(editor, 250),
+      await importBenchImages(editor),
+    )
   const sel = editor.tools.select as Tool
   editor.setTool('select')
 
@@ -188,75 +267,111 @@ export async function runBench(
   }
   const cacheMB = mb(editor.cacheBytes)
 
-  // First ink. M1 has no pen, so this is the Editor's pointerdown -> overlay-frame latency with the select tool starting
-  // a marquee on empty board (an empty marquee, not a stroke; sceneRepaints counts frames that also repainted the scene).
-  // The camera fits the board with a 150 px empty band on top, which the pointer lands in. Starts after 500 ms of idle.
-  const fz = Math.min(1, W / world.w, (H - 150) / world.h)
-  await repaint({ x: cx - W / 2 / fz, y: -150 / fz, zoom: fz })
-  await sleep(500)
-  const overlay = editor.host.querySelectorAll('canvas')[1] as HTMLCanvasElement
-  let overlayFrames = 0
-  let overlayStart = 0
-  const drawOverlay = sel.drawOverlay?.bind(sel)
-  sel.drawOverlay = (ctx) => {
-    overlayStart = performance.now()
-    drawOverlay?.(ctx)
-    overlayFrames++
-  }
-  const pointer = (type: string, i: number) =>
-    overlay.dispatchEvent(
-      new PointerEvent(type, {
-        clientX: 200 + i * 50,
-        clientY: 75,
-        pointerId: 1,
-        pointerType: 'mouse',
-        isPrimary: true,
-        button: 0,
-        pressure: 0.5,
-        bubbles: true,
-      }),
-    )
-  const ink: { lat: number; wait: number; work: number }[] = []
-  let sceneRepaints = 0
-  for (let i = 0; i < 20; i++) {
-    stopIf()
-    await sleep(50 + Math.random() * 50)
-    const frames0 = overlayFrames
-    const scene0 = editor.lastRender
-    const t0 = performance.now()
-    pointer('pointerdown', i)
-    const end = await frameEnd()
-    if (overlayFrames === frames0) throw new Error('pointerdown made no frame')
-    if (editor.lastRender !== scene0) sceneRepaints++
-    ink.push({
-      lat: end - t0,
-      wait: overlayStart - t0,
-      work: end - overlayStart,
-    })
-    pointer('pointerup', i)
-  }
-  sel.drawOverlay = drawOverlay
+  // The M1-only measurements: first ink and opening a 20,000-element board.
+  const tail = async () => {
+    // First ink. M1 has no pen, so this is the Editor's pointerdown -> overlay-frame latency with the select tool starting
+    // a marquee on empty board (an empty marquee, not a stroke; sceneRepaints counts frames that also repainted the scene).
+    // The camera fits the board with a 150 px empty band on top, which the pointer lands in. Starts after 500 ms of idle.
+    const fz = Math.min(1, W / world.w, (H - 150) / world.h)
+    await repaint({ x: cx - W / 2 / fz, y: -150 / fz, zoom: fz })
+    await sleep(500)
+    const overlay = editor.host.querySelectorAll(
+      'canvas',
+    )[1] as HTMLCanvasElement
+    let overlayFrames = 0
+    let overlayStart = 0
+    const drawOverlay = sel.drawOverlay?.bind(sel)
+    sel.drawOverlay = (ctx) => {
+      overlayStart = performance.now()
+      drawOverlay?.(ctx)
+      overlayFrames++
+    }
+    const pointer = (type: string, i: number) =>
+      overlay.dispatchEvent(
+        new PointerEvent(type, {
+          clientX: 200 + i * 50,
+          clientY: 75,
+          pointerId: 1,
+          pointerType: 'mouse',
+          isPrimary: true,
+          button: 0,
+          pressure: 0.5,
+          bubbles: true,
+        }),
+      )
+    const ink: { lat: number; wait: number; work: number }[] = []
+    let sceneRepaints = 0
+    for (let i = 0; i < 20; i++) {
+      stopIf()
+      await sleep(50 + Math.random() * 50)
+      const frames0 = overlayFrames
+      const scene0 = editor.lastRender
+      const t0 = performance.now()
+      pointer('pointerdown', i)
+      const end = await frameEnd()
+      if (overlayFrames === frames0)
+        throw new Error('pointerdown made no frame')
+      if (editor.lastRender !== scene0) sceneRepaints++
+      ink.push({
+        lat: end - t0,
+        wait: overlayStart - t0,
+        work: end - overlayStart,
+      })
+      pointer('pointerup', i)
+    }
+    sel.drawOverlay = drawOverlay
 
-  // Open a 20,000-element board with the camera fitting all of it: JSON.parse -> setScene (store + index, cache disposed)
-  // -> end of the first painted frame. The Editor's layout memo and path cache key on element objects, which are new here.
-  const world20k = worldOf(20000)
-  const els20k = makeScene(20000, 2, world20k, genPlatform)
-  const json = JSON.stringify(els20k)
-  await sleep(500)
-  stopIf()
-  const fit = Math.min(W / world20k.w, H / world20k.h)
-  const t0 = performance.now()
-  const parsed = JSON.parse(json) as Element[]
-  const end = await repaint(cam(world20k.w / 2, world20k.h / 2, fit), parsed)
-  const open20k = {
-    ms: round(end - t0, 1),
-    drawn: editor.lastRender?.drawn,
-    culled: editor.lastRender?.culled,
-    renderMs: round(editor.lastRender?.ms ?? 0, 1),
-    cacheMB: mb(editor.cacheBytes),
-    jsonMB: round(json.length / 2 ** 20, 1),
-    scene: describeScene(els20k, world20k),
-  }
+    // Open a 20,000-element board with the camera fitting all of it: JSON.parse -> setScene (store + index, cache disposed)
+    // -> end of the first painted frame. The Editor's layout memo and path cache key on element objects, which are new here.
+    const world20k = worldOf(20000)
+    const els20k = makeScene(20000, 2, world20k, genPlatform)
+    const json = JSON.stringify(els20k)
+    await sleep(500)
+    stopIf()
+    const fit = Math.min(W / world20k.w, H / world20k.h)
+    const t0 = performance.now()
+    const parsed = JSON.parse(json) as Element[]
+    const end = await repaint(cam(world20k.w / 2, world20k.h / 2, fit), parsed)
+    const open20k = {
+      ms: round(end - t0, 1),
+      drawn: editor.lastRender?.drawn,
+      culled: editor.lastRender?.culled,
+      renderMs: round(editor.lastRender?.ms ?? 0, 1),
+      cacheMB: mb(editor.cacheBytes),
+      jsonMB: round(json.length / 2 ** 20, 1),
+      scene: describeScene(els20k, world20k),
+    }
+    return {
+      firstInk: {
+        p95Ms: round(
+          pct(
+            ink.map((i) => i.lat),
+            0.95,
+          ),
+          2,
+        ),
+        maxMs: round(Math.max(...ink.map((i) => i.lat)), 2),
+        // lat = wait + work: wait is the time to the frame's start (vsync alignment), work is the frame itself
+        waitP95Ms: round(
+          pct(
+            ink.map((i) => i.wait),
+            0.95,
+          ),
+          2,
+        ),
+        workP95Ms: round(
+          pct(
+            ink.map((i) => i.work),
+            0.95,
+          ),
+          2,
+        ),
+        sceneRepaints,
+        samples: ink.map((i) => round(i.lat, 1)),
+      },
+      open20k,
+    }
+  } // tail
 
   return {
     n,
@@ -273,33 +388,7 @@ export async function runBench(
     frames,
     coldFrameMs: cold.map((c) => round(c, 1)),
     cacheMB,
-    firstInk: {
-      p95Ms: round(
-        pct(
-          ink.map((i) => i.lat),
-          0.95,
-        ),
-        2,
-      ),
-      maxMs: round(Math.max(...ink.map((i) => i.lat)), 2),
-      // lat = wait + work: wait is the time to the frame's start (vsync alignment), work is the frame itself
-      waitP95Ms: round(
-        pct(
-          ink.map((i) => i.wait),
-          0.95,
-        ),
-        2,
-      ),
-      workP95Ms: round(
-        pct(
-          ink.map((i) => i.work),
-          0.95,
-        ),
-        2,
-      ),
-      sceneRepaints,
-      samples: ink.map((i) => round(i.lat, 1)),
-    },
-    open20k,
+    cacheCapMB: mb(editor.cacheCap),
+    ...(kind === 'mix' ? await tail() : {}),
   }
 }
