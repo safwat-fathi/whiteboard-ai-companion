@@ -66,6 +66,7 @@ export function Toolbar({
       <style>{CSS}</style>
       {TOOLS.map(([id, label]) => {
         const key = editor?.tools[id]?.key.toUpperCase()
+        const name = key ? `${label} (${key})` : label
         return (
           <button
             key={id}
@@ -75,10 +76,8 @@ export function Toolbar({
             aria-pressed={active === id}
             title={
               id === 'hand'
-                ? 'Hand (H): hold Space and drag to move the canvas'
-                : key
-                  ? `${label} (${key})`
-                  : label
+                ? `${name}: hold Space and drag to move the canvas`
+                : name
             }
             disabled={off}
             onClick={() => editor?.setTool(id)}
