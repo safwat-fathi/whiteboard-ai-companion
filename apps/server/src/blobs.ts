@@ -23,6 +23,10 @@ export const MAX_IMAGE_SIDE = 8192
 /** Decoded RGBA is 4 bytes a pixel, so this bounds a decode at 160 MB however small the file is. */
 export const MAX_IMAGE_PIXELS = 40_000_000
 
+/** Whether a width and height are within the side and pixel limits (used on the declared size and again on the decoded one). */
+export const sizeAllowed = (w: number, h: number) =>
+  w <= MAX_IMAGE_SIDE && h <= MAX_IMAGE_SIDE && w * h <= MAX_IMAGE_PIXELS
+
 /**
  * What is wrong with the size an image's header declares, read without decoding (a 10 MB PNG can declare gigapixels).
  * 'too-large' is over a limit; 'unsupported' is a header that cannot be read or declares no pixels.
@@ -40,11 +44,7 @@ export function checkImageSize(
       code: 'unsupported',
       message: 'the image header cannot be read',
     }
-  if (
-    h.width > MAX_IMAGE_SIDE ||
-    h.height > MAX_IMAGE_SIDE ||
-    h.width * h.height > MAX_IMAGE_PIXELS
-  )
+  if (!sizeAllowed(h.width, h.height))
     return {
       ok: false,
       code: 'too-large',

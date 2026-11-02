@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { BlobError, hashBytes, parseImageHeader, sniffMime } from './blob'
-import { gif, jpeg, png, webp, webpLossless, webpLossy } from './test-images'
+import {
+  gif,
+  gifFrames,
+  jpeg,
+  jpegSofs,
+  png,
+  webp,
+  webpAnimated,
+  webpLossless,
+  webpLossy,
+  webpMismatch,
+  webpNoImage,
+} from './test-images'
 
 describe('blob utilities', () => {
   it('hashes bytes to a 64-char lowercase SHA-256 hex string', async () => {
@@ -113,5 +125,117 @@ describe('parseImageHeader', () => {
     expect(
       [png(1, 1), jpeg(1, 1), gif(1, 1), webp(1, 1)].map(sniffMime),
     ).toEqual(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+  })
+})
+
+// A header size is only a safe bound if the decoder will use that same size, so ambiguous structures are refused.
+describe('parseImageHeader refuses structures a decoder could read differently', () => {
+  const size = (b: Uint8Array, m: Parameters<typeof parseImageHeader>[1]) =>
+    parseImageHeader(b, m)
+
+  it('GIF: every frame must lie inside the logical screen', () => {
+    expect(
+      size(gifFrames([100, 80], [[0, 0, 100, 80]]), 'image/gif'),
+    ).toMatchObject({ width: 100, height: 80 })
+    expect(
+      size(
+        gifFrames(
+          [100, 80],
+          [
+            [10, 10, 20, 20],
+            [0, 0, 100, 80],
+          ],
+        ),
+        'image/gif',
+      ),
+    ).toMatchObject({ width: 100, height: 80 })
+    expect(
+      size(gifFrames([10, 10], [[0, 0, 60_000, 60_000]]), 'image/gif'),
+    ).toBeNull() // a tiny screen hiding a huge frame
+    expect(
+      size(gifFrames([100, 80], [[90, 0, 20, 20]]), 'image/gif'),
+    ).toBeNull() // sticks out to the right
+    expect(
+      size(gifFrames([100, 80], [[0, 70, 20, 20]]), 'image/gif'),
+    ).toBeNull() // sticks out of the bottom
+    expect(
+      size(
+        gifFrames(
+          [100, 80],
+          [
+            [0, 0, 100, 80],
+            [0, 0, 60_000, 60_000],
+          ],
+        ),
+        'image/gif',
+      ),
+    ).toBeNull() // a later frame
+    expect(size(gifFrames([100, 80], [[0, 0, 0, 80]]), 'image/gif')).toBeNull() // an empty frame
+  })
+
+  it('GIF: reads past a global colour table and extension blocks, and refuses a file with no frame', () => {
+    expect(
+      size(
+        gifFrames([5, 5], [[0, 0, 5, 5]], {
+          globalTable: true,
+          extension: true,
+        }),
+        'image/gif',
+      ),
+    ).toMatchObject({ width: 5, height: 5 })
+    expect(size(gifFrames([5, 5], [], {}), 'image/gif')).toBeNull() // trailer only
+    expect(
+      size(
+        gifFrames([5, 5], [[0, 0, 5, 5]], { trailerFirst: true }),
+        'image/gif',
+      ),
+    ).toBeNull()
+    expect(
+      size(gifFrames([5, 5], [[0, 0, 5, 5]], { noTrailer: true }), 'image/gif'),
+    ).toMatchObject({ width: 5, height: 5 }) // truncated after a valid frame
+    expect(size(gif(7, 7), 'image/gif')).toMatchObject({ width: 7, height: 7 })
+  })
+
+  it('JPEG: a second SOF marker is ambiguous and refused, whichever comes first', () => {
+    expect(size(jpegSofs([[40, 30]]), 'image/jpeg')).toMatchObject({
+      width: 40,
+      height: 30,
+    })
+    expect(
+      size(
+        jpegSofs([
+          [40, 30],
+          [60_000, 60_000],
+        ]),
+        'image/jpeg',
+      ),
+    ).toBeNull()
+    expect(
+      size(
+        jpegSofs([
+          [60_000, 60_000],
+          [40, 30],
+        ]),
+        'image/jpeg',
+      ),
+    ).toBeNull()
+  })
+
+  it('WebP: a VP8X canvas must match the still image inside it', () => {
+    expect(size(webp(640, 480), 'image/webp')).toMatchObject({
+      width: 640,
+      height: 480,
+    })
+    expect(
+      size(webpMismatch([10, 10], [16_000, 16_000]), 'image/webp'),
+    ).toBeNull() // a small canvas hiding a big bitstream
+    expect(
+      size(webpMismatch([16_000, 16_000], [10, 10]), 'image/webp'),
+    ).toBeNull()
+    expect(size(webpNoImage(10, 10), 'image/webp')).toBeNull()
+    expect(size(webpAnimated(300, 200), 'image/webp')).toMatchObject({
+      width: 300,
+      height: 200,
+    }) // frames are in ANMF chunks
   })
 })

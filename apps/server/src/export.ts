@@ -13,7 +13,7 @@ import {
   sniffMime,
 } from '@whiteboard/core'
 import { nodePlatform, registerBundledFonts } from '@whiteboard/core/node'
-import { checkImageSize } from './blobs'
+import { checkImageSize, sizeAllowed } from './blobs'
 import type { Bounds } from './db'
 import { apiError } from './errors'
 
@@ -137,6 +137,9 @@ export async function renderBoardPng(
       return void decoded.set(blobId, 'missing')
     try {
       const img = await loadImage(Buffer.from(rec.bytes))
+      // Backstop for a decoder reading a different size than the header said: never draw or keep an oversized result.
+      if (!sizeAllowed(img.width, img.height))
+        return void decoded.set(blobId, 'missing')
       decoded.set(blobId, {
         bitmap: img as unknown as CanvasImageSource,
         w: img.width,
