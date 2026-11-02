@@ -263,6 +263,62 @@ describe('culling of strokes and bound arrows', () => {
   })
 })
 
+describe('draw order', () => {
+  // Closed shapes and lines are collected separately; they must still interleave by z, whatever order the Map holds them in.
+  it.each([false, true])(
+    'follows z, not insertion order, across closed shapes and lines (index %s)',
+    (withIndex) => {
+      const at = (
+        id: string,
+        kind: ShapeData['kind'],
+        z: string,
+        stroke: string,
+      ) =>
+        shape(id, kind, {
+          z,
+          x: 20,
+          y: 20,
+          style: { ...mk('s').style, stroke },
+          ...(kind === 'line'
+            ? {
+                data: {
+                  kind,
+                  points: [
+                    [0, 0],
+                    [50, 50],
+                  ],
+                },
+              }
+            : {}),
+        } as MkOpts)
+      const els = [
+        at('d', 'line', 'a3', '#000004'),
+        at('b', 'line', 'a1', '#000002'),
+        at('c', 'rect', 'a2', '#000003'),
+        at('a', 'rect', 'a0', '#000001'),
+      ] // Map order d, b, c, a
+      const index = new SpatialIndex()
+      index.load(els)
+      const { ctx } = canvas()
+      const seen: unknown[] = []
+      const stroke = ctx.stroke.bind(ctx) as (...a: unknown[]) => void
+      ctx.stroke = ((...a: unknown[]) => {
+        seen.push(ctx.strokeStyle)
+        stroke(...a)
+      }) as typeof ctx.stroke
+      render(
+        ctx,
+        createScene(els),
+        cam,
+        vp,
+        platform,
+        withIndex ? { index } : {},
+      )
+      expect(seen).toEqual(['#000001', '#000002', '#000003', '#000004'])
+    },
+  )
+})
+
 describe('camera', () => {
   const dvp = { width: 800, height: 600, dpr: 2 }
   it('screenToWorld inverts worldToScreen', () => {

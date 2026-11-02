@@ -353,9 +353,11 @@ export function render(
     if (intersects(inflate(box, el.style.strokeWidth / 2), view))
       closed.push(el)
   }
-  const linear = ordered(scene).filter(
-    (el) => isLinear(el) && intersects(linearRect(el, scene), view),
-  )
+  // Every line is tested (a bound arrow's routed path can be anywhere). Z order is restored by the sort below, so no
+  // pre-sort of the whole scene here.
+  const linear: Element[] = []
+  for (const el of scene.els.values())
+    if (isLinear(el) && intersects(linearRect(el, scene), view)) linear.push(el)
   const visible = [...closed, ...linear].sort((a, b) =>
     a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : 1,
   )
