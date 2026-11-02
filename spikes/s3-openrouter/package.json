@@ -1,0 +1,15 @@
+{
+  "name": "s3-openrouter",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@napi-rs/canvas": "^1.1.0",
+    "@openrouter/ai-sdk-provider": "^3.1.0",
+    "ai": "^7.0.159",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15"
+  }
+}
