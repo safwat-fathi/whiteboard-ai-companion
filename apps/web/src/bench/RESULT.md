@@ -95,3 +95,39 @@ needs-user-decision: the 1,024 MiB RenderCache cap. It is what makes the 5,000-e
 needs-user-decision: first-ink definition. Keep "dispatch to end of the next painting rAF, p95 <= 16 ms" (fails at DPR 2 by 0.5 ms because of vsync, in this Chrome) or use frame work (0.1 ms) as the bar
 
 Not verified / limits: the first-ink event is synthetic (S1's method) and an empty marquee, not a stroke; real input goes through the browser's rAF-aligned input path. One machine, one Chrome build, a wallpaper-decoding background (like S1). The 20,000-element frame rows are single-purpose information, not acceptance rows. The step-by-step fix rows are 1 to 3 run medians at DPR 2 emulated. A final cosmetic rename in `render.ts` (a shadowed variable) was made after the five-run measurement; tests and e2e pass on it.
+
+## M2: math and images (Task 11, 2026-11-02)
+
+Same method and conditions as M1 (headed real Chrome 156.0.8078.48 on this Mac, AC power, tab focused, the page draws on a fixed 1440x900 CSS px host; DPR 2 is the Mac's own Retina, DPR 1 is emulated), 5 runs, medians, 1 s warm-up, 5 s Lissajous pan, 5 s zoom 0.6 to 1.4. The RenderCache cap is now device-sized: this Chrome reports `navigator.deviceMemory` 8 (its maximum), so the cap is 8 GB x 6% = 491.5 MB (M1 measured with a fixed 1,024 MiB). Scenes: `text200` and `math200` (200 distinct elements on screen), `images50` (50 images, 1,000 to 4,000 px, imported through the real pipeline), `mixed5000` (the M1 scene with its last 10% replaced by 5% math and 5% images), and the M1 `n=5000` scene re-measured under the new cap (I5).
+
+### Scenes (pan fps / zoom fps, cache MB of the 491.5 MB cap)
+
+| Scene | DPR 2 | DPR 1 |
+|---|---|---|
+| text200 | 60 / 60, 28.2 MB | 60 / 60, 7.1 MB |
+| math200 | 60 / 60, 31.5 MB | 60 / 60, 7.9 MB |
+| images50 | 60 / 60, 212.3 MB | 60 / 60, 206.9 MB |
+| mixed5000 | 28.0 / 1.7, 491.4 MB (pinned at the cap) | 42.8 / 44.6, 382.4 MB |
+| n=5000 (M1 scene) | 32.1 / 1.6, 491 MB (pinned at the cap) | 42.3 / 44.5, 186.3 MB |
+
+Frame p95 17.0 to 17.6 ms (vsync) for the 200-element and image scenes; draw time per frame: text200 0.61 ms, math200 0.67 ms, images50 0.28 ms (DPR 2). Cold frame at zoom 1: text200 21.2 ms, math200 19.5 ms, images50 0.9 ms (the image bucket copy is built lazily), n=5000 544 ms.
+
+### Acceptance (Q10, plan Task 11)
+
+bench.accept.math-vs-text: PASS. `math200` pan and zoom are 100% of `text200` at both DPRs (60 against 60).
+bench.accept.math-60fps-dpr1: PASS. `math200` at DPR 1: 60.0 fps pan and zoom, p95 17.3 ms.
+bench.accept.cache-le-cap: PASS on the letter (no scene exceeds 491.5 MB), but `n=5000` and `mixed5000` at DPR 2 sit at 491 of 491.5 MB, i.e. the cache is pinned and thrashing (next row).
+bench.accept.first-ink: PASS. p95 15.7 ms at DPR 2 (M1 16.5) and 15.6 ms at DPR 1 (M1 15.4); frame work 0.1 ms, the rest is the vsync wait (same explanation as M1).
+bench.accept.open20k-dpr2: PASS. 1,866.8 ms against M1's 1,797.7 (+3.8%).
+bench.accept.open20k-dpr1: FAIL on the median. 2,020.1 ms against M1's 1,749.5 (+15.5%, bar +10%). The ranges overlap (this run 1,730 to 2,147; M1 1,710 to 1,890, and M1 itself recorded a 2.27 s variant), so part of it is run-to-run noise, but the median is over the bar and is not rewritten.
+bench.accept.m1-scene-dpr1: PASS. n=5000 at DPR 1: pan 42.3 (M1 43.1), zoom 44.5 (M1 44.7), within 2%.
+bench.accept.m1-scene-dpr2 (I5): **FAIL, a large regression.** n=5000 at DPR 2 under the 491.5 MB cap: pan 32.1 fps (M1 45.1) and zoom **1.6 fps** (M1 35.4); `mixed5000` behaves the same (28.0 / 1.7). The scene's working set at DPR 2 is about 742 MB (M1's measurement), the cap is 491.5 MB, so every text element misses every frame (the LRU is walked in z order), exactly the failure M1 recorded with its 256 MiB cap.
+
+### needs-user-decision
+
+needs-user-decision: the RenderCache cap (plan Q2, decided in the M2 grill as 6% of `deviceMemory`, 128 to 512 MB). On this Mac Chrome reports 8 GB, the ceiling for that API, so the cap is 491.5 MB and a dense 5,000-text scene at DPR 2 zooms at 1.6 fps instead of 35. Options: (a) raise the fraction or the ceiling (M1's 1 GiB held 742 MB; the cost is memory on small devices, and Chrome cannot tell 8 GB from 64 GB), (b) cheaper text buckets (finer than powers of two, so zoom 1 to 1.4 at DPR 2 does not draw 4x bitmaps; not tried), (c) accept: a 5,000-text scene is a stress test, and the realistic scenes above (200 text, 200 math, 50 large images) hold 60 fps at 28 to 212 MB.
+needs-user-decision: open-20k at DPR 1 is 15.5% over M1's median (bar 10%); accept as noise within overlapping ranges or investigate.
+
+### Not verified / limits
+
+The first DPR 1 `n=5000` run (pan 40.1, zoom 40.1, open-20k 2,117.9 ms) overlapped with light background commands (a three-package `pnpm` auto-install, Biome and file writes); it was re-run on an idle machine and the numbers above are the re-run. The per-run JSON of the first full run was overwritten by that re-run, so only the printed medians of the full run (this section) survive. One machine, one Chrome build. `images50` cold frames are short because bucket copies are built lazily on the first draw at each zoom; its cache MB is dominated by the 50 decoded originals.
