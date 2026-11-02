@@ -20,7 +20,7 @@ const NOT_PATCHABLE = new Set(['type', 'id', 'v', 'author'])
 
 // Whole style/data objects are accepted if they validate; callers should patch leaf paths (e.g. `data.kind`).
 // Follow a dotted path through object schemas (unwrapping optional/nullable); undefined if unknown.
-function leaf(root: z.ZodType, path: string[]): z.ZodType | undefined {
+export function leaf(root: z.ZodType, path: string[]): z.ZodType | undefined {
   let s = root
   for (const key of path) {
     while (s.def.type === 'optional' || s.def.type === 'nullable')
