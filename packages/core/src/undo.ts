@@ -7,6 +7,7 @@ export type UndoJSON = { undo: Entry[]; redo: Entry[]; maxDepth: number }
 const eq = (a: unknown, b: unknown): boolean =>
   a === b ||
   (typeof a === 'object' &&
+    Array.isArray(a) === Array.isArray(b) &&
     typeof b === 'object' &&
     a !== null &&
     b !== null &&
@@ -27,15 +28,15 @@ function getPath(el: Element, key: string): unknown {
 }
 
 /**
- * Two stacks of {original, inverse}. undo()/redo() RETURN the batch to submit (append-only); the
- * caller commits it and commit calls record(), which files it on the opposite stack.
+ * Two stacks of {original, inverse}. undo()/redo() pop the entry and RETURN the batch to submit
+ * (append-only). Editor: `const r = um.undo(); if (r && r.batch.ops.length) commit(r.batch, 'undo')`,
+ * where commit calls record(applied, batch, 'undo'). A failed commit loses at most that one entry.
  * Ops whose target changed since are dropped and counted in `skipped`. An empty `batch.ops` means
  * nothing to apply: the caller must not submit it (validateBatch rejects it); the entry is consumed.
  */
 export class UndoManager {
   private undoS: Entry[] = []
   private redoS: Entry[] = []
-  private from: 'undo' | 'redo' | null = null // set between undo()/redo() and the record() that follows
 
   constructor(
     private scene: Scene,
@@ -49,31 +50,32 @@ export class UndoManager {
     return this.redoS.length > 0
   }
 
-  record(applied: { inverse: Batch; touched: Id[] }, original: Batch) {
-    const from = this.from
-    this.from = null
+  record(
+    applied: { inverse: Batch; touched: Id[] },
+    original: Batch,
+    kind: 'edit' | 'undo' | 'redo' = 'edit',
+  ) {
     if (applied.inverse.ops.length === 0) return
     const entry = { original, inverse: applied.inverse }
-    if (from === 'undo') this.redoS.push(entry)
+    if (kind === 'undo') this.redoS.push(entry)
     else {
       this.undoS.push(entry)
-      if (from === null) this.redoS = [] // a fresh edit clears redo
+      if (kind === 'edit') this.redoS = [] // a fresh edit clears redo
     }
     for (const s of [this.undoS, this.redoS])
       if (s.length > this.maxDepth) s.splice(0, s.length - this.maxDepth)
   }
 
   undo() {
-    return this.step(this.undoS, 'undo')
+    return this.step(this.undoS)
   }
   redo() {
-    return this.step(this.redoS, 'redo')
+    return this.step(this.redoS)
   }
 
   clear() {
     this.undoS = []
     this.redoS = []
-    this.from = null
   }
 
   toJSON(): UndoJSON {
@@ -84,17 +86,23 @@ export class UndoManager {
     })
   }
   static fromJSON(scene: Scene, json: UndoJSON) {
-    const m = new UndoManager(scene, json.maxDepth)
+    if (!Array.isArray(json?.undo) || !Array.isArray(json?.redo))
+      throw new Error('malformed undo history')
+    const m = new UndoManager(
+      scene,
+      Number.isInteger(json.maxDepth) && json.maxDepth > 0
+        ? json.maxDepth
+        : 200,
+    )
     m.undoS = structuredClone(json.undo)
     m.redoS = structuredClone(json.redo)
     return m
   }
 
-  private step(stack: Entry[], dir: 'undo' | 'redo') {
+  private step(stack: Entry[]) {
     const entry = stack.pop()
     if (!entry) return null
     const { batch, skipped } = this.filter(entry)
-    this.from = batch.ops.length ? dir : null
     return { batch, skipped }
   }
 
