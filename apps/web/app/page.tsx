@@ -16,6 +16,9 @@ export default function Page() {
         // Platform is created after fonts load: text layout is memoised per Platform object.
         if (!stop && host.current)
           editor = new Editor(host.current, { platform: browserPlatform() })
+        // Test hook for Playwright; absent from production builds.
+        if (editor && process.env.NODE_ENV !== 'production')
+          (window as unknown as { __editor?: Editor }).__editor = editor
       })
     return () => {
       stop = true

@@ -3,6 +3,7 @@ import type { Editor } from '../editor'
 import { handTool } from './hand'
 import { selectTool } from './select'
 import { shapeTool } from './shape'
+import { textTool } from './text'
 
 export type ToolEvent = {
   world: Point
@@ -20,6 +21,7 @@ export interface Tool {
   onPointerMove(e: ToolEvent): void
   onPointerUp(e: ToolEvent): void
   onKey?(e: KeyboardEvent): boolean
+  onDoubleClick?(e: ToolEvent): void
   onCancel?(): void
   drawOverlay?(ctx: CanvasRenderingContext2D): void
   /** Navigation-only tools (Hand) keep receiving pointer events and can be selected while the editor is read-only. */
@@ -36,4 +38,5 @@ export const tools: Record<string, (ed: Editor) => Tool> = {
   triangle: shapeTool('triangle'),
   line: shapeTool('line'),
   arrow: shapeTool('arrow'),
+  text: textTool,
 }

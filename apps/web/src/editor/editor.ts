@@ -21,6 +21,7 @@ import {
 } from '@whiteboard/core'
 import { browserPlatform } from './platform'
 import { type Tool, type ToolEvent, tools as toolFactories } from './tools'
+import type { TextTool } from './tools/text'
 
 export type Snapshot = { elements: Element[]; camera: Camera; undo: UndoJSON }
 
@@ -42,11 +43,13 @@ export class Editor {
   readonly tools: Record<string, Tool>
   tool: Tool
   readOnly = false
+  /** Element drawn by a DOM overlay (text being edited); omitted from the canvas so it is never drawn twice. */
+  hidden: Id | null = null
   viewport: Viewport = { width: 0, height: 0, dpr: 1 }
 
   readonly index = new SpatialIndex() // tools read it (pick/search)
   private cache = new RenderCache()
-  private platform: Platform
+  readonly platform: Platform
   private listeners = new Set<() => void>()
   private sceneCanvas = canvas(0)
   private overlay = canvas(1)
@@ -93,6 +96,18 @@ export class Editor {
       this.onPointer('move', e),
     )
     on(this.overlay, 'pointerup', (e: PointerEvent) => this.onPointer('up', e))
+    on(this.overlay, 'dblclick', (e: MouseEvent) => {
+      if (this.readOnly) return
+      const screen = this.toScreen(e.clientX, e.clientY)
+      this.tool.onDoubleClick?.({
+        screen,
+        world: screenToWorld(screen, this.camera, this.viewport),
+        shift: e.shiftKey,
+        alt: e.altKey,
+        button: e.button,
+        pointerType: 'mouse',
+      })
+    })
     // A cancelled gesture (touch palm rejection, lost capture) must not commit.
     on(this.overlay, 'pointercancel', () => {
       this.panning = null
@@ -150,6 +165,14 @@ export class Editor {
     this.tool.onCancel?.()
     this.tool = next
     this.invalidate()
+  }
+
+  /** Enters edit mode for a text element (double-click / Enter in the select tool). */
+  editText(id: Id): void {
+    const el = this.scene.els.get(id)
+    if (this.readOnly || el?.type !== 'text' || el.locked) return
+    this.setTool('text')
+    ;(this.tools.text as TextTool).edit(el)
   }
 
   invalidate(): void {
@@ -263,11 +286,19 @@ export class Editor {
   private frame() {
     const { width, height, dpr } = this.viewport
     const sctx = this.sceneCanvas.getContext('2d')
-    if (sctx)
-      render(sctx, this.scene, this.camera, this.viewport, this.platform, {
+    if (sctx) {
+      const scene = this.hidden
+        ? {
+            els: new Map(
+              [...this.scene.els].filter(([i]) => i !== this.hidden),
+            ),
+          }
+        : this.scene
+      render(sctx, scene, this.camera, this.viewport, this.platform, {
         index: this.index,
         cache: this.cache,
       })
+    }
     const octx = this.overlay.getContext('2d')
     if (octx) {
       octx.setTransform(1, 0, 0, 1, 0, 0)

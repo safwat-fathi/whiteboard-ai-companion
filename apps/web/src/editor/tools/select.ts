@@ -207,7 +207,20 @@ export const selectTool = (ed: Editor): Tool => {
         commitPatch('Move Endpoint', cur.el, patch)
       }
     },
+    onDoubleClick(e: ToolEvent) {
+      const hit = ed.index.pick(e.world, z(), ed.scene)
+      if (hit?.type === 'text') ed.editText(hit.id)
+    },
     onKey(e: KeyboardEvent) {
+      const one = single()
+      if (
+        e.key === 'Enter' &&
+        one?.type === 'text' &&
+        ed.selection.size === 1
+      ) {
+        ed.editText(one.id)
+        return true
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
         set(
           [...ed.scene.els.values()]
