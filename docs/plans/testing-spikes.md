@@ -16,6 +16,14 @@ What I could not verify while planning, how M0 settles it, and how we know each 
 
 Spikes S1, S3 and S5 need no books; S2 and S4 wait for the books ([PLAN.md](../PLAN.md) §19).
 
+## M0 results
+
+- **S1 Canvas** (`spikes/s1-canvas/RESULT.md`): DPR 2 cached `46.5` fps pan / `40.7` fps zoom (`OffscreenCanvas` worker `43.9` / `39.8`, slower), first ink p95 `0.9` ms, open 20k `1,412` ms; `rbush` (load 20k `8.2` ms, query p95 `0.1` ms) and `perfect-freehand` (`0.43` ms at 1,000 pts) kept. `@napi-rs/canvas` shapes Arabic with bundled `IBM Plex Sans Arabic`; MathJax v4 SVG rasterises on server canvas (`latin-only` inside math, F14 closed). Decisions: `renderThread: main`, `textStrategy: cached`, `snapshotPath: server-canvas`, `font: plex`, `mathTextArabic: latin-only`.
+- **S2 Ingestion** (`spikes/s2-ingestion/RESULT.md`): R1 (`pdfjs-dist`, 1.9–8.9 ms/page) for text PDFs (`ck12`, `alg1`, `alg2`); R2 (`cloudflare-ai`) dropped (no LaTeX, empty on scans, 2.1–5.5 MB file-size cap); R3 (`mistral-ocr`, `$0.0205` / 10 pages, returns one `text` element per page in `annotations[0].file.content` between `<file>` and `</file>`) for scanned/Arabic/math-dense pages; R4 (`gemini-3.8-flash` on 130 dpi PNGs) fallback. Slice with `pdf-lib` `copyPages` (never `pdfseparate`), and strip `\x00–\x1F` / PUA `\uE000–\uF8FF` from `pdfjs-dist` text.
+- **S3 OpenRouter loop** (`spikes/s3-openrouter/RESULT.md`): `providerMetadata.openrouter.usage.cost` arrives on every streamed step across all 4 tested models; AI SDK 7 requires system prompt in `instructions`; `tool-result-image` (`toModelOutput` with `file` part) works on all 4 models; 1 h prompt cache hits on turn 2 (`17,433` cached tokens); `data_collection: "deny"` routes cleanly. Models chosen: `google/gemini-3.8-flash` (Arabic tutor), `anthropic/claude-haiku-5.5` (English tutor + `cheap`), `anthropic/claude-sonnet-5.5` (optional reviewer); Meta Llama configuration also documented for hackathon mode.
+- **S4 Embeddings and search** (`spikes/s4-search/RESULT.md`): **S4a** exact 1024-d cosine scan p95 `0.51` ms at `N=600`, `8.33` ms at `N=10k`, `83.6` ms and `390.6` MiB at `N=100k` (cold-start load from SQLite `236–351` ms). **S4b** across 3 books (`ck12` 718 chunks, `alg1` 751 chunks, `arabic` 40 R3-OCR chunks, 30 questions in `eval/*.jsonl`): `baai/bge-m3` (`1024-d`, `$0.0058`) hits `100%` vector@8 (`MRR 0.947`), `93.3%` hybrid@8 (`MRR 0.747`; `100%` `ck12`, `100%` `alg1`, `80%` `arabic`), and `96.7%` (`MRR 0.838`; `90%` `arabic`) with `±1` chunk neighbours. Decisions: `vectorSearch: exact`, `embedModel: baai/bge-m3`, `EMBED_DIMS: 1024`, `k: 8`, retry `429`/`5xx` with backoff.
+- **S5 Deploy dry-run**: deferred (VPS is optional; local app is the priority).
+
 ## Risks
 
 | Risk | Mitigation |

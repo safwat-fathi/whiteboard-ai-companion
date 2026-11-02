@@ -277,6 +277,11 @@ Five M0 spikes: **S1** canvas performance + Arabic/MathJax on a server canvas; *
 26. **Image import:** PNG, JPEG, WebP, GIF (first frame); SVG rejected; ≤ 10 MB; long edge ≤ 4096 px; SHA-256 dedupe; bytes through a `BlobStore` (IndexedDB now, `/api/blobs` in M3). **Crop is non-destructive** (`data.crop`, source pixels). (Q4, Q5, Q12.)
 27. **`flyTo` and `pulse` are view state:** never in ops, undo or snapshots. The Back chip and Follow AI stay in M5. (Q9.)
 28. **The TeX package list drops `noundefined`,** so undefined control sequences (`\href`, `\require`, …) throw and `renderMath` returns the message; math bitmaps beyond 4096 px draw as `Path2D` vectors. (Planning calls P1 and P6 in the M2 task plan.)
+29. **M0 spikes (S1–S4) closed:**
+    - **S1:** main-thread rendering with cached bitmaps (`OffscreenCanvas` worker was slower); `rbush` and `perfect-freehand` kept; `@napi-rs/canvas` server snapshots with bundled `IBM Plex Sans Arabic`.
+    - **S2:** R1 (`pdfjs-dist`, stripping raw `\x00–\x1F` and PUA `\uE000–\uF8FF`) for text PDFs; R2 (`cloudflare-ai`) dropped; R3 (`mistral-ocr`, `$0.0205` / 10 pages, one `text` element per page in `annotations[0].file.content` between `<file>` and `</file>`) for scanned/Arabic/math-dense pages; R4 (`gemini-3.8-flash`) fallback; slice PDFs with `pdf-lib` `copyPages`.
+    - **S3:** OpenRouter streaming step cost (`providerMetadata.openrouter.usage.cost`), 1 h prompt cache, `tool-result-image` (`toModelOutput` with `file` part), and `data_collection: "deny"` verified; `google/gemini-3.8-flash` (Arabic tutor), `anthropic/claude-haiku-5.5` (English tutor + `cheap`), `anthropic/claude-sonnet-5.5` (optional reviewer), plus Meta Llama hackathon config.
+    - **S4:** `baai/bge-m3` (`EMBED_DIMS = 1024`, `k = 8`), exact in-memory cosine search (`0.51 ms` p95 at 600 chunks, `83.6 ms` p95 / `390.6 MiB` at 100k chunks), `100%` vector@8 (`MRR 0.947`), `93.3%` hybrid@8 (`96.7%` with `±1` neighbours) across `ck12`, `alg1` and `arabic`; retry `429`/`5xx` with backoff. S5 (VPS deploy dry-run) stays deferred.
 
 **Inputs I need before M0** (not now)
 1. 2–3 real books as PDFs (tell me if any are EPUB and I will pull EPUB into M4): one text-heavy, one math/diagram-heavy, and an Arabic one if relevant, plus ~10 questions per book with the page where each answer lives. This is also the retrieval eval set.

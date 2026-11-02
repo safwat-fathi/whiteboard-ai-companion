@@ -151,7 +151,7 @@ Dropped from the design doc: `agent_tokens` (returns with MCP), `boards.owner_id
 - Embeddings are stored as little-endian Float32, L2-normalised, so cosine = dot product.
 - On first use per book (or scope) the server loads that book's vectors into one `Float32Array` cache (LRU, default 512 MB). A search scans only the vectors in scope (a chapter is tens of chunks; a whole book is a few hundred to a few thousand) and keeps top-k with a small heap.
 - Hybrid: FTS5 `bm25()` top-30 over `book_chunks_fts` (filtered by `book_id`/page range) + vector top-30 → reciprocal-rank fusion in code ([rag-context-engineering](./rag-context-engineering.md)).
-- **Ceiling:** ~200k chunks across the library, or any search above ~100 ms (**[spike S4]** measures at 100k × 1024). **Upgrade:** `sqlite-vec` `vec0` virtual table behind the same `searchVectors(bookId, query, k)` function.
+- **Ceiling:** ~200k chunks across the library, or any search above ~100 ms (**confirmed in S4a/S4b:** 100k × `1024-d` `baai/bge-m3` vectors take `83.6 ms` p95 and `390.6 MiB` RAM; 600 chunks take `0.51 ms` p95; cold-start load of 100k vectors from SQLite takes `236–351 ms`). **Upgrade:** `sqlite-vec` `vec0` virtual table behind the same `searchVectors(bookId, query, k)` function (not needed for v1).
 - Changing `EMBED_MODEL` means re-embedding a book; `books.embed_model` and `dims` record what each book used. Mixed models across books are fine because each search is per book.
 
 ## Migrations
