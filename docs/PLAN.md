@@ -51,7 +51,7 @@
 - **The engine design is sound and mostly stays.** Your answers delete a lot of it: accounts, roles, JWT, OAuth, Redis, S3, multi-instance, and now Docker and Postgres.
 - **Biggest gap:** no built-in AI. A tutor needs a chat dock in the UI and a server-side agent loop over the Meta Model API (§8–9), the whiteboard as its context (§10), a book library with hybrid retrieval (§11–12), and jump-to-AI-work (§13).
 - **"No login" is fine on localhost, not on a VPS** that holds your `META_API_KEY` / `OPENROUTER_API_KEY` and your books. One shared-secret gate fixes it (§16).
-- **Re-sequenced** so a usable tutor lands at ≈ week 15 of ≈ 20 full-time-engineer weeks. The doc's 14 weeks covered engine + MCP only (§17).
+- **Re-sequenced** so a usable tutor lands at the end of M5, before pen and charts. The doc's plan covered engine + MCP only (§17).
 - **I need from you before M0** (not now): 2–3 real books and ~10 questions per book (§19).
 
 ---
@@ -60,7 +60,7 @@
 
 ### 1.1 Verdict
 
-**Sound as an engine spec; incomplete as a product spec.** I cross-checked the doc against itself (schemas ↔ tools ↔ tables ↔ roadmap ↔ diagrams), your answers, and the new brief. Ops, undo, renderer, element model and sync are coherent; I would build them as written. Missing: everything that makes this a study companion, plus one security hole that "no login" opens. I did not build or benchmark anything: the performance claims, Arabic shaping on a server canvas, and the 1-week M0 are unverified, which the doc itself acknowledges by making M0 the gate.
+**Sound as an engine spec; incomplete as a product spec.** I cross-checked the doc against itself (schemas ↔ tools ↔ tables ↔ roadmap ↔ diagrams), your answers, and the new brief. Ops, undo, renderer, element model and sync are coherent; I would build them as written. Missing: everything that makes this a study companion, plus one security hole that "no login" opens. I did not build or benchmark anything: the performance claims and Arabic shaping on a server canvas are unverified, which the doc itself acknowledges by making M0 the gate.
 
 ### 1.2 Your five answers
 
@@ -83,7 +83,7 @@
 | F5 | Med | Rendering | Server bundles one Arabic font "so snapshots match the browser", but the browser uses whatever font it resolves. | Ship the same font files to the page and the server (§6) |
 | F6 | Med | MCP / snapshots | `get_snapshot` returns "MCP image content". OpenRouter's tool-calling docs only show text `content` in `role:"tool"` messages and never say images are allowed. | Tutor adapter returns the PNG as a follow-up *user* message with an image part **[spike S3]** (§8) |
 | F7 | Med | Retention / undo | 30-day op retention contradicts "jump to what the AI did" weeks later. "One call = one batch = one undo" makes a 10-call tutor turn 10 undos. | Permanent per-batch metadata (`bounds`, `label`, `turn_id`); turn-level undo (§13) |
-| F8 | Med | Roadmap | M0 (renderer, camera, R-tree, pen, headless-render test, 5,000-element benchmark) in one week is tight; the estimates assume one full-time engineer. | M0 = 2 weeks incl. AI, ingestion and deploy spikes; gates by evidence (§17) |
+| F8 | Med | Roadmap | M0 (renderer, camera, R-tree, pen, headless-render test, 5,000-element benchmark) is a lot for one phase and leaves the AI, ingestion and deploy unknowns unspiked. | M0 = spikes only, incl. AI, ingestion and deploy; gates by evidence (§17) |
 | F9 | Low | Consistency | `donut` is in the chart prose but not in `add_chart`'s enum. `triangle`/`polygon` have an agent tool but no human tool, though the doc promises symmetry. `patch` paths address arrays by index (`data.series.0.values`), which can mis-target under concurrent edits. | Add `donut`; triangle joins the shape picker, polygon stays agent-only (stated); keep last-write-wins for v1 |
 | F10 | Low | Sync | 30 Hz presence, live ink and multi-instance fan-out are built for many people; v1 has one human and one agent. | Keep the server-authoritative op log (human and agent still race); drop human presence and live ink; keep agent events (§6) |
 | F11 | Low | Identity | `author` "set by the server from the authenticated identity" means nothing without auth. | Derive from the channel: WebSocket = human, in-process tutor = agent (`tutor:<turnId>`). A WebSocket client can never emit `agent`. |
@@ -221,22 +221,22 @@ No login. Localhost: bound to 127.0.0.1. VPS: Caddy `basic_auth` in front of eve
 
 ## 17. Milestones (re-sequenced: tutor before pen and charts)
 
-> Detailed roadmap (scope, dependencies, gates, acceptance scripts, risks and status per phase): [ROADMAP.md](./ROADMAP.md). It mirrors the weeks and gates in this table; if they differ, this table wins until both are updated.
+> Detailed roadmap (scope, dependencies, gates, acceptance scripts, risks and status per phase): [ROADMAP.md](./ROADMAP.md). It mirrors the order and gates in this table; if they differ, this table wins until both are updated.
 
-Estimates are full-time-engineer weeks as in the doc, ±30%; re-estimate after M0.
+This table gives order and gates only; no durations are estimated. Revisit the scope and order of M1–M7 after M0.
 
-| # | Milestone | Wks | Builds | Gate |
-|---|---|---|---|---|
-| M0 | Spikes | 2 | S1–S5 ([testing-spikes](./plans/testing-spikes.md)) | 5,000 elements @ 60 fps; Arabic server render OK or fallback chosen; extraction default, models and embedding chosen; deploy dry-run (WS + SSE behind basic auth) works |
-| M1 | Core editor | 2.5 | `packages/core` (schemas, store, ops, undo, bounds, R-tree), renderer + camera, select/transform, shapes + bound arrows, text with RTL, local save (IndexedDB) | Shapes, Arabic + Latin text, undo, local save |
-| M2 | Math and images | 1.5 | `renderMath()` + live LaTeX box, image element (upload, crops, caches), camera `flyTo` + pulse primitives | Math and images crisp at every zoom; math security tests pass |
-| M3 | Server | 2.5 | WebSocket gateway, Board service (seq, validate, apply), SQLite log + snapshots + migrations, blobs on disk, snapshot renderer, access gate + Origin checks, systemd + Caddy deploy scripts, **first VPS deploy** | Two tabs stay in sync; survives restart; VPS reachable only through the gate; server PNG matches browser |
-| M4 | Library | 2.5 | Upload, estimate/preview, extraction ladder, structure, chunks, embeddings, summaries, hybrid search API, library UI, source panel, eval runner | Retrieval eval target met on a real book |
-| M5 | **Tutor slice** | 4 | Chat dock (§9), board-context builder + chips + browser-side pictures (§10), agent loop, tool registry, prompts + scope packs + caching, citations, placement, `add_diagram`, `add_book_figure`, jump-to-AI (§13), turn undo, budgets, stub tutor | End-to-end script in [testing-spikes](./plans/testing-spikes.md) passes |
-| M6 | Ink, charts, polish | 2.5 | Pen / highlighter / eraser, charts (bar, line, area, pie, donut, scatter + data grid), `arrange`, group, snap | Student can handwrite; AI can chart |
-| M7 | Hardening | 2 | Performance pass, security review, accessibility outline panel, backup drill, **optional MCP adapter** (tokens, `/mcp`) | Benchmarks + checklist pass |
+| # | Milestone | Builds | Gate |
+|---|---|---|---|
+| M0 | Spikes | S1–S5 ([testing-spikes](./plans/testing-spikes.md)) | 5,000 elements @ 60 fps; Arabic server render OK or fallback chosen; extraction default, models and embedding chosen; deploy dry-run (WS + SSE behind basic auth) works |
+| M1 | Core editor | `packages/core` (schemas, store, ops, undo, bounds, R-tree), renderer + camera, select/transform, shapes + bound arrows, text with RTL, local save (IndexedDB) | Shapes, Arabic + Latin text, undo, local save |
+| M2 | Math and images | `renderMath()` + live LaTeX box, image element (upload, crops, caches), camera `flyTo` + pulse primitives | Math and images crisp at every zoom; math security tests pass |
+| M3 | Server | WebSocket gateway, Board service (seq, validate, apply), SQLite log + snapshots + migrations, blobs on disk, snapshot renderer, access gate + Origin checks, systemd + Caddy deploy scripts, **first VPS deploy** | Two tabs stay in sync; survives restart; VPS reachable only through the gate; server PNG matches browser |
+| M4 | Library | Upload, estimate/preview, extraction ladder, structure, chunks, embeddings, summaries, hybrid search API, library UI, source panel, eval runner | Retrieval eval target met on a real book |
+| M5 | **Tutor slice** | Chat dock (§9), board-context builder + chips + browser-side pictures (§10), agent loop, tool registry, prompts + scope packs + caching, citations, placement, `add_diagram`, `add_book_figure`, jump-to-AI (§13), turn undo, budgets, stub tutor | End-to-end script in [testing-spikes](./plans/testing-spikes.md) passes |
+| M6 | Ink, charts, polish | Pen / highlighter / eraser, charts (bar, line, area, pie, donut, scatter + data grid), `arrange`, group, snap | Student can handwrite; AI can chart |
+| M7 | Hardening | Performance pass, security review, accessibility outline panel, backup drill, **optional MCP adapter** (tokens, `/mcp`) | Benchmarks + checklist pass |
 
-**Total ≈ 19.5 weeks; first usable tutor at the end of M5 ≈ week 15** (doc: 14 weeks for engine + MCP). M4 does not depend on M1–M3, so the library and canvas tracks can overlap if you have the capacity, pulling the tutor slice to roughly week 11–12 on the calendar. If this is a part-time side project, scale calendar time accordingly. If handwriting matters more than the first tutor demo, swap the pen half of M6 into M1.
+**First usable tutor at the end of M5.** M4 does not depend on M1–M3, so the library and canvas tracks can overlap if two tracks of work run in parallel, which brings the library forward. If handwriting matters more than the first tutor demo, swap the pen half of M6 into M1.
 
 ---
 
@@ -270,7 +270,7 @@ Five M0 spikes: **S1** canvas performance + Arabic/MathJax on a server canvas; *
 19. **M5 registers 15 of the 18 tools;** `add_chart`, `draw_stroke` and `arrange` register in M6 with their elements. (Seam 3.)
 20. **M4 splits into 4a (ingestion core, `pnpm ingest`, eval runner) and 4b (REST, library UI, source viewer).** This refines §17's "M4 does not depend on M1–M3": 4a needs only M3's persistence layer (`db/` module, migrations, blob store); 4b needs M3's server and the web shell. The source viewer is built in M4 and mounted as the chat dock's Source tab in M5. (Seams 4 and 5.)
 21. **M2 image bytes live in IndexedDB, keyed by content hash** (the scheme `blobs.id` uses), until M3 provides `/api/blobs`. M1–M2 local boards are throwaway; there is no import path. (Seam 6.)
-22. **[ROADMAP.md](./ROADMAP.md) holds the per-phase detail;** §17 stays the contract for weeks and gates.
+22. **[ROADMAP.md](./ROADMAP.md) holds the per-phase detail;** §17 stays the contract for order and gates.
 23. **MathJax lives in `packages/math`, not `packages/core/math`;** `renderMath()` is async with a sync `peekMath()` cache lookup (S1 needed MathJax's `convertPromise`). `core` stays zod-only and reaches math through a `Platform.math` provider. (M2 grill, Q7 and Q8.)
 24. **`RenderCache` is sized from the device** (fraction of `deviceMemory`, 128 to 512 MB), shared by text, math and image bitmaps, replacing M1's fixed 1 GiB. (Q2.)
 25. **Arabic inside math is an error, not a mis-shaped render** (F14 closed: `latin-only`, enforced for the whole input); the message tells the tutor to use a separate text element. (Q3.)

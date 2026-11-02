@@ -4,7 +4,7 @@
 
 What I could not verify while planning, how M0 settles it, and how we know each part works afterwards.
 
-## M0 spikes (2 weeks)
+## M0 spikes
 
 | Spike | Question | Done when |
 |---|---|---|

@@ -1,39 +1,32 @@
 # Roadmap
 
+This roadmap orders work by dependency and gate, not by calendar; no durations are estimated.
+
 > **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** and **Cerebral Valley**.
 > **Status:** draft 1 · 2026-11-01 · Kickoff in progress (M0 plan written, waiting on your review and the inputs below).
 > **What this is:** the execution view of [PLAN.md](./PLAN.md) §17: phases M0–M7 with scope, dependencies, gates, acceptance scripts, risks and status. Aspect details stay in [`plans/`](./plans/); this file links to them instead of restating them.
-> **Weeks and gates mirror PLAN §17.** If they ever differ, §17 wins until both are updated. Everything not in §17 is tagged **[my call]**; override any.
-> **Time** is full-time-engineer weeks, ±30%, **re-estimated after M0**. There are no dates here on purpose (conversion row in §1).
+> **Order and gates mirror PLAN §17.** If they ever differ, §17 wins until both are updated. Everything not in §17 is tagged **[my call]**; override any.
 > **Definition of done** for every phase is the one in [testing-spikes](./plans/testing-spikes.md#definition-of-done-per-milestone): gate met, the phase's scripts green, the relevant plan file updated if reality changed, any new decision recorded in PLAN §19.
 
 ---
 
 ## 1. At a glance
 
-M0–M7 keep the labels used across the docs, oriented toward delivering a working multimodal study companion for the **Meta AI Developer Hackathon**. **Kickoff (K)** comes first and is not in the 19.5 weeks.
+M0–M7 keep the labels used across the docs, oriented toward delivering a working multimodal study companion for the **Meta AI Developer Hackathon**. **Kickoff (K)** comes first.
 
-| Stage        | Phase                      | Wks | Ends wk | Headline                                                                | Status |
-| ------------ | -------------------------- | --- | ------- | ----------------------------------------------------------------------- | ------ |
-| 0 Kickoff    | **K** Kickoff              | –   | –       | Approve PLAN rev 2, hand over inputs, write M0's task plan              | ✔      |
-| 1 De-risk    | **M0** Spikes              | 2   | 2       | S1–S5 turn guesses into measurements                                    | ✔      |
-| 2 Foundation | **M1** Core editor         | 2.5 | 4.5     | Canvas, shapes, Arabic/Latin text, undo, local save                     | ◐      |
-|              | **M2** Math and images     | 1.5 | 6       | LaTeX (MathJax), images, camera `flyTo` + pulse                         | ◐      |
-|              | **M3** Server              | 2.5 | 8.5     | Sync, SQLite, blobs, access gate, **first VPS deploy**                  | ☐      |
-| 3 Tutor      | **M4** Library             | 2.5 | 11      | Upload → extract → chunk → embed → hybrid search                        | ☐      |
-|              | **M5** Tutor slice         | 4   | **15**  | Chat dock, board context, citations, jump-to-AI: **first usable tutor** | ☐      |
-| 4 Complete   | **M6** Ink, charts, polish | 2.5 | 17.5    | Pen, highlighter, eraser, charts, arrange/group/snap                    | ☐      |
-|              | **M7** Hardening           | 2   | 19.5    | Performance, security review, a11y outline, backup drill, optional MCP  | ☐      |
+| Stage        | Phase                      | Headline                                                                | Status |
+| ------------ | -------------------------- | ----------------------------------------------------------------------- | ------ |
+| 0 Kickoff    | **K** Kickoff              | Approve PLAN rev 2, hand over inputs, write M0's task plan              | ✔      |
+| 1 De-risk    | **M0** Spikes              | S1–S5 turn guesses into measurements                                    | ✔      |
+| 2 Foundation | **M1** Core editor         | Canvas, shapes, Arabic/Latin text, undo, local save                     | ◐      |
+|              | **M2** Math and images     | LaTeX (MathJax), images, camera `flyTo` + pulse                         | ◐      |
+|              | **M3** Server              | Sync, SQLite, blobs, access gate, **first VPS deploy**                  | ☐      |
+| 3 Tutor      | **M4** Library             | Upload → extract → chunk → embed → hybrid search                        | ☐      |
+|              | **M5** Tutor slice         | Chat dock, board context, citations, jump-to-AI: **first usable tutor** | ☐      |
+| 4 Complete   | **M6** Ink, charts, polish | Pen, highlighter, eraser, charts, arrange/group/snap                    | ☐      |
+|              | **M7** Hardening           | Performance, security review, a11y outline, backup drill, optional MCP  | ☐      |
 
 Status: ☐ not started · ◐ in progress · ✔ done.
-
-**Effort to calendar (illustrative, ±30%).** The weeks above assume full-time work (≈ 40 h/wk); other capacities scale linearly.
-
-| Capacity  | All of v1 (19.5 effort-weeks) | First usable tutor (15 effort-weeks) |
-| --------- | ----------------------------- | ------------------------------------ |
-| Full-time | ≈ 19.5 weeks                  | ≈ 15 weeks                           |
-| ~20 h/wk  | ≈ 39 weeks                    | ≈ 30 weeks                           |
-| ~10 h/wk  | ≈ 78 weeks                    | ≈ 60 weeks                           |
 
 ---
 
@@ -41,7 +34,7 @@ Status: ☐ not started · ◐ in progress · ✔ done.
 
 Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named acceptance scripts and test layers in [testing-spikes](./plans/testing-spikes.md). **Risks** come from its risk table, attached to the phase that handles them.
 
-### K · Kickoff _(before week 1; not counted in the 19.5)_
+### K · Kickoff
 
 - **Goal:** M0 can start without waiting on anyone.
 - **Do:**
@@ -54,7 +47,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Risks:** books arrive late → S2 and S4 slip and M4 inherits the risk; S1, S3, S5 still run.
 - **Status:** ✔ Books (`spikes/books/`), eval sets (`eval/*.jsonl`) and OpenRouter key provided; VPS deferred.
 
-### M0 · Spikes _(2 wks · ends wk 2)_
+### M0 · Spikes
 
 - **Goal:** replace every **[spike]** in the plan with a measurement, so M1 onward builds on facts.
 - **Builds:** S1–S5 from [testing-spikes](./plans/testing-spikes.md). **S1** canvas performance, plus Arabic and MathJax on a server canvas, plus the leaf-library choice (F12). **S2** extraction rungs R1–R4 on your books. **S3** the OpenRouter loop: tool calling, image in a tool result vs a follow-up message, caching, cost arriving in streaming mode, Arabic quality, `data_collection: "deny"`. **S4** embeddings and exact-search latency. **S5** deploy dry-run on a VPS: _optional, deferred; not a gate for M0 or M3_.
@@ -64,10 +57,10 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Decisions closed:** render path (main thread vs worker) and snapshot path; Arabic font; `rbush` and `perfect-freehand` vs in-house; extraction default per book type and page-routing thresholds; tutor, cheap and vision models and the snapshot-adapter behaviour; embedding model, `k`, `EMBED_DIMS` (or `sqlite-vec` scheduled); access gate (basic auth vs Tailscale or cookie); keep or drop the `web` process (Next.js vs static export or Vite SPA).
 - **Risks:** Arabic shaping on a server canvas (S1; ladder: server canvas → open tab → headless Chromium); large boards miss the frame budget (S1; worker-canvas path); PDF math and Arabic extraction (S2); cost surprise (S3 replaces the estimates with measured cost per turn); model and AI SDK churn (S3); basic auth + WebSocket (S5; Tailscale or signed cookie).
 - **Demo:** measured numbers, and (S5 only if a VPS exists) a hello-world NestJS (WebSocket + SSE) and Next behind Caddy on the VPS.
-- **Replan:** re-estimate every later phase now (§17); see §6.
+- **Replan:** revisit the scope and order of every later phase now (§17); see §6.
 - **Status:** ✔ S1, S2, S3, S4a and S4b done and recorded in [testing-spikes](./plans/testing-spikes.md#m0-results) and [PLAN.md](./PLAN.md) §19 #29 (S5 deferred; S2 numeric density cut-off tuned in M4a).
 
-### M1 · Core editor _(2.5 wks · ends wk 4.5)_
+### M1 · Core editor
 
 - **Goal:** a person can draw and write on a fast infinite canvas, undo, and lose nothing on reload.
 - **Builds:** `packages/core` (zod schemas, scene store, ops, undo, bounds, R-tree) · renderer + camera (two canvases, dirty-flag frame loop, zoom 0.05–20) · select/transform · shapes + bound arrows · text with RTL (`<textarea>` overlay) · local save (IndexedDB). → [whiteboard-engine](./plans/whiteboard-engine.md), [tech-stack](./plans/tech-stack.md).
@@ -79,7 +72,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Demo:** draw a diagram with bound arrows, type Arabic and Latin text, undo, reload and it is still there.
 - **Status:** ◐ Implemented on branch `m1-core` (not merged to `main`). The gate script `e2e/gate.spec.ts` is green, with `pnpm lint`, `pnpm test`, `pnpm e2e` and `pnpm build`. Remaining: the manual demo with a real Arabic keyboard (IME), your decisions on the three perf points in the status log, then the merge. Group resize is not built (M6, see [whiteboard-engine](./plans/whiteboard-engine.md#open-items)).
 
-### M2 · Math and images _(1.5 wks · ends wk 6)_
+### M2 · Math and images
 
 - **Goal:** equations and pictures look right at every zoom, and the camera can fly somewhere on request (the primitive Jump-to-AI needs).
 - **Builds:** `renderMath()` (MathJax v4, TeX → SVG → cached bitmap) + live LaTeX box · image element (upload, crops, zoom-bucket caches) · camera `flyTo` + pulse. → [math-renderer](./plans/math-renderer.md), [whiteboard-engine](./plans/whiteboard-engine.md).
@@ -93,7 +86,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Task plan:** [2026-11-02-m2-math-images.md](./superpowers/plans/2026-11-02-m2-math-images.md) (12 tasks, decisions in PLAN §19 #23–28). **Decided in the M2 grill:** `packages/math` (not `core/math`), async `renderMath` + sync `peekMath`, Arabic in math is an error (F14 closed), device-sized `RenderCache`, image import limits (SVG rejected), non-destructive crop, `flyTo` + `pulse` as view state, relative perf bar (200 math ≥ 90% of 200 text).
 - **Status:** ◐ Planned on branch `m2-math-images`, stacked on `m1-core` (M1 not merged). No code yet; waiting on your review of the task plan.
 
-### M3 · Server _(2.5 wks · ends wk 8.5)_
+### M3 · Server
 
 - **Goal:** the board lives on a server, survives restarts, syncs between tabs, and runs locally. VPS deploy is optional and later.
 - **Builds:** WebSocket gateway · Board service (validate → seq → apply → store → broadcast) · SQLite op log + snapshots + migrations (`0001_init`) · blobs on disk · snapshot renderer (core `render()` on `@napi-rs/canvas`) · access gate + Origin checks · systemd + Caddy deploy scripts · deploy scripts (written, run on a VPS only when one exists). → [deployment](./plans/deployment.md), [database](./plans/database.md), [api](./plans/api.md), [auth-security](./plans/auth-security.md).
@@ -105,7 +98,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Demo:** two browser tabs editing one board on localhost; restart the server and the board is still there.
 - **Status:** ☐
 
-### M4 · Library _(2.5 wks · ends wk 11)_
+### M4 · Library
 
 - **Goal:** a real book becomes searchable pages with citations.
 - **Builds (§17):** upload, estimate/preview, extraction ladder (R1–R4, per-page routing), structure (PDF outline + printed page labels), chunks, embeddings, summaries, hybrid search API (FTS5 + exact vectors → reciprocal-rank fusion), library UI, source panel, eval runner. → [library-ingestion](./plans/library-ingestion.md), [rag-context-engineering](./plans/rag-context-engineering.md), [database](./plans/database.md).
@@ -119,7 +112,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Demo:** upload a real book, watch progress, browse the outline, search it (right page in the top 8), open the cited page in the viewer.
 - **Status:** ☐
 
-### M5 · Tutor slice _(4 wks · ends wk 15)_
+### M5 · Tutor slice
 
 - **Goal:** the whole product loop works: ask, the tutor explains on the board with citations, point, locate, undo.
 - **Builds (§17):** chat dock ([chat-ui](./plans/chat-ui.md)) · board-context builder + chips + browser-side pictures ([board-context](./plans/board-context.md)) · agent loop + tool registry ([ai-integration](./plans/ai-integration.md)) · prompts + scope packs + caching + citations ([rag-context-engineering](./plans/rag-context-engineering.md)) · placement · `add_diagram` · `add_book_figure` · jump-to-AI ([jump-to-ai](./plans/jump-to-ai.md)) · turn undo · budgets · stub tutor.
@@ -133,7 +126,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Demo:** the product. Chat, a board explanation with citations, select and ask, jump to the AI's work, undo the response, cost footer visible. **First usable tutor.**
 - **Status:** ☐
 
-### M6 · Ink, charts, polish _(2.5 wks · ends wk 17.5)_
+### M6 · Ink, charts, polish
 
 - **Goal:** the student can handwrite and the AI can chart.
 - **Builds (§17):** pen, highlighter, eraser (Pointer Events, coalesced events, palm rejection) · charts (bar, line, area, pie, donut, scatter) + data grid · `arrange` · group · snap. → [whiteboard-engine](./plans/whiteboard-engine.md), [ai-integration](./plans/ai-integration.md).
@@ -145,7 +138,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Demo:** handwrite a note, select it, **Ask AI**, and it reads the picture; ask for a chart and a data-driven chart appears.
 - **Status:** ☐
 
-### M7 · Hardening _(2 wks · ends wk 19.5)_
+### M7 · Hardening
 
 - **Goal:** v1 is fast, safe and recoverable.
 - **Builds (§17):** performance pass · security review · accessibility outline panel · backup restore drill · optional MCP adapter (`/mcp`, tokens). → [auth-security](./plans/auth-security.md), [deployment](./plans/deployment.md), [ai-integration](./plans/ai-integration.md).
@@ -177,7 +170,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 Default (single track)
   K ─▶ M0 ─▶ M1 ─▶ M2 ─▶ M3 ─▶ M4a ─▶ M4b ─▶ M5 ─▶ M6 ─▶ M7
 
-Optional overlap (§5, B): needs capacity for two tracks
+Optional overlap (§5, B): needs two parallel tracks of work
   Track 1   M0 ─▶ M1 ─▶ M2 ─▶ M3 (sync, gate, deploy) ─▶ M4b ─▶ M5 ─▶ M6 ─▶ M7
   Track 2   M0 ─▶ M3 persistence layer ─▶ M4a ───────────────┘
 ```
@@ -203,23 +196,23 @@ Found while reading all 16 docs against §17. Resolutions are **[my call]**; ove
 
 Defaults are what this roadmap assumes. Override any before the phase named.
 
-| #   | Decision                                                                                                       | Default                             | Alternative and cost                                                                                                                                                       | Decide by                      |
-| --- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| A   | When does handwriting land?                                                                                    | **M6**, tutor first (PLAN §19 #7)   | Swap the pen half of M6 into M1: handwriting exists from M1 on and seam 2 disappears. That half of M6's 2.5 weeks moves ahead of the tutor (the docs give no finer number) | Before M1 starts               |
-| B   | One track or two?                                                                                              | **Single track**, M0 to M7 in order | Overlap 4a with M1–M3: the tutor slice lands at about week 11–12 on the calendar (§17). Needs capacity for two tracks and M3's persistence layer built first               | After M0 (re-estimate)         |
-| C   | Off-box backup target for `rclone` ([deployment](./plans/deployment.md) Backups). Not among the Kickoff inputs | **Open**                            | Any remote `rclone` supports                                                                                                                                               | Before M3's first deploy       |
-| D   | EPUB in v1?                                                                                                    | **No, PDF only** (PLAN §19 #14)     | If a book is EPUB, EPUB moves into M4 ([library-ingestion](./plans/library-ingestion.md))                                                                                  | Kickoff, when the books arrive |
-| E   | MCP adapter                                                                                                    | **Optional, in M7** (PLAN §19 #5)   | Leave it for after v1                                                                                                                                                      | M7                             |
+| #   | Decision                                                                                                       | Default                             | Alternative and cost                                                                                                                                       | Decide by                      |
+| --- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| A   | When does handwriting land?                                                                                    | **M6**, tutor first (PLAN §19 #7)   | Swap the pen half of M6 into M1: handwriting exists from M1 on and seam 2 disappears. That half of M6 moves ahead of the tutor                             | Before M1 starts               |
+| B   | One track or two?                                                                                              | **Single track**, M0 to M7 in order | Overlap 4a with M1–M3, so the library is ready when the tutor slice starts (§17). Needs two parallel tracks of work and M3's persistence layer built first | After M0                       |
+| C   | Off-box backup target for `rclone` ([deployment](./plans/deployment.md) Backups). Not among the Kickoff inputs | **Open**                            | Any remote `rclone` supports                                                                                                                               | Before M3's first deploy       |
+| D   | EPUB in v1?                                                                                                    | **No, PDF only** (PLAN §19 #14)     | If a book is EPUB, EPUB moves into M4 ([library-ingestion](./plans/library-ingestion.md))                                                                  | Kickoff, when the books arrive |
+| E   | MCP adapter                                                                                                    | **Optional, in M7** (PLAN §19 #5)   | Leave it for after v1                                                                                                                                      | M7                             |
 
 ---
 
 ## 6. Replan checkpoints
 
-| After              | Why                                                                     | Do                                                                                                                                                                                                                                        |
-| ------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **M0** (mandatory) | S1–S5 replace estimates with measurements (§17: "re-estimate after M0") | Re-estimate M1–M7; record decisions in PLAN §19; revisit B. If S1 picks a snapshot fallback (open tab or headless Chromium) instead of the server canvas, rescope M3's last gate clause, "server PNG matches browser", to the chosen path |
-| M3                 | First VPS deploy and the first real velocity data                       | Compare actuals with the ±30% band; confirm the gate choice in practice                                                                                                                                                                   |
-| M5                 | First usable tutor: the product exists                                  | Use it on a real book; re-decide M6 against v1.1 priorities (pen, charts, quizzes) before spending the weeks                                                                                                                              |
+| After              | Why                                                                 | Do                                                                                                                                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **M0** (mandatory) | S1–S5 replace guesses with measurements (§17: replan after M0)      | Revisit the scope and order of M1–M7; record decisions in PLAN §19; revisit B. If S1 picks a snapshot fallback (open tab or headless Chromium) instead of the server canvas, rescope M3's last gate clause, "server PNG matches browser", to the chosen path |
+| M3                 | First server, sync and (if a VPS exists) deploy working in practice | Confirm the gate choice in practice; check that the scope and order of M4–M7 still hold                                                                                                                                                                      |
+| M5                 | First usable tutor: the product exists                              | Use it on a real book; re-decide M6 against v1.1 priorities (pen, charts, quizzes) before starting M6                                                                                                                                                        |
 
 ---
 
