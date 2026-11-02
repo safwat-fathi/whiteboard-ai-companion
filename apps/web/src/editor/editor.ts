@@ -298,7 +298,11 @@ export class Editor {
   }
 
   dispose(): void {
-    this.tool.onCancel?.()
+    try {
+      this.tool.onCancel?.()
+    } catch (err) {
+      console.error('cancelling the tool failed', err) // the teardown below must still run
+    }
     this.disposed = true
     this.unDpr?.()
     cancelAnimationFrame(this.raf)

@@ -426,6 +426,27 @@ describe('Editor', () => {
     expect(frames).toHaveLength(0)
   })
 
+  it("dispose still tears everything down when the tool's onCancel throws", () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    ed.tools.other = stub(() => {
+      throw new Error('boom')
+    })
+    ed.tool = ed.tools.other
+    expect(() => ed.dispose()).not.toThrow()
+    expect(err).toHaveBeenCalled() // logged, not swallowed silently
+    expect(host.querySelector('canvas')).toBeNull() // the canvases are gone
+    frames.length = 0
+    host.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: 10, cancelable: true }),
+    )
+    key('z', { ctrlKey: true })
+    ed.invalidate()
+    expect(ed.camera.y).toBe(0) // the listeners are gone
+    expect(frames).toHaveLength(0)
+    ed.tool = ed.tools.hand as typeof ed.tool // the afterEach dispose must not log again
+    err.mockRestore()
+  })
+
   it('a devicePixelRatio change resizes the canvases and renders', () => {
     const listeners: (() => void)[] = []
     vi.stubGlobal('matchMedia', () => ({
