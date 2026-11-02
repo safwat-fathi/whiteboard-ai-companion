@@ -36,3 +36,21 @@ Sample: 10 evenly spaced pages per book from 12%..90% of the book. **Spend: $0.4
 - R2 dropped from the ladder.
 - Slice with pdf-lib, never poppler.
 - Still open: per-page routing thresholds (text density, math density), and the quality ratings that would confirm R3 over R4 on the Arabic book.
+
+## Meta Llama API (2026-11-02 re-measurement)
+
+Run 2026-11-02, `ocr.ts` with `PROVIDER=meta` on 10 sampled pages for CK-12 (book 2) and the scanned Arabic book (book 3). Output files written to `r4.<model>.md` (existing Gemini `r4.md` files untouched, mtimes verified).
+
+| Book | Pages | Llama-4-Maverick | Llama-3.2-90B-Vision | muse-spark-1.3 (Meta Model API) |
+|---|---|---|---|---|
+| CK-12 Algebra 1 (book 2) | 10 | FAIL (401 on `api.llama.com`) | FAIL (401 on `api.llama.com`) | **PASS** (21,600 in / 22,977 out, 8.5 s/page) |
+| الجبر الخطي (Linear Algebra, book 3 scan) | 10 | FAIL (401 on `api.llama.com`) | FAIL (401 on `api.llama.com`) | **PASS** (14,355 in / 37,179 out, 13.0 s/page) |
+
+### Findings
+- **Endpoint Status**: All calls to `https://api.llama.com/compat/v1/chat/completions` fail with HTTP 401 `{"error":{"message":"Authentication Error","code":"invalid_api_key"}}` because `api.llama.com` is deprecated. Error responses recorded in `out/ck12/r4.Llama-4-Maverick-17B-128E-Instruct-FP8.md`, `out/ck12/r4.Llama-3.2-90B-Vision-Instruct.md`, `out/arabic/r4.Llama-4-Maverick-17B-128E-Instruct-FP8.md`, and `out/arabic/r4.Llama-3.2-90B-Vision-Instruct.md`.
+- **Meta Model API (`muse-spark-1.3`) transcription**:
+  - **CK-12 (`out/ck12/r4.muse-spark-1.3.md`)**: Complete, clean transcription of all 10 pages with LaTeX equation blocks, structured exercise sections, and table layouts.
+  - **Arabic Scan (`out/arabic/r4.muse-spark-1.3.md`)**: Successfully extracts Arabic mathematical proofs and definitions directly from 130 dpi scans (e.g., page 45 vector space subspace theorem $M+N$ with full step-by-step math).
+  - **Token Cap note**: On page 78 of the Arabic scan, output hit the 4,000 `max_tokens` ceiling due to high reasoning token generation.
+- **Human Review**: Eyeball `out/ck12/r4.muse-spark-1.3.md` and `out/arabic/r4.muse-spark-1.3.md` against `out/<book>/p<N>.png` for OCR fidelity.
+- **Gemini baseline preservation**: `out/ck12/r4.md` and `out/arabic/r4.md` remain intact and identical to original runs.

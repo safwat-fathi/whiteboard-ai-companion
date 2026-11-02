@@ -37,17 +37,28 @@ if (!existsSync(join(dir, 'slice.pdf'))) {
   for (const p of sample) execFileSync('pdftoppm', ['-r', '130', '-png', '-singlefile', '-f', String(p), '-l', String(p), src, join(dir, `p${p}`)]);
 }
 
+const isMeta = process.env.PROVIDER === 'meta';
+
 async function chat(body: object) {
-  if (spend() > CEILING) throw new Error(`spend ceiling ${CEILING} hit`);
+  if (!isMeta && spend() > CEILING) throw new Error(`spend ceiling ${CEILING} hit`);
   const t0 = performance.now();
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const url = isMeta ? `${process.env.META_API_BASE_URL}/chat/completions` : 'https://openrouter.ai/api/v1/chat/completions';
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${isMeta ? process.env.META_API_KEY : process.env.OPENROUTER_API_KEY}`,
+    'Content-Type': 'application/json',
+  };
+  if (!isMeta) headers['X-Title'] = 'whiteboard-ai-s2';
+
+  const reqBody = isMeta ? body : { ...body, usage: { include: true }, provider: { data_collection: 'deny' } };
+
+  const res = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json', 'X-Title': 'whiteboard-ai-s2' },
-    body: JSON.stringify({ ...body, usage: { include: true }, provider: { data_collection: 'deny' } }),
+    headers,
+    body: JSON.stringify(reqBody),
   });
   const json: any = await res.json();
-  const cost = json.usage?.cost ?? 0;
-  addSpend(cost);
+  const cost = isMeta ? 0 : (json.usage?.cost ?? 0);
+  if (!isMeta) addSpend(cost);
   return { json, cost, ms: Math.round(performance.now() - t0), status: res.status };
 }
 
@@ -66,7 +77,7 @@ if (rung === 'r2' || rung === 'r3') {
 }
 
 if (rung === 'r4') {
-  let total = 0, ms = 0, md = '';
+  let totalCost = 0, totalToks = { in: 0, out: 0 }, ms = 0, md = '';
   for (const p of sample) {
     const img = readFileSync(join(dir, `p${p}.png`)).toString('base64');
     const r = await chat({
@@ -75,11 +86,26 @@ if (rung === 'r4') {
         { type: 'text', text: 'Transcribe this textbook page to Markdown. Math as LaTeX ($...$ inline, $$...$$ display). Keep Arabic text exactly as printed (right-to-left, no translation). Keep headings, lists, tables. Output only the transcription; do not invent text that is not on the page; mark illegible parts as [illegible].' },
         { type: 'image_url', image_url: { url: `data:image/png;base64,${img}` } }] }],
     });
-    total += r.cost; ms += r.ms;
+    ms += r.ms;
+    if (isMeta) {
+      const u = r.json.usage;
+      const inTok = u?.prompt_tokens ?? 0;
+      const outTok = u?.completion_tokens ?? 0;
+      totalToks.in += inTok;
+      totalToks.out += outTok;
+      console.log('p', p, r.status, r.ms, 'ms', `tokens=${inTok}in/${outTok}out`);
+    } else {
+      totalCost += r.cost;
+      console.log('p', p, r.status, r.ms, 'ms', r.cost);
+    }
     md += `\n\n<!-- page ${p} -->\n${r.json.choices?.[0]?.message?.content ?? JSON.stringify(r.json.error)}`;
-    console.log('p', p, r.status, r.ms, 'ms', r.cost);
   }
-  writeFileSync(join(dir, 'r4.md'), md);
-  console.log({ model: VISION, pages: sample.length, totalCost: total, msPerPage: Math.round(ms / sample.length) });
+  const outName = isMeta ? `r4.${VISION.replace('/', '_')}.md` : 'r4.md';
+  writeFileSync(join(dir, outName), md);
+  if (isMeta) {
+    console.log({ model: VISION, pages: sample.length, totalTokens: totalToks, msPerPage: Math.round(ms / sample.length) });
+  } else {
+    console.log({ model: VISION, pages: sample.length, totalCost, msPerPage: Math.round(ms / sample.length) });
+  }
 }
-console.log('total spend', spend());
+if (!isMeta) console.log('total spend', spend());
