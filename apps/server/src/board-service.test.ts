@@ -225,6 +225,71 @@ describe('submit', () => {
     expect(svc.submit(id, add('b'), OWNER).seq).toBe(1)
   })
 
+  it('subscribers connected before a failed write still receive the next batch', () => {
+    const t = setup()
+    const { id } = t.svc.createBoard('B')
+    let fail = true
+    const flaky = {
+      ...t.boardsDb,
+      appendBatch: (...a: Parameters<typeof t.boardsDb.appendBatch>) => {
+        if (fail) throw new Error('busy')
+        return t.boardsDb.appendBatch(...a)
+      },
+    }
+    const svc = new BoardService(flaky, { now: () => clock })
+    const got: number[] = []
+    svc.subscribe(id, (b) => got.push(b.seq))
+    expect(() => svc.submit(id, add('a'), OWNER)).toThrow('busy')
+    fail = false
+    svc.submit(id, add('b'), OWNER)
+    expect(got).toEqual([1])
+    expect(svc.subscriberCount(id)).toBe(1)
+  })
+
+  it('a snapshot that fails after the commit does not turn the accepted batch into an error', () => {
+    const t = setup()
+    const { id } = t.svc.createBoard('B')
+    const flaky = {
+      ...t.boardsDb,
+      saveSnapshot: () => {
+        throw new Error('disk full')
+      },
+    }
+    const svc = new BoardService(flaky, { now: () => clock, snapshotEvery: 2 })
+    const got: number[] = []
+    svc.subscribe(id, (b) => got.push(b.seq))
+    svc.submit(id, add('a'), OWNER)
+    expect(svc.submit(id, add('b'), OWNER).seq).toBe(2) // the 2nd batch triggers the failing snapshot
+    expect(got).toEqual([1, 2])
+    expect(t.boardsDb.opsAfter(id, 0)).toHaveLength(2)
+  })
+
+  it('tick() and close() survive a failing snapshot and still snapshot the other boards', () => {
+    const t = setup({ snapshotEvery: 1_000_000, snapshotAfterMs: 1 })
+    const bad = t.svc.createBoard('bad').id
+    const good = t.svc.createBoard('good').id
+    const flaky = {
+      ...t.boardsDb,
+      saveSnapshot: (...a: Parameters<typeof t.boardsDb.saveSnapshot>) => {
+        if (a[0] === bad) throw new Error('disk full')
+        return t.boardsDb.saveSnapshot(...a)
+      },
+    }
+    const svc = new BoardService(flaky, {
+      now: () => clock,
+      snapshotEvery: 1_000_000,
+      snapshotAfterMs: 1,
+    })
+    svc.submit(bad, add('a'), OWNER)
+    svc.submit(good, add('b'), OWNER)
+    clock += 10
+    expect(() => svc.tick()).not.toThrow()
+    expect(t.boardsDb.latestSnapshot(good)?.seq).toBe(1)
+    svc.submit(good, add('c'), OWNER)
+    expect(() => svc.close()).not.toThrow()
+    expect(t.boardsDb.latestSnapshot(good)?.seq).toBe(2)
+  })
+
   it('a throwing subscriber does not break the write or the other subscribers', () => {
     const t = setup()
     const { id } = t.svc.createBoard('B')

@@ -39,6 +39,8 @@ type Live = {
   lastSnapshotAt: number
   lastUsed: number
   subs: Set<(b: Broadcast) => void>
+  /** Memory may be ahead of the database (a write failed): reload in place on next use, keeping the subscribers. */
+  stale: boolean
 }
 
 const fromRow = (r: OpRow): Broadcast => ({
@@ -169,7 +171,7 @@ export class BoardService {
         this.now(),
       )
     } catch (e) {
-      this.live.delete(boardId) // memory is ahead of the database: drop it, the next access reloads the truth
+      l.stale = true // memory is ahead of the database: the next access reloads the truth into this same Live (subscribers stay attached)
       throw e
     }
     l.headSeq = seq
@@ -188,7 +190,8 @@ export class BoardService {
         // one failing subscriber must not break the others or the write that already happened
       }
     }
-    if (seq - l.lastSnapshotSeq >= this.snapshotEvery) this.snapshot(boardId, l)
+    if (seq - l.lastSnapshotSeq >= this.snapshotEvery)
+      this.trySnapshot(boardId, l) // the batch is already stored and sent: a failed snapshot must not turn it into an error
     return { seq, noop: false, broadcast }
   }
 
@@ -241,9 +244,9 @@ export class BoardService {
         l.headSeq > l.lastSnapshotSeq &&
         now - l.lastSnapshotAt >= this.snapshotAfterMs
       )
-        this.snapshot(id, l)
+        this.trySnapshot(id, l)
       if (l.subs.size === 0 && now - l.lastUsed >= this.idleEvictMs) {
-        if (l.headSeq > l.lastSnapshotSeq) this.snapshot(id, l)
+        if (l.headSeq > l.lastSnapshotSeq) this.trySnapshot(id, l)
         this.live.delete(id)
       }
     }
@@ -252,8 +255,21 @@ export class BoardService {
   /** Writes a snapshot for every board with unsnapshotted batches and drops everything from memory. */
   close(): void {
     for (const [id, l] of this.live)
-      if (l.headSeq > l.lastSnapshotSeq) this.snapshot(id, l)
+      if (l.headSeq > l.lastSnapshotSeq) this.trySnapshot(id, l)
     this.live.clear()
+  }
+
+  /** A snapshot is an optimisation (the ops are the truth): log a failure with ids only, never throw, never snapshot stale memory. */
+  private trySnapshot(boardId: string, l: Live): void {
+    if (l.stale) return
+    try {
+      this.snapshot(boardId, l)
+    } catch (e) {
+      console.error(
+        `snapshot failed for board ${boardId}:`,
+        e instanceof Error ? e.message : String(e),
+      )
+    }
   }
 
   private snapshot(boardId: string, l: Live): void {
@@ -264,7 +280,7 @@ export class BoardService {
 
   private load(boardId: string): Live {
     const cached = this.live.get(boardId)
-    if (cached) return cached
+    if (cached && !cached.stale) return cached
     const row = this.db.getBoard(boardId)
     if (!row) throw new ApiError('not_found', `unknown board ${boardId}`)
     const snap = this.db.latestSnapshot(boardId)
@@ -277,10 +293,13 @@ export class BoardService {
       lastSnapshotSeq: snap?.seq ?? 0,
       lastSnapshotAt: this.now(),
       lastUsed: this.now(),
-      subs: new Set(),
+      subs: cached?.subs ?? new Set(),
+      stale: false,
     }
-    this.live.set(boardId, l)
-    return l
+    if (cached)
+      Object.assign(cached, l) // reload in place: closures hold `cached`, so its subscribers stay attached
+    else this.live.set(boardId, l)
+    return cached ?? l
   }
 
   private invalid(e: unknown): unknown {
