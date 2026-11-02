@@ -4,13 +4,25 @@ import {
   type Element,
   ElementSchema,
   UndoManager,
+  ZOOM_MAX,
+  ZOOM_MIN,
 } from '@whiteboard/core'
 import type { Editor } from './editor'
 
 export const SCHEMA_VERSION = 1
 const DB = 'whiteboard'
 const STORE = 'boards'
-const DEBOUNCE_MS = 500
+// Commits save after 200 ms of quiet, camera-only moves after 500 ms (a pending commit keeps the earlier deadline).
+// Residual loss window: an edit made within ~200 ms of the tab closing/reloading. The visibilitychange-hidden and
+// pagehide flushes are best effort only: Chromium may kill the page before an IndexedDB write started there commits.
+// Cost ceiling: every save writes the whole board (structured clone). Measured on 20,000 shapes (BENCH=1 pnpm test):
+// ElementSchema.safeParse over all ~31 ms, structuredClone ~42 ms, so load validation is well under 600 ms. Upgrade path: separate camera key, skip the full write on camera-only change,
+// requestIdleCallback.
+const COMMIT_MS = 200
+const CAMERA_MS = 500
+const RETRY_MS = 5000
+const LOCK_RETRIES = 3
+const LOCK_RETRY_MS = 250
 const DEFAULT_CAMERA: Camera = { x: 0, y: 0, zoom: 1 }
 
 export type BoardRecord = {
@@ -69,7 +81,17 @@ async function run<T>(
 ): Promise<T> {
   const db = await open()
   return new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(STORE, mode)
+    // 'relaxed' durability returns sooner (no fsync wait); older browsers throw or ignore the option.
+    let tx: IDBTransaction
+    try {
+      tx = db.transaction(
+        STORE,
+        mode,
+        mode === 'readwrite' ? { durability: 'relaxed' } : undefined,
+      )
+    } catch {
+      tx = db.transaction(STORE, mode)
+    }
     const req = op(tx.objectStore(STORE))
     // Resolve on tx completion: a write is durable only once the transaction commits (quota errors land here).
     tx.oncomplete = () => resolve(req.result)
@@ -87,8 +109,11 @@ const validCamera = (c: unknown): c is Camera =>
   isObj(c) &&
   Number.isFinite(c.x) &&
   Number.isFinite(c.y) &&
-  Number.isFinite(c.zoom) &&
-  (c.zoom as number) > 0
+  Number.isFinite(c.zoom)
+const clampCamera = (c: Camera): Camera => ({
+  ...c,
+  zoom: Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, c.zoom)),
+})
 
 export function saveBoard(boardId: string, record: BoardRecord): Promise<void> {
   return put(boardId, record).then(() => {})
@@ -137,7 +162,9 @@ export async function loadBoard(boardId: string): Promise<LoadResult> {
       boardId,
       savedAt: Number(raw.savedAt) || 0,
       elements,
-      camera: validCamera(raw.camera) ? raw.camera : { ...DEFAULT_CAMERA },
+      camera: validCamera(raw.camera)
+        ? clampCamera(raw.camera)
+        : { ...DEFAULT_CAMERA },
       undo,
     },
   }
@@ -174,14 +201,22 @@ export function acquireBoardLock(boardId: string): Promise<boolean> {
   // and the remount waits for the previous request to finish instead of racing it.
   held.set(name, entry)
   const got = new Promise<boolean>((resolve) => {
-    entry.done = (prior?.done ?? Promise.resolve())
-      .then(() =>
-        locks.request(name, { ifAvailable: true }, (lock) => {
-          resolve(!!lock)
-          return lock ? hold : undefined
-        }),
-      )
-      .catch(() => resolve(true))
+    entry.done = (async () => {
+      await prior?.done
+      // A same-tab reload can ask before the old page's lock is dropped: retry a denial a few times.
+      for (let i = 0; ; i++) {
+        let granted = false
+        await locks.request(name, { ifAvailable: true }, (lock) => {
+          if (!lock) return
+          granted = true
+          resolve(true)
+          return hold
+        })
+        if (granted) return
+        if (i >= LOCK_RETRIES || entry.released) return resolve(false)
+        await new Promise((r) => setTimeout(r, LOCK_RETRY_MS))
+      }
+    })().catch(() => resolve(true))
   })
   void got.then((ok) => {
     if (!ok && held.get(name) === entry) held.delete(name)
@@ -203,10 +238,10 @@ export type PersistenceOpts = {
 /**
  * Binds an Editor to one stored board.
  *  load()  reads the record and applies it to the editor (unreadable => editor stays empty and saving is blocked).
- *  start() begins autosave: commits and camera moves, debounced 500 ms; flush on visibilitychange hidden / pagehide.
+ *  start() begins autosave: commits (200 ms) and camera moves (500 ms) debounced; flush on visibilitychange hidden / pagehide.
  *  stop()  flushes anything pending, then detaches all listeners (idempotent).
  *  flush() writes now if there are unsaved changes; a failed write stays pending and retries on the next change.
- *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}`, then unblocks saving.
+ *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}-${Date.now()}`; if that write fails it stays blocked.
  */
 export function createPersistence(
   editor: Editor,
@@ -216,6 +251,7 @@ export function createPersistence(
   let blocked: Extract<LoadResult, { status: 'unreadable' }> | null = null
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  let pending = 0
   let chain: Promise<void> = Promise.resolve()
   let detach: (() => void) | undefined
 
@@ -233,17 +269,22 @@ export function createPersistence(
     }
     chain = chain.then(() =>
       saveBoard(boardId, record).then(opts.onSaved, (err) => {
-        dirty = true // keep the in-memory board; the next change retries
+        dirty = true // keep the in-memory board; retry on the next change or in 5 s
+        if (!timer && detach) schedule(RETRY_MS)
         opts.onSaveError?.(err)
       }),
     )
     return chain
   }
-  const touch = () => {
-    dirty = true
-    if (blocked) return
+  const schedule = (delay: number) => {
+    if (timer && pending < delay) return // an earlier deadline is already set
     clearTimeout(timer)
-    timer = setTimeout(flush, DEBOUNCE_MS)
+    pending = delay
+    timer = setTimeout(flush, delay)
+  }
+  const touch = (delay: number) => () => {
+    dirty = true
+    if (!blocked) schedule(delay)
   }
 
   return {
@@ -260,7 +301,10 @@ export function createPersistence(
     },
     start() {
       if (detach) return
-      const offs = [editor.onChange(touch), editor.onCameraChange(touch)]
+      const offs = [
+        editor.onChange(touch(COMMIT_MS)),
+        editor.onCameraChange(touch(CAMERA_MS)),
+      ]
       const hidden = () => {
         if (document.visibilityState === 'hidden') void flush()
       }
@@ -274,7 +318,7 @@ export function createPersistence(
       }
     },
     stop() {
-      if (timer) void flush()
+      if (timer || dirty) void flush()
       detach?.()
       detach = undefined
     },
@@ -284,10 +328,10 @@ export function createPersistence(
       const raw = blocked.raw
       if (raw !== undefined) {
         const at = isObj(raw) && Number(raw.savedAt) ? raw.savedAt : Date.now()
-        await put(`${boardId}:backup:${at}`, raw) // throws => stay blocked, original untouched
+        await put(`${boardId}:backup:${at}-${Date.now()}`, raw) // throws => stay blocked, original untouched
       }
       blocked = null
-      touch()
+      touch(COMMIT_MS)()
     },
   }
 }

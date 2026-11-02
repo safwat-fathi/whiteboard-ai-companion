@@ -1,16 +1,16 @@
-'use client'
-
 export type Note = {
   key: string
   text: string
+  /** alert: something is wrong or blocked; status: informational. */
+  role: 'alert' | 'status'
   action?: { label: string; run: () => void }
 }
 
+// The container is always rendered: live regions are announced reliably only when present before their content.
 export function Notices({ notes }: { notes: Note[] }) {
-  if (!notes.length) return null
   return (
     <div
-      role="status"
+      aria-live="polite"
       style={{
         position: 'fixed',
         top: 12,
@@ -20,12 +20,20 @@ export function Notices({ notes }: { notes: Note[] }) {
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
+        maxWidth: 'min(90vw, 560px)',
+        pointerEvents: 'none',
         font: '14px system-ui, sans-serif',
       }}
     >
+      <style>
+        {
+          '.note-btn:focus-visible{outline:2px solid #1a56db;outline-offset:2px}'
+        }
+      </style>
       {notes.map((n) => (
         <div
           key={n.key}
+          role={n.role}
           style={{
             background: '#fff7e0',
             border: '1px solid #e0c36a',
@@ -38,8 +46,9 @@ export function Notices({ notes }: { notes: Note[] }) {
           {n.action && (
             <button
               type="button"
+              className="note-btn"
               onClick={n.action.run}
-              style={{ marginLeft: 10 }}
+              style={{ marginLeft: 10, pointerEvents: 'auto' }}
             >
               {n.action.label}
             </button>

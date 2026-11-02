@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
+import { ElementSchema, ZOOM_MAX, ZOOM_MIN } from '@whiteboard/core'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -50,6 +51,21 @@ const rawGet = (key: string) =>
       r.onsuccess = () => resolve(r.result)
     }
   })
+
+const rawKeys = () =>
+  new Promise<string[]>((resolve) => {
+    const open = indexedDB.open('whiteboard', 1)
+    open.onsuccess = () => {
+      const r = open.result
+        .transaction('boards')
+        .objectStore('boards')
+        .getAllKeys()
+      r.onsuccess = () => resolve(r.result as string[])
+    }
+  })
+const FAKE = {
+  toFake: ['setTimeout', 'clearTimeout'] as ('setTimeout' | 'clearTimeout')[],
+}
 
 describe('load / save', () => {
   it('empty when nothing stored', async () => {
@@ -142,7 +158,10 @@ describe('corrupt record', () => {
     await p.load()
     p.start()
     await p.startEmptyKeepingBackup()
-    expect(await rawGet('local:backup:77')).toEqual(bad)
+    const keys = await rawKeys()
+    const backup = keys.find((k) => k.startsWith('local:backup:77-'))
+    expect(backup).toBeDefined()
+    expect(await rawGet(backup as string)).toEqual(bad)
     put(t.ed, mk('a', 0, 0))
     await p.flush()
     expect(await rawGet('local')).toMatchObject({
@@ -233,6 +252,113 @@ describe('autosave scheduling', () => {
   })
 })
 
+describe('hardening', () => {
+  it('clamps a stored zoom into range', async () => {
+    for (const zoom of [1e300, 0]) {
+      await raw('local', rec({ camera: { x: 1, y: 2, zoom } }))
+      const r = await loadBoard('local')
+      if (r.status !== 'ok') throw new Error('expected ok')
+      expect(r.record.camera.zoom).toBe(zoom ? ZOOM_MAX : ZOOM_MIN)
+    }
+  })
+
+  it.each([
+    ['newer-version', { version: 2, elements: [] }],
+    ['unavailable', null],
+  ])('%s: autosave after edits never writes', async (reason, stored) => {
+    if (stored) await raw('local', stored)
+    else vi.stubGlobal('indexedDB', undefined)
+    const spy = vi.spyOn(IDBObjectStore.prototype, 'put')
+    const p = createPersistence(t.ed, 'local')
+    expect(await p.load()).toMatchObject({ status: 'unreadable', reason })
+    p.start()
+    put(t.ed, mk('a', 0, 0))
+    t.ed.panBy(5, 5)
+    await p.flush()
+    p.stop()
+    expect(spy).not.toHaveBeenCalled()
+    if (stored) expect(await rawGet('local')).toEqual(stored)
+  })
+
+  it('a failed backup write keeps the board blocked', async () => {
+    const bad = { version: 1, elements: 'nope', savedAt: 5 }
+    await raw('local', bad)
+    const p = createPersistence(t.ed, 'local')
+    await p.load()
+    p.start()
+    const spy = vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementationOnce(() => {
+        throw new DOMException('full', 'QuotaExceededError')
+      })
+    await expect(p.startEmptyKeepingBackup()).rejects.toThrow()
+    spy.mockRestore()
+    put(t.ed, mk('a', 0, 0))
+    await p.flush()
+    p.stop()
+    expect(await rawGet('local')).toEqual(bad)
+  })
+
+  it('retries a failed write after 5 s with no further change', async () => {
+    const onSaved = vi.fn()
+    const p = createPersistence(t.ed, 'local', { onSaved })
+    p.start()
+    await loadBoard('local') // opens the connection so writes start in microtasks
+    vi.useFakeTimers(FAKE)
+    const spy = vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementationOnce(() => {
+        throw new DOMException('full', 'QuotaExceededError')
+      })
+    put(t.ed, mk('a', 0, 0))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(spy).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(4900)
+    expect(spy).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(spy).toHaveBeenCalledTimes(2)
+    p.stop()
+  })
+})
+
+describe('debounce deadlines', () => {
+  const setupTimed = async () => {
+    await loadBoard('local')
+    vi.useFakeTimers(FAKE)
+    const spy = vi.spyOn(IDBObjectStore.prototype, 'put')
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    return { spy, p }
+  }
+  it('commit saves at 200 ms', async () => {
+    const { spy, p } = await setupTimed()
+    put(t.ed, mk('a', 0, 0))
+    await vi.advanceTimersByTimeAsync(199)
+    expect(spy).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(spy).toHaveBeenCalledTimes(1)
+    p.stop()
+  })
+  it('camera-only saves at 500 ms', async () => {
+    const { spy, p } = await setupTimed()
+    t.ed.panBy(10, 0)
+    await vi.advanceTimersByTimeAsync(499)
+    expect(spy).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(spy).toHaveBeenCalledTimes(1)
+    p.stop()
+  })
+  it('a commit after a camera move takes the earlier deadline', async () => {
+    const { spy, p } = await setupTimed()
+    t.ed.panBy(10, 0)
+    await vi.advanceTimersByTimeAsync(100)
+    put(t.ed, mk('a', 0, 0))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(spy).toHaveBeenCalledTimes(1)
+    p.stop()
+  })
+})
+
 describe('saveBoard', () => {
   it('writes the record verbatim', async () => {
     await saveBoard('x', rec({ boardId: 'x' }) as never)
@@ -276,15 +402,59 @@ describe('acquireBoardLock', () => {
     releaseBoardLock('c')
   })
 
-  it('a lock held by another page refuses', async () => {
+  it('a lock held by another page refuses after the retries', async () => {
+    vi.useFakeTimers(FAKE)
     const locks = fakeLocks()
     vi.stubGlobal('navigator', { locks })
     void locks.request('whiteboard:board:z', {}, () => new Promise(() => {}))
-    expect(await acquireBoardLock('z')).toBe(false)
+    const got = acquireBoardLock('z')
+    await vi.advanceTimersByTimeAsync(749)
+    let settled = false
+    void got.then(() => {
+      settled = true
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await got).toBe(false)
+  })
+
+  it('a lock dropped by an old page (reload) 300 ms later is acquired', async () => {
+    vi.useFakeTimers(FAKE)
+    const locks = fakeLocks()
+    vi.stubGlobal('navigator', { locks })
+    let drop!: () => void
+    void locks.request(
+      'whiteboard:board:r',
+      {},
+      () => new Promise<void>((r) => (drop = r)),
+    )
+    const got = acquireBoardLock('r')
+    await vi.advanceTimersByTimeAsync(300)
+    drop()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(await got).toBe(true)
+    releaseBoardLock('r')
   })
 
   it('no navigator.locks counts as acquired', async () => {
     vi.stubGlobal('navigator', {})
     expect(await acquireBoardLock('d')).toBe(true)
+  })
+})
+
+// Run with BENCH=1 pnpm --filter @whiteboard/web test. Numbers are reported, not asserted.
+describe('bench', () => {
+  it.skipIf(!process.env.BENCH)('20k element validation and clone', () => {
+    const els = Array.from({ length: 20000 }, (_, i) => mk(`e${i}`, i, i))
+    let a = performance.now()
+    const ok = els.filter((e) => ElementSchema.safeParse(e).success).length
+    const parse = performance.now() - a
+    a = performance.now()
+    structuredClone(els)
+    const clone = performance.now() - a
+    console.log(
+      `BENCH parse ${parse.toFixed(0)} ms (${ok}), clone ${clone.toFixed(0)} ms`,
+    )
   })
 })

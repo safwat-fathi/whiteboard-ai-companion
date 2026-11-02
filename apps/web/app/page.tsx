@@ -34,29 +34,41 @@ export default function Page() {
       if (stop) return // cleanup already released the lock
       // Platform is created after fonts load: text layout is memoised per Platform object.
       editor = new Editor(host.current, { platform: browserPlatform() })
-      // Test hook for Playwright; absent from production builds.
-      if (process.env.NODE_ENV !== 'production')
-        (window as unknown as { __editor?: Editor }).__editor = editor
+      editor.readOnly = true // until load() resolves: a pre-load edit would be wiped by setScene
       const p = createPersistence(editor, BOARD, {
         onSaveError: () =>
-          note('save', { text: 'Could not save (storage full?)' }),
+          note('save', {
+            text: 'Could not save (storage full?)',
+            role: 'alert',
+          }),
         onSaved: () => note('save', null),
       })
       persistence = p
       const r = await p.load()
       if (stop) return
+      editor.readOnly = !locked
+      // Published after load so tests wait for the stored board.
+      // Test hook for Playwright; absent from production builds.
+      if (process.env.NODE_ENV !== 'production')
+        (window as unknown as { __editor?: Editor }).__editor = editor
       if (!locked) {
-        editor.readOnly = true
-        note('lock', { text: 'Open in another tab (read-only)' })
+        note('lock', {
+          text: 'Open in another tab (read-only)',
+          role: 'alert',
+        })
         return // a read-only tab never writes
       }
       p.start()
       if (r.status === 'ok' && r.dropped)
-        note('dropped', { text: `${r.dropped} invalid elements were dropped` })
+        note('dropped', {
+          text: `${r.dropped} invalid elements were dropped`,
+          role: 'status',
+        })
       if (r.status === 'unreadable') {
         const text = `Saved data could not be read (${r.reason.replace('-', ' ')})`
         note('unreadable', {
           text,
+          role: 'alert',
           action:
             r.reason === 'unavailable'
               ? undefined
@@ -68,6 +80,7 @@ export default function Page() {
                       () =>
                         note('save', {
                           text: 'Could not save (storage full?)',
+                          role: 'alert',
                         }),
                     ),
                 },

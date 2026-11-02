@@ -32,7 +32,7 @@ test('drawing survives a reload and undo still works', async ({ page }) => {
   const before = await elements(page)
   expect(before).toHaveLength(2)
 
-  await page.waitForTimeout(700) // debounce (500 ms); an IndexedDB write started in pagehide is best-effort only
+  await page.waitForTimeout(350) // commit debounce is 200 ms; a write started in pagehide is best-effort only
   await page.reload()
   await ready(page)
   await expect.poll(() => elements(page)).toEqual(before)
