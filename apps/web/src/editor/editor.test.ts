@@ -73,6 +73,7 @@ afterEach(() => {
   ed.dispose()
   host.remove()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 const ev = (x: number, y: number) => ({
@@ -96,6 +97,15 @@ const key = (
       ...init,
     }),
   )
+/** A Space keydown (default: on the body, i.e. focus on the board). Returns false when the Editor claimed it. */
+const space = (t?: EventTarget, init: KeyboardEventInit = {}) =>
+  key(' ', { code: 'Space', ...init }, t)
+const spaceUp = (t: EventTarget = document.body) =>
+  t.dispatchEvent(
+    new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }),
+  )
+const cursor = () =>
+  (host.querySelectorAll('canvas')[1] as HTMLCanvasElement).style.cursor
 const ptr = (type: string, x: number, y: number) =>
   (host.querySelectorAll('canvas')[1] as HTMLCanvasElement).dispatchEvent(
     new MouseEvent(type, { clientX: x, clientY: y, bubbles: true }),
@@ -200,10 +210,11 @@ describe('Editor', () => {
     const host2 = document.createElement('div')
     document.body.append(host2)
     const ed2 = new Editor(host2, { platform })
-    expect(ed2.tools.hand).not.toBe(ed.tools.hand)
-    ed.tools.hand?.onPointerDown(ev(0, 0))
-    ed2.tools.hand?.onPointerMove(ev(50, 50)) // ed2 never pressed: no pan
-    expect(ed2.camera).toEqual({ x: 0, y: 0, zoom: 1 })
+    expect(ed2.tools.rect).not.toBe(ed.tools.rect)
+    ed.tools.rect?.onPointerDown(ev(0, 0))
+    ed2.tools.rect?.onPointerMove(ev(50, 50)) // ed2 never pressed: no gesture
+    ed2.tools.rect?.onPointerUp(ev(50, 50))
+    expect(ed2.scene.els.size).toBe(0)
     ed2.dispose()
     host2.remove()
   })
@@ -235,18 +246,13 @@ describe('Editor', () => {
     expect(ed.camera).toEqual({ x: 20, y: 10, zoom: 2 })
   })
 
-  it('hand tool drag pans; ToolEvent.world uses the top-left convention', () => {
+  it('Space-drag pans by the screen delta over the zoom; ToolEvent.world uses the top-left convention', () => {
     ed.camera = { x: 10, y: 10, zoom: 2 }
     expect(ed.screenToWorldPoint(20, 40)).toEqual({ x: 20, y: 30 })
-    ed.setTool('hand')
-    const over = host.querySelectorAll('canvas')[1] as HTMLCanvasElement
-    const ev = (type: string, x: number, y: number) =>
-      over.dispatchEvent(
-        new MouseEvent(type, { clientX: x, clientY: y, bubbles: true }),
-      )
-    ev('pointerdown', 100, 100)
-    ev('pointermove', 80, 90)
-    ev('pointerup', 80, 90)
+    space()
+    ptr('pointerdown', 100, 100)
+    ptr('pointermove', 80, 90)
+    ptr('pointerup', 80, 90)
     expect(ed.camera).toEqual({ x: 20, y: 15, zoom: 2 })
   })
 
@@ -346,9 +352,12 @@ describe('Editor', () => {
 
   it('readOnly: navigating tools get pointer events, others are inert, h still works', () => {
     ed.readOnly = true
+    const nav = vi.fn()
+    ed.tools.nav = { ...stub(() => {}, true), key: '', onPointerDown: nav }
+    ed.tool = ed.tools.nav
     ptr('pointerdown', 10, 10)
-    ptr('pointermove', 0, 0)
-    expect(ed.camera.x).toBe(10)
+    expect(nav).toHaveBeenCalledTimes(1)
+    ed.setTool('hand')
     const down = vi.fn()
     ed.tools.other = { ...stub(), onPointerDown: down }
     ed.tool = ed.tools.other
@@ -448,6 +457,155 @@ describe('Editor', () => {
     h2.remove()
   })
 
+  describe('Hand tool cursor and Space panning', () => {
+    const drag = (from: [number, number], to: [number, number]) => {
+      ptr('pointerdown', ...from)
+      ptr('pointermove', ...to)
+      ptr('pointerup', ...to)
+    }
+
+    it('Hand shows the open hand, every other tool the default arrow; on every way of switching', () => {
+      expect(ed.tool.id).toBe('hand')
+      expect(cursor()).toBe('grab') // the Editor starts on Hand
+      for (const id of Object.keys(ed.tools).filter((t) => t !== 'hand')) {
+        ed.setTool(id)
+        expect(cursor(), id).toBe('')
+        ed.setTool('hand')
+        expect(cursor(), id).toBe('grab')
+      }
+      key('r')
+      expect(cursor()).toBe('')
+      key('h')
+      expect(cursor()).toBe('grab')
+    })
+
+    it('a plain Hand drag moves nothing and has no side effects', () => {
+      ed.commit(add('a'))
+      ed.selection.add('a')
+      const undoBefore = ed.undo.toJSON()
+      const changed = vi.fn()
+      const moved = vi.fn()
+      ed.onChange(changed)
+      ed.onCameraChange(moved)
+      drag([100, 100], [60, 40])
+      expect(ed.camera).toEqual({ x: 0, y: 0, zoom: 1 })
+      expect([...ed.selection]).toEqual(['a'])
+      expect(changed).not.toHaveBeenCalled()
+      expect(moved).not.toHaveBeenCalled()
+      expect(ed.undo.toJSON()).toEqual(undoBefore)
+    })
+
+    it.each([
+      ['hand', 'grab'],
+      ['select', ''],
+      ['rect', ''],
+    ])(
+      'Space shows the closed hand and drags pan whatever the tool (%s); keyup restores the tool cursor',
+      (id, base) => {
+        ed.setTool(id)
+        expect(space()).toBe(false) // claimed: the page does not scroll
+        expect(cursor()).toBe('grabbing')
+        drag([100, 100], [70, 90])
+        expect(ed.camera).toEqual({ x: 30, y: 10, zoom: 1 })
+        expect(ids()).toEqual([]) // a shape tool drew nothing
+        expect(cursor()).toBe('grabbing')
+        spaceUp()
+        expect(cursor()).toBe(base)
+        drag([100, 100], [70, 90]) // no Space: the drag is the tool's again
+        expect(ed.camera).toEqual({ x: 30, y: 10, zoom: 1 })
+      },
+    )
+
+    it('auto-repeat keydown neither toggles the state nor interrupts a pan', () => {
+      space()
+      ptr('pointerdown', 100, 100)
+      ptr('pointermove', 90, 100)
+      space(undefined, { repeat: true })
+      space(undefined, { repeat: true })
+      expect(cursor()).toBe('grabbing')
+      ptr('pointermove', 80, 100)
+      expect(ed.camera.x).toBe(20)
+      ptr('pointerup', 80, 100)
+      space(undefined, { repeat: true })
+      expect(cursor()).toBe('grabbing')
+      spaceUp() // one keyup ends it however many repeats came
+      expect(cursor()).toBe('grab')
+      drag([100, 100], [0, 0])
+      expect(ed.camera.x).toBe(20)
+    })
+
+    it.each([
+      ['the window loses focus', () => window.dispatchEvent(new Event('blur'))],
+      [
+        'the tab is hidden',
+        () => {
+          vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+          document.dispatchEvent(new Event('visibilitychange'))
+        },
+      ],
+    ])(
+      'Space resets when %s, even mid-drag: no stuck grabbing or panning',
+      (_n, lose) => {
+        space()
+        ptr('pointerdown', 100, 100)
+        ptr('pointermove', 90, 100)
+        expect(ed.camera.x).toBe(10)
+        lose()
+        expect(cursor()).toBe('grab')
+        ptr('pointermove', 50, 100) // the drag is over
+        expect(ed.camera.x).toBe(10)
+        ptr('pointerup', 50, 100)
+        drag([100, 100], [50, 100]) // and Space is not held
+        expect(ed.camera.x).toBe(10)
+        vi.restoreAllMocks()
+      },
+    )
+
+    it('Space in a text field types a space and a focused button keeps it: no panning, no closed hand', () => {
+      for (const tag of ['textarea', 'input', 'button']) {
+        const el = document.createElement(tag)
+        document.body.append(el)
+        expect(space(el), tag).toBe(true) // not prevented
+        expect(cursor(), tag).toBe('grab')
+        drag([100, 100], [70, 90])
+        expect(ed.camera, tag).toEqual({ x: 0, y: 0, zoom: 1 })
+        el.remove()
+      }
+    })
+
+    it('cursor precedence: Space grabbing > select hover pointer > the tool cursor', () => {
+      ed.commit(add('a')) // 10x10 at 0,0, no fill: hit on its edge
+      ed.setTool('select')
+      ptr('pointermove', 0, 5)
+      expect(cursor()).toBe('pointer')
+      space()
+      expect(cursor()).toBe('grabbing')
+      ptr('pointermove', 100, 100) // the hover goes while Space is held...
+      expect(cursor()).toBe('grabbing')
+      ptr('pointermove', 0, 5)
+      spaceUp()
+      expect(cursor()).toBe('pointer') // ...and returns with the hover
+      ed.setTool('hand')
+      expect(cursor()).toBe('grab')
+    })
+
+    it('read-only: Hand stays selectable and Space-drag pans, a plain drag does not', () => {
+      ed.readOnly = true
+      ed.setTool('rect')
+      key('h')
+      expect(ed.tool.id).toBe('hand')
+      expect(cursor()).toBe('grab')
+      drag([10, 10], [0, 0])
+      expect(ed.camera.x).toBe(0)
+      space()
+      expect(cursor()).toBe('grabbing')
+      drag([10, 10], [0, 0])
+      expect(ed.camera.x).toBe(10)
+      spaceUp()
+      expect(cursor()).toBe('grab')
+    })
+  })
+
   describe('flyTo and pulse', () => {
     const runNextFrame = (now: number) => {
       vi.spyOn(performance, 'now').mockReturnValue(now)
@@ -515,6 +673,25 @@ describe('Editor', () => {
       const res = await ed.flyTo(rect)
       expect(res).toBe('done')
       expect(ed.camera).toEqual(cameraFor(rect, ed.viewport))
+    })
+
+    it('Space-drag mid-flight cancels the flight and pans from where it was', async () => {
+      ed.viewport = { width: 800, height: 600, dpr: 1 }
+      vi.spyOn(performance, 'now').mockReturnValue(1000)
+      const p = ed.flyTo(
+        { minX: 1000, minY: 1000, maxX: 1200, maxY: 1200 },
+        { duration: 400 },
+      )
+      runNextFrame(1200)
+      const mid = { ...ed.camera }
+      space()
+      ptr('pointerdown', 100, 100)
+      ptr('pointermove', 90, 100)
+      expect(await p).toBe('cancelled')
+      expect(ed.camera.x).toBeCloseTo(mid.x + 10 / mid.zoom)
+      expect(ed.camera.y).toBe(mid.y)
+      ptr('pointerup', 90, 100)
+      spaceUp()
     })
 
     it('pulse of a deleted id does not throw, and neither flyTo nor pulse marks dirty or adds undo', async () => {

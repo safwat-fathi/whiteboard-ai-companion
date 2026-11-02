@@ -33,6 +33,8 @@ export interface Tool {
   drawOverlay?(ctx: CanvasRenderingContext2D): void
   /** Navigation-only tools (Hand) keep receiving pointer events and can be selected while the editor is read-only. */
   navigates?: boolean
+  /** CSS cursor over the board while this tool is active and no hover or Space-pan cursor applies (see Editor.setCursor). */
+  cursor?: string
 }
 
 /** A new tool is one file plus one entry here. Each Editor instantiates every factory once; tool state lives in the closure. */

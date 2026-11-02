@@ -91,6 +91,7 @@ export class Editor {
   private sceneDirty = true
   private disposed = false
   private space = false
+  private hoverCursor = ''
   private panning: Point | null = null
   private off: (() => void)[] = []
   private unDpr?: () => void
@@ -137,6 +138,7 @@ export class Editor {
       Object.entries(toolFactories).map(([id, make]) => [id, make(this)]),
     )
     this.tool = this.tools.hand as Tool
+    this.applyCursor()
 
     if (getComputedStyle(host).position === 'static')
       host.style.position = 'relative'
@@ -181,10 +183,10 @@ export class Editor {
     // The window-level key listeners assume one Editor per page.
     on(window, 'keydown', (e: KeyboardEvent) => this.onKeyDown(e))
     on(window, 'keyup', (e: KeyboardEvent) => {
-      if (e.code === 'Space') this.space = false
+      if (e.code === 'Space') this.setSpace(false)
     })
     const release = () => {
-      this.space = false
+      this.setSpace(false)
       this.panning = null
     }
     on(window, 'blur', release)
@@ -276,6 +278,7 @@ export class Editor {
     this.cancelFlight()
     this.tool.onCancel?.()
     this.tool = next
+    this.applyCursor()
     this.invalidate()
     for (const fn of this.toolListeners) fn()
   }
@@ -469,9 +472,23 @@ export class Editor {
     this.request()
   }
 
-  /** CSS cursor over the board; '' is the default arrow. Tools set it and reset it in `onCancel`. */
+  /** A tool's hover cursor over the board ('' is none); a tool that sets one resets it in `onCancel`. */
   setCursor(cursor: string): void {
-    this.overlay.style.cursor = cursor
+    this.hoverCursor = cursor
+    this.applyCursor()
+  }
+
+  /** The one place the board cursor is decided: Space held (grabbing) > a tool's hover cursor > the tool's own cursor > the arrow. */
+  private applyCursor(): void {
+    this.overlay.style.cursor = this.space
+      ? 'grabbing'
+      : this.hoverCursor || this.tool.cursor || ''
+  }
+
+  private setSpace(on: boolean): void {
+    if (this.space === on) return
+    this.space = on
+    this.applyCursor()
   }
 
   private request(): void {
@@ -845,7 +862,7 @@ export class Editor {
         t === this.sceneCanvas ||
         t === this.overlay
       ) {
-        this.space = true
+        this.setSpace(true)
         e.preventDefault()
       }
     } else if (mod && k === 'z') {
