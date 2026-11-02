@@ -96,7 +96,7 @@ export default function Page() {
     })()
     return () => {
       stop = true
-      persistence?.stop()
+      persistence?.stop() // commits an open text edit and saves it; only then dispose() tears the editor down
       editor?.dispose()
       releaseBoardLock(BOARD)
     }

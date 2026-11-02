@@ -446,6 +446,36 @@ describe('an open text draft', () => {
   })
 })
 
+describe('stop', () => {
+  it('commits an open text edit first, then flushes, so the saved board has the edit and its undo entry', async () => {
+    const p = createPersistence(t.ed, 'local')
+    p.start()
+    t.ed.setTool('text')
+    const at = { x: 9, y: 9 }
+    const e = {
+      screen: at,
+      world: at,
+      shift: false,
+      alt: false,
+      button: 0,
+      pointerType: 'mouse',
+    }
+    t.ed.tool.onPointerDown(e)
+    t.ed.tool.onPointerUp(e)
+    const ta = t.ed.host.querySelector('textarea') as HTMLTextAreaElement
+    ta.value = 'last words'
+    ta.dispatchEvent(new Event('input'))
+    p.stop() // what the page's cleanup calls before dispose()
+    await p.flush()
+    const saved = (await rawGet('local')) as {
+      elements: { data: { text: string } }[]
+      undo: { undo: { original: { label: string } }[] }
+    }
+    expect(saved.elements.map((x) => x.data.text)).toEqual(['last words'])
+    expect(saved.undo.undo.map((x) => x.original.label)).toEqual(['Add Text'])
+  })
+})
+
 describe('saveBoard', () => {
   it('writes the record verbatim', async () => {
     await saveBoard('x', rec({ boardId: 'x' }) as never)

@@ -239,7 +239,8 @@ export type PersistenceOpts = {
  * Binds an Editor to one stored board.
  *  load()  reads the record and applies it to the editor (unreadable => editor stays empty and saving is blocked).
  *  start() begins autosave: commits (200 ms) and camera moves (500 ms) debounced; flush on visibilitychange hidden / pagehide.
- *  stop()  flushes anything pending, then detaches all listeners (idempotent).
+ *  stop()  ends an open edit (the text tool commits it), flushes anything pending, then detaches all listeners (idempotent).
+ *          Call it before editor.dispose(), which cancels the tool after the listeners are gone.
  *  flush() writes now if there are unsaved changes; a failed write stays pending and retries on the next change.
  *  startEmptyKeepingBackup() copies the unreadable raw record to `${boardId}:backup:${savedAt}-${Date.now()}`; if that write fails it stays blocked.
  */
@@ -318,9 +319,14 @@ export function createPersistence(
       }
     },
     stop() {
-      if (timer || dirty) void flush()
-      detach?.()
-      detach = undefined
+      try {
+        // An open text edit commits on cancel: do it while the listeners are still attached so the flush below saves it.
+        if (detach) editor.tool.onCancel?.()
+      } finally {
+        if (timer || dirty) void flush()
+        detach?.()
+        detach = undefined
+      }
     },
     flush,
     async startEmptyKeepingBackup(): Promise<void> {
