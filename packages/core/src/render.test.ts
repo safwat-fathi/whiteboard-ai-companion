@@ -329,3 +329,51 @@ describe('RenderCache', () => {
     expect(cache.get(1, 'b', 0)).toBeUndefined()
   })
 })
+
+describe('bound arrowheads', () => {
+  it('draw along the routed path even when the stored points are stale', () => {
+    const base = nodePlatform()
+    const calls: string[] = []
+    const rec: typeof platform = {
+      ...base,
+      createPath2D: () => {
+        const p = base.createPath2D()
+        for (const m of ['moveTo', 'lineTo'] as const) {
+          const orig = p[m].bind(p)
+          p[m] = (x: number, y: number) => {
+            calls.push(`${m} ${x.toFixed(3)} ${y.toFixed(3)}`)
+            orig(x, y)
+          }
+        }
+        return p
+      },
+    }
+    const arrow = mk('ar', {
+      x: 100,
+      y: 30,
+      w: 200,
+      h: 0,
+      data: {
+        kind: 'arrow',
+        points: [
+          [0, 0],
+          [200, 0], // stale: the routed end is (300, 230)
+        ],
+        start: { id: 'a', fx: 1, fy: 0.5 },
+        end: { id: 'b', fx: 0, fy: 0.5 },
+      },
+    })
+    const scene = createScene([
+      shape('a', 'rect', { w: 100, h: 60 }),
+      shape('b', 'rect', { x: 300, y: 200, w: 100, h: 60 }),
+      arrow,
+    ])
+    render(canvas().ctx, scene, cam, vp, rec)
+    const a = Math.atan2(200, 200)
+    const wing = (d: number) =>
+      `lineTo ${(300 + 12 * Math.cos(a + d)).toFixed(3)} ${(230 + 12 * Math.sin(a + d)).toFixed(3)}`
+    expect(calls).toContain('lineTo 300.000 230.000')
+    expect(calls).toContain(wing(2.6))
+    expect(calls).toContain(wing(-2.6))
+  })
+})

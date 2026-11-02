@@ -5,6 +5,7 @@ import {
   ordered,
   type Point,
   resolveEnd,
+  routeArrow,
 } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '../editor'
@@ -453,5 +454,33 @@ describe('select tool', () => {
     ptr('pointerup', 60, 60, 2)
     expect(get('a').x).toBe(0)
     expect(ed.selection.size).toBe(0)
+  })
+
+  it('after moving or rotating a bound target the stored arrow geometry equals the routed result', () => {
+    flow()
+    drag(ed.tool, [
+      [310, 10],
+      [330, 70],
+      [360, 90],
+    ])
+    const check = () => {
+      const ar = get('ar')
+      const routed = routeArrow(ar, ed.scene)
+      expect(ar.type === 'shape' && ar.data.points).toEqual(routed)
+      const xs = routed.map((p) => p[0])
+      const ys = routed.map((p) => p[1])
+      expect(Math.min(...xs)).toBeCloseTo(0, 9)
+      expect(Math.min(...ys)).toBeCloseTo(0, 9)
+      expect(ar.w).toBeCloseTo(Math.max(...xs), 9)
+      expect(ar.h).toBeCloseTo(Math.max(...ys), 9)
+    }
+    check()
+    sel('a') // rotate the other end's target too: both ends bound, one rotated
+    drag(ed.tool, [
+      [50, -24],
+      [150, 30],
+    ])
+    expect(get('a').rotation).toBeCloseTo(Math.PI / 2, 6)
+    check()
   })
 })
