@@ -1,5 +1,6 @@
 # Roadmap
 
+> **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** and **Cerebral Valley**.
 > **Status:** draft 1 · 2026-11-01 · Kickoff in progress (M0 plan written, waiting on your review and the inputs below).
 > **What this is:** the execution view of [PLAN.md](./PLAN.md) §17: phases M0–M7 with scope, dependencies, gates, acceptance scripts, risks and status. Aspect details stay in [`plans/`](./plans/); this file links to them instead of restating them.
 > **Weeks and gates mirror PLAN §17.** If they ever differ, §17 wins until both are updated. Everything not in §17 is tagged **[my call]**; override any.
@@ -10,14 +11,14 @@
 
 ## 1. At a glance
 
-M0–M7 keep the labels used across the docs. **Kickoff (K)** comes first and is not in the 19.5 weeks.
+M0–M7 keep the labels used across the docs, oriented toward delivering a working multimodal study companion for the **Meta AI Developer Hackathon**. **Kickoff (K)** comes first and is not in the 19.5 weeks.
 
 | Stage | Phase | Wks | Ends wk | Headline | Status |
 |---|---|---|---|---|---|
 | 0 Kickoff | **K** Kickoff | – | – | Approve PLAN rev 2, hand over inputs, write M0's task plan | ◐ |
 | 1 De-risk | **M0** Spikes | 2 | 2 | S1–S5 turn guesses into measurements | ☐ |
 | 2 Foundation | **M1** Core editor | 2.5 | 4.5 | Canvas, shapes, Arabic/Latin text, undo, local save | ◐ |
-| | **M2** Math and images | 1.5 | 6 | LaTeX (MathJax), images, camera `flyTo` + pulse | ☐ |
+| | **M2** Math and images | 1.5 | 6 | LaTeX (MathJax), images, camera `flyTo` + pulse | ◐ |
 | | **M3** Server | 2.5 | 8.5 | Sync, SQLite, blobs, access gate, **first VPS deploy** | ☐ |
 | 3 Tutor | **M4** Library | 2.5 | 11 | Upload → extract → chunk → embed → hybrid search | ☐ |
 | | **M5** Tutor slice | 4 | **15** | Chat dock, board context, citations, jump-to-AI: **first usable tutor** | ☐ |
@@ -89,7 +90,8 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Decisions closed:** Arabic inside `\text{}` supported, or restricted to Latin and documented (F14).
 - **Risks:** text-mode content outside MathJax's font data may depend on fonts again (F14).
 - **Demo:** type LaTeX and see it live, drop an image, zoom from 0.05 to 20: both stay crisp.
-- **Status:** ☐
+- **Task plan:** [2026-11-02-m2-math-images.md](./superpowers/plans/2026-11-02-m2-math-images.md) (12 tasks, decisions in PLAN §19 #23–28). **Decided in the M2 grill:** `packages/math` (not `core/math`), async `renderMath` + sync `peekMath`, Arabic in math is an error (F14 closed), device-sized `RenderCache`, image import limits (SVG rejected), non-destructive crop, `flyTo` + `pulse` as view state, relative perf bar (200 math ≥ 90% of 200 text).
+- **Status:** ◐ Planned on branch `m2-math-images`, stacked on `m1-core` (M1 not merged). No code yet; waiting on your review of the task plan.
 
 ### M3 · Server *(2.5 wks · ends wk 8.5)*
 
@@ -252,5 +254,7 @@ Gathered from the docs; none of it is scheduled. Non-goals stay in PLAN §2.3.
 | 2026-11-01 | – | Roadmap drafted from PLAN rev 2 and the 14 aspect files. Nothing started. |
 | 2026-11-02 | K | S1 and S4a done and merged to `main`. Decision: **VPS is not a must-have**; S5 and the first VPS deploy are optional and deferred, a working local app is the priority. Remaining M0 inputs: OpenRouter key (S3), books (S2, S4b). |
 | 2026-11-01 | K | Docs committed (`1c6abfb`). PLAN rev 2 taken as approved. M0 task plan written, awaiting review. Open inputs: OpenRouter key (S3), VPS (S5), books and questions (S2, S4b); S1 and S4a need none. |
-| 2026-11-02 | M1 | Implemented on `m1-core`: core (schemas, ops, undo, geometry, `render()`), editor (select, shapes with bound arrows, text with RTL, hand, toolbar), IndexedDB autosave with a read-only second tab. Gate script `e2e/gate.spec.ts` (real pointer and keyboard input: two shapes and a bound arrow, Arabic and Latin text, move with the arrow following, undo twice and redo once, reload, second tab read-only, no console errors) green; `pnpm lint`, `pnpm test` (core 109, web 119 and 1 skipped), `pnpm e2e` (5), `pnpm build` all exit 0. Left open: the manual demo with a real Arabic keyboard, then merge after your OK. |
+| 2026-11-02 | M1 | Implemented on `m1-core`: core (schemas, ops, undo, geometry, `render()`), editor (select, shapes with bound arrows, text with RTL, hand, toolbar), IndexedDB autosave with a read-only second tab. Gate script `e2e/gate.spec.ts` (real pointer and keyboard input: two shapes and a bound arrow, Arabic and Latin text, move with the arrow following, undo twice and redo once, reload, second tab read-only, no console errors) green; `pnpm lint`, `pnpm test` (core 115, web 193 and 1 skipped) and `pnpm e2e` (11) exit 0 (counts as of the review fixes in the last row of this log); `pnpm build` exited 0 before those fixes. Left open: the manual demo with a real Arabic keyboard, then merge after your OK. |
 | 2026-11-02 | M1 | Perf (Task 12, `pnpm bench`, 5,000 elements, medians of 5, real renderer against S1; full numbers in `apps/web/src/bench/RESULT.md`). DPR 2: pan 45.1 fps (S1 46.5, pass), zoom 35.4 (S1 40.7, **miss** at 87%, bar 36.6), first ink p95 16.5 ms (S1 0.9), open 20,000 in 1,798 ms (S1 1,412). DPR 1: pan 43.1 and zoom 44.7 (both pass), first ink 15.4 ms, open 20,000 in 1,750 ms. No variant reaches 60 fps (S1 did not either). Open 20,000 is **borderline, not a clean pass**: 1.75 to 1.80 s on a warm page, but 2.27 s when it replaces a populated 20,000 scene; a cold page load of a saved 20,000 board was not timed. Three needs-user-decision lines, none decided: (1) DPR 2 zoom is 87% of S1, 1.2 fps under the 90% bar (accept for M1, finer text buckets, or schedule the worker-canvas or WebGL rung); (2) the 1 GiB `RenderCache` cap (at 20,000 elements and DPR 2 the cache sits at the cap and zoom falls to 0.5 fps, pan 9.8 fps; see RESULT.md) (742 MB held at DPR 2; too much for 8 GB laptops and iOS Safari; keep, set it from the device, or use a glyph atlas); (3) the first-ink definition (the 16.5 ms is the 60 Hz vsync wait; the Editor's own work is 0.1 ms). |
+| 2026-11-02 | M1 | Final-review fixes (Task 15) on `m1-core`. Text typed in an open textarea is now autosaved (the draft is in the saved snapshot, not in the scene or the undo history), so a reload or tab close no longer loses it; page cleanup commits an open edit before the last flush; dropped elements and undo entries are backed up before anything is saved over them, and stored undo entries are validated; blocked saving now says plainly that changes are NOT saved (with Retry or Reload); a selected text keeps only the rotate handle; shortcuts work on an Arabic keyboard layout (`e.code` fallback); `resolveDir` agrees with the textarea; CI builds the app. `pnpm lint`, `pnpm typecheck`, `pnpm test` (core 115, web 193 and 1 skipped) and `pnpm e2e` (11) exit 0; `pnpm build` was not run locally this round (CI runs it now). Still pending: the manual demo with a real Arabic keyboard (IME), your decisions on the three perf points above, and the merge. |
+| 2026-11-02 | M2 | Grilled and planned on branch `m2-math-images` (stacked on `m1-core`): [task plan](./superpowers/plans/2026-11-02-m2-math-images.md), 12 tasks, decisions in PLAN §19 #23–28. No code yet. Open for review: dropping `noundefined` (P1), invalid LaTeX committing as red source (P3), the Path2D vector rung (P6), originals not kept for downscaled images. M1 items still open: IME demo, the perf decisions (the RenderCache cap is now decided inside M2), merge. |

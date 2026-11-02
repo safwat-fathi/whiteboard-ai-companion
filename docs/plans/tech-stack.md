@@ -46,7 +46,8 @@ Versions are the latest seen on npm on **2026-11-01**. Pin exact versions at ins
 
 ```
 packages/core    zod schemas (elements, ops, tool inputs) · scene store · ops/undo · bounds · R-tree
-                 render() + platform adapter · renderMath() · tool registry (definitions only)
+                 render() + platform adapter (math and image providers) · BlobStore interface · tool registry (definitions only)
+packages/math    MathJax 4 (TeX → SVG), renderMath()/peekMath(), security allowlist, Arabic guard, SVG helpers (the only package that imports @mathjax/*)
 apps/web         Next.js: editor, tools, chat dock, library, source panel
 apps/server      NestJS: ws gateway · board svc · context builder · tutor svc · library svc (+worker) · blobs · REST
                  migrations/ (numbered .sql) · test/fixtures/ (stub tutor scripts)

@@ -1,5 +1,6 @@
 # Whiteboard AI — Study Companion: Validation and Full Plan
 
+> **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** and **Cerebral Valley**.
 > **Status:** revision 1 approved 2026-11-01 · **revision 2** (same day, awaiting your review): no Docker, in-app chat, whiteboard as AI context, plan split into one file per aspect, README added.
 > **Inputs:** Claude Doc *Whiteboard Engine: Design Doc* (https://claude.ai/artifact/QPPBUq22meEmXKSmJ856qq, rev 11; all text and both diagrams read) · your answers to its 5 open questions · your brief (student companion, books + RAG, OpenRouter key, "jump to where the AI worked") · your revision-2 resolutions (next section).
 > **Conventions:** **[my call]** = a decision I made for you; override any. **[spike]** = I could not verify it from here; M0 settles it with evidence.
@@ -42,6 +43,8 @@
 ---
 
 ## 0. Context and TL;DR
+
+**Hackathon alignment.** Built specifically for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley). Whiteboard AI tackles visual, multimodal AI education: an interactive whiteboard where Meta's Llama models (e.g. Llama 3.3 70B for tool loop reasoning, Llama 3.2 Vision for canvas & diagram inspection) act as a personal tutor explaining complex textbooks with formulas, diagrams, and verifiable page citations.
 
 **Context.** The design doc specifies a from-scratch infinite canvas plus 16 MCP tools, and assumes an *external* AI client does the thinking. The product is now a **study companion**: a student uploads books, picks a topic / chapter / whole book, and chats with an AI tutor that explains on a shared whiteboard with page citations. This plan (1) validates the doc against that product and your answers, and (2) adds what is missing.
 
@@ -268,6 +271,12 @@ Five M0 spikes: **S1** canvas performance + Arabic/MathJax on a server canvas; *
 20. **M4 splits into 4a (ingestion core, `pnpm ingest`, eval runner) and 4b (REST, library UI, source viewer).** This refines §17's "M4 does not depend on M1–M3": 4a needs only M3's persistence layer (`db/` module, migrations, blob store); 4b needs M3's server and the web shell. The source viewer is built in M4 and mounted as the chat dock's Source tab in M5. (Seams 4 and 5.)
 21. **M2 image bytes live in IndexedDB, keyed by content hash** (the scheme `blobs.id` uses), until M3 provides `/api/blobs`. M1–M2 local boards are throwaway; there is no import path. (Seam 6.)
 22. **[ROADMAP.md](./ROADMAP.md) holds the per-phase detail;** §17 stays the contract for weeks and gates.
+23. **MathJax lives in `packages/math`, not `packages/core/math`;** `renderMath()` is async with a sync `peekMath()` cache lookup (S1 needed MathJax's `convertPromise`). `core` stays zod-only and reaches math through a `Platform.math` provider. (M2 grill, Q7 and Q8.)
+24. **`RenderCache` is sized from the device** (fraction of `deviceMemory`, 128 to 512 MB), shared by text, math and image bitmaps, replacing M1's fixed 1 GiB. (Q2.)
+25. **Arabic inside math is an error, not a mis-shaped render** (F14 closed: `latin-only`, enforced for the whole input); the message tells the tutor to use a separate text element. (Q3.)
+26. **Image import:** PNG, JPEG, WebP, GIF (first frame); SVG rejected; ≤ 10 MB; long edge ≤ 4096 px; SHA-256 dedupe; bytes through a `BlobStore` (IndexedDB now, `/api/blobs` in M3). **Crop is non-destructive** (`data.crop`, source pixels). (Q4, Q5, Q12.)
+27. **`flyTo` and `pulse` are view state:** never in ops, undo or snapshots. The Back chip and Follow AI stay in M5. (Q9.)
+28. **The TeX package list drops `noundefined`,** so undefined control sequences (`\href`, `\require`, …) throw and `renderMath` returns the message; math bitmaps beyond 4096 px draw as `Path2D` vectors. (Planning calls P1 and P6 in the M2 task plan.)
 
 **Inputs I need before M0** (not now)
 1. 2–3 real books as PDFs (tell me if any are EPUB and I will pull EPUB into M4): one text-heavy, one math/diagram-heavy, and an Arabic one if relevant, plus ~10 questions per book with the page where each answer lives. This is also the retrieval eval set.

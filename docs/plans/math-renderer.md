@@ -19,26 +19,30 @@
 | Server snapshots (`get_snapshot`, fallback paths) | Same module under Node, SVG rasterised by `@napi-rs/canvas` |
 | Math tool preview | Live preview box (debounced ~150 ms) using `renderMath()` |
 
-## API (`packages/core/math`)
+## API (`packages/math`, decided in the M2 grill; was `packages/core/math`)
 
 ```ts
-renderMath(latex: string, opts: { display: boolean; color: string }):
-  { svg: string; width: number; height: number; depth: number }   // metrics in em, baseline depth
-| { error: string }                                               // MathJax message
+renderMath(latex: string, opts: { display: boolean; color: string }): Promise<
+  { ok: true; svg: string; width: number; height: number; depth: number }   // metrics in em, baseline depth
+| { ok: false; error: string }>                                              // MathJax message; never rejects
+peekMath(latex, opts): MathResult | undefined                                // sync, cache only
 ```
 
-- Pure and memoised by `hash(latex, display, color)`. Uses MathJax's `liteAdaptor` everywhere (no real DOM), so browser and server output is identical.
+- Async, because MathJax loads font ranges dynamically (S1 used `convertPromise`). The frame loop only calls `peekMath`; on a miss it draws a placeholder and asks for the render, which invalidates the frame when done. The Node adapter awaits it before rasterising a snapshot.
+- Memoised by `hash(latex, display, color)`; concurrent identical calls share one promise. Uses MathJax's `liteAdaptor` everywhere (no real DOM), so browser and server output is identical.
 - MathJax loads lazily in the browser (dynamic import) so editor first paint is not blocked.
+- `packages/core` never imports MathJax: `render()` reaches math through a `Platform.math` provider, and the 4,000-character limit and Arabic guard live here, not in the element schema.
 
 ## Board element pipeline
 
-1. `renderMath` → SVG + metrics. Element `w`/`h` derive from the metrics × `size`; aspect ratio is locked (math never stretches).
-2. Rasterise the SVG into an `ImageBitmap` for the current **zoom bucket** (power-of-two steps) and cache by `(hash, bucket)`; cap the cache (LRU, ~64 MB).
-3. Draw with baseline alignment. Rotation and flip use the normal element transform.
+1. `renderMath` → SVG + metrics. Element `w`/`h` are **stored** (as for every element), computed by the creator from the metrics × `size`; the renderer fits the equation into `w`×`h` preserving the aspect, so math never stretches and a stale box never distorts it.
+2. Rasterise the SVG into an `ImageBitmap` for the current **zoom bucket** (power-of-two steps) and cache by `(bucket, element id, v)`. The cache is the editor's single `RenderCache`, sized from the device (128 to 512 MB), shared with text and images.
+3. Bitmaps are capped at 4096 px a side. When the on-screen size would exceed that (large equations at high zoom), the renderer draws the SVG glyph paths directly as `Path2D` (a small SVG-subset parser in `packages/math`); if the SVG holds anything the parser does not know, it falls back to the capped bitmap, upscaled.
+4. Draw with baseline alignment. Rotation and flip use the normal element transform.
 
 ## Errors that teach
 
-- The element renders the source in red with the message as a tooltip.
+- The element renders the source in red monospace with the message as a tooltip. The editor lets an invalid commit through so the student keeps what they typed; `add_math` (M5) refuses invalid LaTeX and returns the message.
 - `add_math` returns the MathJax message in the tool result, so the tutor fixes the LaTeX and retries.
 - In chat, a failed `$…$` shows the source in red inline; the message still reads.
 
@@ -46,15 +50,15 @@ renderMath(latex: string, opts: { display: boolean; color: string }):
 
 Allowlist the TeX packages explicitly; do not rely on defaults:
 
-- **Load:** `base`, `ams`, `boldsymbol`, `cancel`, `mathtools`, `mhchem` (chemistry equations are common in student books), `noundefined`.
-- **Do not load:** `html` (`\href`, `\class`, `\style`, `\cssId`), `require`/the dynamic loader (`\require`), `unicode`, `newcommand` (no user macros), anything that fetches resources.
-- Set `maxMacros` and `maxBuffer` to their low defaults; limit input to 4,000 characters (as the doc's limits table).
-- **Test (M2):** each of `\href{javascript:alert(1)}{x}`, `\url{…}`, `\require{html}`, `\class{a}{x}`, `\style{…}{x}`, `\unicode{…}` produces the error rendering, never a link or a load.
+- **Load:** `base`, `ams`, `boldsymbol`, `cancel`, `mathtools`, `mhchem` (chemistry equations are common in student books). The mhchem font extension is registered on the SVG jax (S1: without it the `\ce` arrows are missing-glyph boxes).
+- **Do not load:** `html` (`\href`, `\class`, `\style`, `\cssId`), `require`/the dynamic loader (`\require`), `unicode`, `newcommand` (no user macros), anything that fetches resources, and **`noundefined`** (M2 decision: S1 found that with it the hostile payloads render as red text and do not throw; without it an undefined control sequence throws, `renderMath` returns `{ok: false, error: "Undefined control sequence \href"}`, and the tutor gets a message it can act on).
+- Set `maxMacros` (1000) and `maxBuffer` (5120); limit input to 4,000 characters (as the doc's limits table).
+- **Test (M2):** each of `\href{javascript:alert(1)}{x}`, `\url{…}`, `\require{html}`, `\class{a}{x}`, `\style{…}{x}`, `\unicode{…}`, plus `\def`, `\newcommand`, `\let`, `\input`, `\write` returns an error result, never a link, a request or a module load; a macro bomb and deep nesting return within 1 s.
 
 ## Arabic and RTL
 
 - LaTeX stays left-to-right. In RTL text blocks, equations are separate `math` elements or inline `$…$` in chat (isolated with `<bdi>`).
-- Text-mode content outside MathJax's font data (e.g. Arabic inside `\text{}`) may be emitted as SVG `<text>`, which depends on installed fonts and shaping again (finding F14). Rules: keep Arabic labels in separate `text` elements; register the bundled fonts on the server canvas; test in **S1** and M2. If it fails, restrict `\text{}` to Latin and document it.
+- **F14 closed (S1 measured, M2 enforces): `latin-only`.** MathJax emits Arabic inside `\text{}` as SVG `<text>` per word, placed left to right in logical order with widths reserved at 0.6 em per character. Skia draws unjoined letters; Chrome joins each word but keeps the wrong word order and spacing. So `renderMath` returns an error for **any** Arabic letter in the input (U+0600–06FF, 0750–077F, 08A0–08FF, FB50–FDFF, FE70–FEFF; Arabic-Indic digits included, use 0–9): `Arabic inside math isn't supported; put the label in a separate text element`. Arabic labels go in separate `text` elements, which `fillText` shapes correctly.
 
 ## Accessibility
 
@@ -62,6 +66,6 @@ Each math element stores its LaTeX as `alt`; the accessibility outline panel (M7
 
 ## Tests
 
-- **Golden images:** ~20 equations (fractions, roots, matrices, `aligned`, sums/integrals, `\mathbb`, `\ce{…}` chemistry, a `\text{}` with Arabic) rendered by the browser path and the server path; pixel-diff within tolerance.
-- **Security tests** above; **error tests** (unbalanced braces, unknown macro under `noundefined`).
-- **Perf:** 200 math elements on screen stay within the 60 fps target after the first render (cache hits).
+- **Golden images:** 20 equations (fractions, roots, matrices, `aligned`, sums/integrals, `\mathbb`, `\ce{…}` chemistry, Latin `\text{}`; S1's fixtures minus the two Arabic cases, which became error tests). The committed goldens are the Node output; Playwright renders the same fixtures in the real page and pixel-diffs them (≤ 1.5% differing pixels).
+- **Security tests** above; **error tests** (unbalanced braces, unknown macro, Arabic input, over-length input).
+- **Perf (M2 bar, relative):** with 200 math elements on screen after the first render, pan/zoom medians are ≥ 90% of the same scene with 200 text elements, and a 200-math view holds 60 fps at DPR 1. (M1 measured no variant at 60 fps on dense scenes, so an absolute 60 fps would be gating on text, not math.)

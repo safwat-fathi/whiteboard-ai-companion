@@ -1,5 +1,7 @@
 # Whiteboard AI
 
+> 🏆 **Built for the [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** & **Cerebral Valley**.
+
 A personal **study companion**. Upload a book, choose what to study (a topic, a chapter, the whole book) and **chat with an AI tutor inside the app**. The tutor explains on a shared infinite whiteboard with text, LaTeX equations, diagrams, charts and figures from your book, and cites the pages. You can draw and write on the same board, select anything and ask about it, and jump to wherever the AI worked.
 
 > **Status: planning.** No code yet. The full plan is in [`docs/PLAN.md`](docs/PLAN.md); nothing below is runnable until milestone M1.
@@ -12,6 +14,17 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 - **Jump to the AI's work.** Follow the AI live, get an off-screen indicator, or click any chat chip or activity row to fly to where it drew, now or weeks ago.
 - **A from-scratch canvas.** Freehand, shapes, text (Arabic/RTL), LaTeX math (MathJax), charts, images, select/move/resize.
 - **Simple to run.** No login, no Docker, no database server: Node, one SQLite file, and an [OpenRouter](https://openrouter.ai) key. Runs on a laptop and on a small VPS.
+
+## Hackathon & Meta AI Integration
+
+Whiteboard AI is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (October 26 – November 5, 2026), hosted by **Meta** and **Cerebral Valley**.
+
+The project re-imagines how learners interact with textbooks and technical subjects by uniting open foundation models with an interactive visual workspace:
+
+- **AI Tutor with Visual Explanations:** Powered by Meta's open weights ecosystem (including **Llama 3.3 70B** for tool orchestration and mathematical reasoning, and **Llama 3.2 Vision** for whiteboard perception and textbook diagram analysis).
+- **The Board is the AI's Context:** Instead of text-only conversations, the student and AI share an infinite 2D canvas. The AI can point, draw diagrams, write formatted MathJax equations, and place textbook figures directly into view.
+- **Grounded in Your Books:** Upload any PDF to get hybrid search (dense embeddings + BM25) with verifiable page citations, distinguishing textbook source material from general explanation.
+- **Local-First & Accessible:** Runs natively without Docker or external DB servers (Node, SQLite in WAL mode) to ensure low latency and easy accessibility for any student or researcher.
 
 ## How it fits together
 
@@ -73,7 +86,8 @@ Set in `.env` (server) — the full list is in [`deployment`](docs/plans/deploym
 ## Repo layout (planned)
 
 ```
-packages/core    schemas, scene store, ops/undo, renderer, math, tool registry
+packages/core    schemas, scene store, ops/undo, renderer, blob interface, tool registry
+packages/math    MathJax renderer (renderMath), security allowlist
 apps/web         Next.js editor, chat dock, library
 apps/server      NestJS: WebSocket, REST, tutor, library, SQLite
 deploy/          Caddyfile, systemd units, env example, backup script
