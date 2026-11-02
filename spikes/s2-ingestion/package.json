@@ -1,0 +1,17 @@
+{
+  "name": "s2-ingestion",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "r1": "tsx r1.ts",
+    "ocr": "tsx --env-file=../../.env ocr.ts"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15"
+  }
+}

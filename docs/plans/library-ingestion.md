@@ -27,12 +27,12 @@ upload ─▶ uploaded ─▶ estimate + preview ─▶ [Index] ─▶ queued �
 | Rung | Method | Cost | Good at | Weak at |
 |---|---|---|---|---|
 | R1 | Local: `pdfjs-dist` text + outline + page labels (compare against `pdftotext -layout`) | free | Text PDFs, speed | Equations, scans, multi-column reading order |
-| R2 | OpenRouter `file-parser` plugin, engine `cloudflare-ai` (PDF → Markdown) | free | Layout, tables | Math fidelity unknown **[spike]** |
+| ~~R2~~ | ~~OpenRouter `file-parser`, engine `cloudflare-ai`~~ **dropped (S2):** only a text dump like R1, no LaTeX, empty pages on scans, and a file-size limit between 2.1 and 5.5 MB | | | |
 | R3 | Same plugin, engine `mistral-ocr` | $2 / 1,000 pages (≈ $0.80 per 400 pages) | Scans, figures, math | Cost; page/size limits undocumented, so slice by chapter |
 | R4 | `VISION_MODEL` transcribes page images → Markdown + LaTeX | ≈ $0.2–1.5 per 400 pages (estimate) | Hardest pages, Arabic scans | Slowest; check for invented text |
 
-- **Per-page routing:** low text density → scanned → R3/R4; math-dense pages → R3/R4 for those pages only; everything else R1. **S2 decides thresholds and defaults** on your books.
-- The plugin returns parsed content as a `file` annotation on the assistant message (text and base64 images), which can be sent back to skip re-parsing. The exact request nesting is not documented on the page the plan was written from: call chat completions with `fetch`, `plugins: [{id: 'file-parser', pdf: {engine}}]` and a `file` content part, and confirm the shape in S2. Slice the PDF by chapter with a small page-copy helper if limits bite.
+- **Per-page routing:** low text density → scanned → R3/R4; math-dense pages → R3/R4 for those pages only; everything else R1. **S2 chose the ladder (R1 → R3 → R4 as fallback for pages R3 gets wrong); the density thresholds are still open.**
+- The `file-parser` plugin (S2, confirmed): chat completions via `fetch` with `plugins: [{id: 'file-parser', pdf: {engine: 'mistral-ocr'}}]` and a user content part `{type: 'file', file: {filename, file_data: 'data:application/pdf;base64,…'}}`. Parsed content comes back as `message.annotations[0].file.content`, a list of text and image parts; the text is **one Markdown string for the whole slice with no page markers**, so send one request per page range. Cost: $0.0205 per 10 pages. **Slice with `pdf-lib` `copyPages`, never poppler's `pdfseparate`** (it keeps shared resources: one CK-12 page was 5.4 MB, 183 KB for 10 pages with pdf-lib). See `spikes/s2-ingestion/RESULT.md`.
 - `pdfjs-dist` runs in the worker thread using its legacy Node build; page rasters (for R4, the Source tab and `add_book_figure`) use `@napi-rs/canvas` and are cached on disk under `DATA_DIR/cache/pages/<book>/<n>@2x.png`.
 
 ## Arabic and normalisation

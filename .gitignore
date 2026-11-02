@@ -15,3 +15,6 @@ next-env.d.ts
 tsconfig.tsbuildinfo
 test-results/
 playwright-report/
+
+# copyrighted test books for S2/S4 spikes
+spikes/books/

@@ -192,7 +192,7 @@ Every turn includes a budgeted **board digest** (header, counts, viewport, selec
 
 ## 11. Library and ingestion → [plans/library-ingestion.md](./plans/library-ingestion.md)
 
-PDF-only v1. Upload → estimate and preview → index. Extraction ladder R1 (local `pdfjs-dist`) → R2 (OpenRouter `cloudflare-ai`, free) → R3 (`mistral-ocr`, $2/1,000 pages) → R4 (vision transcription), routed per page. Structure from the PDF outline with printed page labels. Heading-aware chunks, multilingual embeddings via OpenRouter, FTS5 index, bottom-up summaries. Ingestion runs in a worker thread; steps are resumable.
+PDF-only v1. Upload → estimate and preview → index. Extraction ladder R1 (local `pdfjs-dist`) → R3 (OpenRouter `mistral-ocr`, $2/1,000 pages) for scans and math-dense pages → R4 (vision transcription) as the fallback for pages R3 gets wrong, routed per page (S2 dropped the free `cloudflare-ai` rung). Structure from the PDF outline with printed page labels. Heading-aware chunks, multilingual embeddings via OpenRouter, FTS5 index, bottom-up summaries. Ingestion runs in a worker thread; steps are resumable.
 
 ## 12. RAG and context engineering → [plans/rag-context-engineering.md](./plans/rag-context-engineering.md)
 
