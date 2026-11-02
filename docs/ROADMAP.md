@@ -16,7 +16,7 @@ M0–M7 keep the labels used across the docs. **Kickoff (K)** comes first and is
 |---|---|---|---|---|---|
 | 0 Kickoff | **K** Kickoff | – | – | Approve PLAN rev 2, hand over inputs, write M0's task plan | ◐ |
 | 1 De-risk | **M0** Spikes | 2 | 2 | S1–S5 turn guesses into measurements | ☐ |
-| 2 Foundation | **M1** Core editor | 2.5 | 4.5 | Canvas, shapes, Arabic/Latin text, undo, local save | ☐ |
+| 2 Foundation | **M1** Core editor | 2.5 | 4.5 | Canvas, shapes, Arabic/Latin text, undo, local save | ◐ |
 | | **M2** Math and images | 1.5 | 6 | LaTeX (MathJax), images, camera `flyTo` + pulse | ☐ |
 | | **M3** Server | 2.5 | 8.5 | Sync, SQLite, blobs, access gate, **first VPS deploy** | ☐ |
 | 3 Tutor | **M4** Library | 2.5 | 11 | Upload → extract → chunk → embed → hybrid search | ☐ |
@@ -76,7 +76,7 @@ Every **Gate** line is verbatim from PLAN §17. **Scripts** are the named accept
 - **Also here [my call]:** repo scaffold from tech-stack ("scaffold in M0/M1, then pin"), Biome, Vitest and CI (`lint`, `test`), since this is the first code that is kept (M0 spike code is throwaway). Specify group-resize semantics and rotated hit-testing (F13).
 - **Risks:** text editing on a canvas (IME, selection, RTL): test Arabic and Latin from the first text tool.
 - **Demo:** draw a diagram with bound arrows, type Arabic and Latin text, undo, reload and it is still there.
-- **Status:** ☐
+- **Status:** ◐ Implemented on branch `m1-core` (not merged to `main`). The gate script `e2e/gate.spec.ts` is green, with `pnpm lint`, `pnpm test`, `pnpm e2e` and `pnpm build`. Remaining: the manual demo with a real Arabic keyboard (IME), your decisions on the three perf points in the status log, then the merge. Group resize is not built (M6, see [whiteboard-engine](./plans/whiteboard-engine.md#open-items)).
 
 ### M2 · Math and images *(1.5 wks · ends wk 6)*
 
@@ -252,3 +252,5 @@ Gathered from the docs; none of it is scheduled. Non-goals stay in PLAN §2.3.
 | 2026-11-01 | – | Roadmap drafted from PLAN rev 2 and the 14 aspect files. Nothing started. |
 | 2026-11-02 | K | S1 and S4a done and merged to `main`. Decision: **VPS is not a must-have**; S5 and the first VPS deploy are optional and deferred, a working local app is the priority. Remaining M0 inputs: OpenRouter key (S3), books (S2, S4b). |
 | 2026-11-01 | K | Docs committed (`1c6abfb`). PLAN rev 2 taken as approved. M0 task plan written, awaiting review. Open inputs: OpenRouter key (S3), VPS (S5), books and questions (S2, S4b); S1 and S4a need none. |
+| 2026-11-02 | M1 | Implemented on `m1-core`: core (schemas, ops, undo, geometry, `render()`), editor (select, shapes with bound arrows, text with RTL, hand, toolbar), IndexedDB autosave with a read-only second tab. Gate script `e2e/gate.spec.ts` (real pointer and keyboard input: two shapes and a bound arrow, Arabic and Latin text, move with the arrow following, undo twice and redo once, reload, second tab read-only, no console errors) green; `pnpm lint`, `pnpm test` (core 109, web 117 and 1 skipped), `pnpm e2e` (5), `pnpm build` all exit 0. Left open: the manual demo with a real Arabic keyboard, then merge after your OK. |
+| 2026-11-02 | M1 | Perf (Task 12, `pnpm bench`, 5,000 elements, medians of 5, real renderer against S1; full numbers in `apps/web/src/bench/RESULT.md`). DPR 2: pan 45.1 fps (S1 46.5, pass), zoom 35.4 (S1 40.7, **miss** at 87%, bar 36.6), first ink p95 16.5 ms (S1 0.9), open 20,000 in 1,798 ms (S1 1,412). DPR 1: pan 43.1 and zoom 44.7 (both pass), first ink 15.4 ms, open 20,000 in 1,750 ms. No variant reaches 60 fps (S1 did not either). Open 20,000 is **borderline, not a clean pass**: 1.75 to 1.80 s on a warm page, but 2.27 s when it replaces a populated 20,000 scene; a cold page load of a saved 20,000 board was not timed. Three needs-user-decision lines, none decided: (1) DPR 2 zoom is 87% of S1, 1.2 fps under the 90% bar (accept for M1, finer text buckets, or schedule the worker-canvas or WebGL rung); (2) the 1 GiB `RenderCache` cap (742 MB held at DPR 2; too much for 8 GB laptops and iOS Safari; keep, set it from the device, or use a glyph atlas); (3) the first-ink definition (the 16.5 ms is the 60 Hz vsync wait; the Editor's own work is 0.1 ms). |

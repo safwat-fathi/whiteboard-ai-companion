@@ -73,5 +73,12 @@ JSON over one WebSocket per board; full message shapes in [api](./api.md). The c
 ## Open items
 
 - R-tree and freehand: leaf library vs in-house (M0, F12).
-- Group resize semantics and screen-reader outline panel (M1 / M7, F13).
-- Worker-canvas path: only if S1 misses the budget.
+- Screen-reader outline panel (M7, F13).
+- **Group resize semantics (M6, F13).** M1 does not resize or rotate groups. `resizeBox` and `rotateTo` return `{}` for lines and arrows (their ends are edited with the select tool's endpoint handles), and the select tool shows resize and rotate handles only for a single unlocked element; a multi-selection can move, nudge and delete. M6 must define: the group's bounding box and handles; how each type scales inside a group (shapes `w`,`h`; strokes scale points; text scales font size; math, charts and images keep aspect ratio; lines and arrows scale their points); how rotation composes (about the group centre, added to each member's own rotation); how arrows bound to members re-route (one batch through `buildBatch`, as for move); and how locked members are handled. The whole gesture stays one batch, so it is one undo step.
+- Worker-canvas path: only if S1 misses the budget. M1's measured numbers and the three open decisions are in `apps/web/src/bench/RESULT.md` and the ROADMAP status log.
+
+### Built in M1 (rules later milestones rely on)
+
+- **Rotated hit-testing (F13).** `toLocal` inverse-rotates the point about the element's centre into its unrotated frame, and the narrow phase runs there (filled shapes hit inside; any shape hits within the tolerance of its outline). The tolerance is in world units and stroke-aware: `hitTest(el, p, tolWorld)` accepts a distance of `tolWorld + strokeWidth / 2`, and callers pass `6 / zoom` (6 screen px). Lines and arrows ignore rotation; text hits its stored box, not a layout.
+- **Camera convention.** `Camera {x, y, zoom}`: `(x, y)` is the world point at the viewport's top-left, so `screen = (world - (x, y)) * zoom`; zoom is clamped to 0.05–20 in `zoomAt`. It is not the centre-based camera of the S1 spike (the bench converts).
+- **Tool factory contract.** `tools/index.ts` maps an id to a factory `(ed: Editor) => Tool`; each `Editor` instantiates every factory once, so tool state lives in the closure and two editors never share any. `Tool.key` is the shortcut (empty means none). `Tool.navigates` marks tools that keep receiving pointer events and can be selected while the editor is read-only (Hand). `Tool.onFrame` runs at the start of every Editor frame (the camera or viewport may have changed; the text overlay re-syncs there). `Tool.onCancel` runs on a tool switch, on `pointercancel` and on dispose, and must leave no half-finished gesture (the text tool's commits). `Editor.setTool` switches tools and `Editor.onToolChange` notifies the toolbar.
