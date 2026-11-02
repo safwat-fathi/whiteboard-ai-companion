@@ -2,22 +2,41 @@
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Notices } from '../app/Notice'
 
 const order: string[] = []
 // What the mocked persistence does; reset before every test.
 const ctl = { load: (): unknown => ({ status: 'empty' }), stop: () => {} }
+const syncCtl = {
+  // biome-ignore lint/suspicious/noExplicitAny: test control
+  opts: null as any,
+  onStatus: (_s: string, _d?: string) => {},
+  stop: () => {},
+}
+// biome-ignore lint/suspicious/noExplicitAny: test spy
+const instances: { editor?: any } = {}
+
 beforeEach(() => {
   order.length = 0
   ctl.load = () => ({ status: 'empty' })
   ctl.stop = () => {}
+  syncCtl.opts = null
+  syncCtl.onStatus = () => {}
+  syncCtl.stop = () => {}
+  instances.editor = undefined
 })
 vi.mock('./editor/editor', () => ({
   Editor: class {
     readOnly = false
     tool = { id: 'hand' }
     tools = {}
+    author: unknown = { kind: 'human', id: 'local' }
+    blobs: unknown
+    constructor(_host: HTMLElement, options?: { blobs?: unknown }) {
+      this.blobs = options?.blobs
+      instances.editor = this
+    }
     onToolChange() {
       return () => {}
     }
@@ -28,6 +47,26 @@ vi.mock('./editor/editor', () => ({
 }))
 vi.mock('./editor/fonts', () => ({ loadFonts: async () => {} }))
 vi.mock('./editor/platform', () => ({ browserPlatform: () => ({}) }))
+vi.mock('./editor/sync', () => ({
+  // biome-ignore lint/suspicious/noExplicitAny: mock options
+  createSyncClient: (opts: any) => {
+    syncCtl.opts = opts
+    syncCtl.onStatus = opts.onStatus
+    order.push('sync-create')
+    return {
+      start: () => {
+        order.push('sync-start')
+      },
+      stop: () => {
+        order.push('sync-stop')
+        syncCtl.stop()
+      },
+    }
+  },
+}))
+vi.mock('./editor/blobs-http', () => ({
+  createHttpBlobStore: (base: string) => ({ kind: 'http-blobs', base }),
+}))
 vi.mock('./editor/persist', () => ({
   acquireBoardLock: async () => {
     order.push('lock')
@@ -146,5 +185,123 @@ describe('Page', () => {
     order.length = 0
     await expect(page.unmount()).rejects.toThrow('boom') // still reported, but only after the steps ran
     expect(order).toEqual(['stop', 'dispose', 'release'])
+  })
+
+  describe('server mode (NEXT_PUBLIC_API_BASE set)', () => {
+    const originalApiBase = process.env.NEXT_PUBLIC_API_BASE
+    beforeEach(() => {
+      process.env.NEXT_PUBLIC_API_BASE = 'http://localhost:4000'
+      localStorage.clear()
+    })
+    afterEach(() => {
+      if (originalApiBase === undefined) {
+        delete process.env.NEXT_PUBLIC_API_BASE
+      } else {
+        process.env.NEXT_PUBLIC_API_BASE = originalApiBase
+      }
+      vi.unstubAllGlobals()
+    })
+
+    const mountServer = async () => {
+      const { default: Page } = await import('../app/page')
+      const host = document.createElement('div')
+      document.body.append(host)
+      const root = createRoot(host)
+      await act(async () => {
+        root.render(createElement(Page))
+      })
+      await vi.waitFor(() => expect(order).toContain('sync-start'))
+      return {
+        host,
+        unmount: async () => {
+          try {
+            await act(async () => root.unmount())
+          } finally {
+            host.remove()
+          }
+        },
+      }
+    }
+
+    it('starts without acquiring board lock, sets owner author and http blob store, and connects sync client', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('/api/boards')) {
+          return new Response(
+            JSON.stringify({
+              boards: [{ id: 'board-123', title: 'Main' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        return new Response('Not found', { status: 404 })
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const page = await mountServer()
+      expect(order).not.toContain('lock')
+      expect(order).not.toContain('load')
+      expect(instances.editor?.author).toEqual({
+        kind: 'human',
+        id: 'owner',
+      })
+      expect(instances.editor?.blobs).toEqual({
+        kind: 'http-blobs',
+        base: 'http://localhost:4000',
+      })
+      expect(syncCtl.opts.boardId).toBe('board-123')
+      expect(syncCtl.opts.url).toBe('ws://localhost:4000/ws?boardId=board-123')
+      expect(localStorage.getItem('whiteboard:boardId')).toBe('board-123')
+
+      // Editor is read-only initially until sync goes live
+      expect(instances.editor?.readOnly).toBe(true)
+      await act(async () => {
+        syncCtl.onStatus('live')
+      })
+      expect(instances.editor?.readOnly).toBe(false)
+
+      // Offline shows alert
+      await act(async () => {
+        syncCtl.onStatus('offline')
+      })
+      const alert = page.host.querySelector('[role="alert"]')
+      expect(alert?.textContent).toContain('Offline: changes are not saved')
+
+      // Back to live clears alert
+      await act(async () => {
+        syncCtl.onStatus('live')
+      })
+      expect(page.host.querySelector('[role="alert"]')).toBeNull()
+
+      order.length = 0
+      await page.unmount()
+      expect(order).toEqual(['sync-stop', 'dispose'])
+      expect(order).not.toContain('release')
+    })
+
+    it('creates a new board via POST /api/boards when boards list is empty', async () => {
+      const mockFetch = vi
+        .fn()
+        .mockImplementation(async (url: string, init?: RequestInit) => {
+          if (url.endsWith('/api/boards')) {
+            if (init?.method === 'POST') {
+              return new Response(JSON.stringify({ id: 'new-board-456' }), {
+                status: 201,
+                headers: { 'Content-Type': 'application/json' },
+              })
+            }
+            return new Response(JSON.stringify({ boards: [] }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          }
+          return new Response('Not found', { status: 404 })
+        })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const page = await mountServer()
+      expect(syncCtl.opts.boardId).toBe('new-board-456')
+      expect(localStorage.getItem('whiteboard:boardId')).toBe('new-board-456')
+      await page.unmount()
+    })
   })
 })

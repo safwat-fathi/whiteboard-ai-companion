@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createHttpBlobStore } from '../src/editor/blobs-http'
 import { Editor } from '../src/editor/editor'
 import { loadFonts } from '../src/editor/fonts'
 import {
@@ -9,6 +10,7 @@ import {
   releaseBoardLock,
 } from '../src/editor/persist'
 import { browserPlatform } from '../src/editor/platform'
+import { createSyncClient } from '../src/editor/sync'
 import { type Note, Notices } from './Notice'
 import { Toolbar } from './Toolbar'
 
@@ -20,6 +22,51 @@ const WHY = {
 } as const
 const reload = () => location.reload()
 
+async function getOrCreateBoard(apiBase: string): Promise<string> {
+  const cached =
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('whiteboard:boardId')
+      : null
+  const res = await fetch(`${apiBase}/api/boards`)
+  if (!res.ok) throw new Error(`Failed to list boards: ${res.status}`)
+  const data = (await res.json()) as { boards?: { id: string }[] }
+  const boards = data.boards ?? []
+  if (cached && boards.some((b) => b.id === cached)) {
+    return cached
+  }
+  if (boards.length > 0 && boards[0]) {
+    const id = boards[0].id
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('whiteboard:boardId', id)
+    }
+    return id
+  }
+  const postRes = await fetch(`${apiBase}/api/boards`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Main' }),
+  })
+  if (!postRes.ok) throw new Error(`Failed to create board: ${postRes.status}`)
+  const postData = (await postRes.json()) as { id: string }
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('whiteboard:boardId', postData.id)
+  }
+  return postData.id
+}
+
+function toWsUrl(apiBase: string, boardId: string): string {
+  const url = new URL(
+    apiBase,
+    typeof window !== 'undefined'
+      ? window.location.href
+      : 'http://localhost:3000',
+  )
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  url.pathname = '/ws'
+  url.search = `?boardId=${encodeURIComponent(boardId)}`
+  return url.toString()
+}
+
 export default function Page() {
   const host = useRef<HTMLDivElement>(null)
   const [notes, setNotes] = useState<Note[]>([])
@@ -28,12 +75,92 @@ export default function Page() {
     editor: Editor
     readOnly: boolean
   } | null>(null)
+
   useEffect(() => {
     const note = (key: string, n: Omit<Note, 'key'> | null) =>
       setNotes((all) => [
         ...all.filter((x) => x.key !== key),
         ...(n ? [{ key, ...n }] : []),
       ])
+
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, '')
+
+    if (apiBase) {
+      let editor: Editor | undefined
+      let syncClient: ReturnType<typeof createSyncClient> | undefined
+      let stop = false
+
+      ;(async () => {
+        await loadFonts().catch((err) =>
+          console.error('font loading failed', err),
+        )
+        if (stop || !host.current) return
+
+        let boardId: string
+        try {
+          boardId = await getOrCreateBoard(apiBase)
+        } catch (err) {
+          console.error('getting/creating board failed', err)
+          if (!stop)
+            note('load', {
+              text: 'The board could not be loaded, so it is read-only and nothing is being saved.',
+              role: 'alert',
+              action: { label: 'Reload', run: reload },
+            })
+          return
+        }
+        if (stop || !host.current) return
+
+        const ed = new Editor(host.current, {
+          platform: browserPlatform(),
+          blobs: createHttpBlobStore(apiBase),
+        })
+        editor = ed
+        ed.author = { kind: 'human', id: 'owner' }
+        ed.onNotice = (text) => note('notice', { text, role: 'alert' })
+        ed.readOnly = true
+        setBoard({ editor: ed, readOnly: true })
+
+        if (process.env.NODE_ENV !== 'production')
+          (window as unknown as { __editor?: Editor }).__editor = ed
+
+        const wsUrl = toWsUrl(apiBase, boardId)
+        syncClient = createSyncClient({
+          url: wsUrl,
+          boardId,
+          editor: ed,
+          onStatus: (status, detail) => {
+            if (stop) return
+            if (status === 'live') {
+              ed.readOnly = false
+              setBoard({ editor: ed, readOnly: false })
+              note('offline', null)
+            } else if (status === 'offline') {
+              note('offline', {
+                text: 'Offline: changes are not saved',
+                role: 'alert',
+              })
+            } else if (status === 'failed') {
+              note('offline', {
+                text: `Connection failed: ${detail ?? 'error'}`,
+                role: 'alert',
+              })
+            }
+          },
+        })
+        syncClient.start()
+      })()
+
+      return () => {
+        stop = true
+        try {
+          syncClient?.stop()
+        } finally {
+          editor?.dispose()
+        }
+      }
+    }
+
     let editor: Editor | undefined
     let persistence: ReturnType<typeof createPersistence> | undefined
     let stop = false
