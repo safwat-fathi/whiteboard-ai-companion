@@ -67,11 +67,16 @@ export function attachGateway(
   let sender: WebSocket | null = null // the socket whose batch is being broadcast right now (submit is synchronous)
 
   server.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url ?? '/', 'http://localhost')
     if (!checkHost(req.headers.host, config))
       return refuse(socket, 403, 'Forbidden')
     if (req.headers.origin !== config.publicOrigin)
       return refuse(socket, 403, 'Forbidden')
+    let url: URL
+    try {
+      url = new URL(req.url ?? '/', 'http://localhost')
+    } catch {
+      return refuse(socket, 400, 'Bad Request') // an unparsable target must not throw out of an event listener
+    }
     if (url.pathname !== '/ws') return refuse(socket, 404, 'Not Found')
     wss.handleUpgrade(req, socket, head, (ws) =>
       connection(ws, url.searchParams.get('boardId')),

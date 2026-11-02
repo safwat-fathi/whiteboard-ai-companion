@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import type { Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { type AddressInfo, connect as connectRaw } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -213,6 +213,25 @@ describe('upgrade gate (R3)', () => {
     expect(
       await refused(url(b.id), ORIGIN, { Host: 'evil.test@localhost' }),
     ).toBe(403)
+  })
+
+  it('answers a malformed request target with 400 and keeps serving', async () => {
+    const { port } = await boot()
+    const reply = await new Promise<string>((resolve) => {
+      const s = connectRaw(port, '127.0.0.1')
+      let got = ''
+      s.on('data', (d) => {
+        got += d
+      })
+      s.on('close', () => resolve(got))
+      s.on('error', () => resolve(got))
+      s.write(
+        `GET //[ HTTP/1.1\r\nHost: localhost\r\nOrigin: ${ORIGIN}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`,
+      )
+    })
+    expect(reply).toMatch(/^HTTP\/1\.1 400/)
+    const health = await fetch(`http://127.0.0.1:${port}/api/health`)
+    expect(health.status).toBe(200)
   })
 
   it('refuses a path other than /ws', async () => {
