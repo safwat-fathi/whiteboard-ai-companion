@@ -1,4 +1,17 @@
 {
   "private": true,
-  "packageManager": "pnpm@12.8.1"
+  "packageManager": "pnpm@12.8.1",
+  "scripts": {
+    "dev": "pnpm --filter @whiteboard/web dev",
+    "build": "pnpm --filter @whiteboard/web build",
+    "test": "pnpm -r --if-present test",
+    "lint": "biome check .",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@playwright/test": "1.64.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
 }

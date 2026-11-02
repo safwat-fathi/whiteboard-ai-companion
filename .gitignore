@@ -11,3 +11,7 @@ data/
 *.log
 .DS_Store
 spikes/*/out/
+next-env.d.ts
+tsconfig.tsbuildinfo
+test-results/
+playwright-report/
