@@ -17,7 +17,8 @@ const memo = new WeakMap<Platform, WeakMap<Element, TextLayout>>()
 const trimBreak = (s: string) => s.replace(/[ \t]+$/, '')
 
 const LINE_HEIGHT = 1.4
-const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/u
+// RTL blocks: Hebrew..Arabic Extended-A, Hebrew/Arabic presentation forms A, Arabic presentation forms B (without U+FEFF, a format char).
+const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE]/u
 
 /**
  * `auto` = direction of the first strong character (a letter; digits, punctuation and marks are skipped),
@@ -26,8 +27,7 @@ const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/u
 export function resolveDir(text: string, dir: TextData['dir']): 'ltr' | 'rtl' {
   if (dir !== 'auto') return dir
   for (const ch of text) {
-    if (RTL.test(ch)) return 'rtl'
-    if (/\p{L}/u.test(ch)) return 'ltr'
+    if (/\p{L}/u.test(ch)) return RTL.test(ch) ? 'rtl' : 'ltr'
   }
   return 'ltr'
 }

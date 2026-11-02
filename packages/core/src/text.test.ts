@@ -40,6 +40,16 @@ describe('resolveDir', () => {
     expect(resolveDir('', 'auto')).toBe('ltr')
     expect(resolveDir('٣٤ (שלום)', 'auto')).toBe('rtl')
   })
+  it('skips digits, punctuation, marks and format characters; only a letter decides (as the textarea does)', () => {
+    expect(resolveDir('١٢٣ abc', 'auto')).toBe('ltr') // Arabic-Indic digits
+    expect(resolveDir('، hello', 'auto')).toBe('ltr') // Arabic comma
+    expect(resolveDir('\u064E abc', 'auto')).toBe('ltr') // a lone fatha
+    expect(resolveDir('\uFEFFabc', 'auto')).toBe('ltr') // zero width no-break space
+    expect(resolveDir('١. مرحبا', 'auto')).toBe('rtl')
+    expect(resolveDir('123 مرحبا', 'auto')).toBe('rtl')
+    expect(resolveDir('\uFEFFمرحبا', 'auto')).toBe('rtl')
+    expect(resolveDir('\uFB50\uFE8D', 'auto')).toBe('rtl') // Arabic presentation forms stay RTL letters
+  })
   it('honours an explicit dir', () => {
     expect(resolveDir('hello', 'rtl')).toBe('rtl')
     expect(resolveDir('مرحبا', 'ltr')).toBe('ltr')
