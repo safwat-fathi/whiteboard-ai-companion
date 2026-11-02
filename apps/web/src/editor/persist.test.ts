@@ -388,12 +388,16 @@ describe('autosave scheduling', () => {
     ],
     ['pagehide', () => window.dispatchEvent(new Event('pagehide'))],
   ])('flushes immediately on %s', async (_n, fire) => {
+    await loadBoard('local') // creates the database, so polling it below cannot race the first write
+    vi.useFakeTimers(FAKE) // the 200 ms debounce must not be what saves
     const p = createPersistence(t.ed, 'local')
     p.start()
     put(t.ed, mk('a', 0, 0))
     fire()
-    await p.flush()
-    expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] })
+    vi.useRealTimers() // drops the pending fake debounce timer; no explicit flush: only the event's own flush can write
+    await vi.waitFor(async () =>
+      expect(await rawGet('local')).toMatchObject({ elements: [{ id: 'a' }] }),
+    )
     p.stop()
     Object.defineProperty(document, 'visibilityState', {
       value: 'visible',
@@ -584,21 +588,22 @@ describe('an open text draft', () => {
   })
 
   it('pagehide flushes the draft; an empty draft adds no element', async () => {
+    // Types `v`, fires a real pagehide with the debounce timer faked and then dropped, and waits for the store: nothing
+    // but the pagehide listener can have saved it (no explicit flush).
+    const hideWith = async (v: string, want: string[]) => {
+      vi.useFakeTimers(FAKE)
+      typeInto(v)
+      window.dispatchEvent(new Event('pagehide'))
+      vi.useRealTimers()
+      await vi.waitFor(async () => expect(await stored()).toEqual(want))
+    }
+    await loadBoard('local') // creates the database, so polling it cannot race the first write
     const p = createPersistence(t.ed, 'local')
     p.start()
     startText()
-    typeInto('  ')
-    window.dispatchEvent(new Event('pagehide'))
-    await p.flush()
-    expect(await stored()).toEqual([]) // a board with no elements: no empty text element
-    typeInto('hello')
-    window.dispatchEvent(new Event('pagehide'))
-    await p.flush()
-    expect(await stored()).toEqual(['hello'])
-    typeInto('')
-    window.dispatchEvent(new Event('pagehide'))
-    await p.flush()
-    expect(await stored()).toEqual([])
+    await hideWith('  ', []) // a board with no elements: no empty text element
+    await hideWith('hello', ['hello'])
+    await hideWith('', [])
     p.stop()
   })
 
