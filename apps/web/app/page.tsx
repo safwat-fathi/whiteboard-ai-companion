@@ -13,6 +13,12 @@ import { type Note, Notices } from './Notice'
 import { Toolbar } from './Toolbar'
 
 const BOARD = 'local'
+const WHY = {
+  corrupt: 'The saved board is damaged and could not be read.',
+  'newer-version': 'The saved board was made by a newer version of this app.',
+  unavailable: 'Browser storage is unavailable.',
+} as const
+const reload = () => location.reload()
 
 export default function Page() {
   const host = useRef<HTMLDivElement>(null)
@@ -50,7 +56,19 @@ export default function Page() {
         onSaved: () => note('save', null),
       })
       persistence = p
-      const r = await p.load(locked) // a read-only tab never writes, not even a backup
+      let r: Awaited<ReturnType<typeof p.load>>
+      try {
+        r = await p.load(locked) // a read-only tab never writes, not even a backup
+      } catch (err) {
+        console.error('loading the board failed', err)
+        if (!stop)
+          note('load', {
+            text: 'The board could not be loaded, so it is read-only and nothing is being saved.',
+            role: 'alert',
+            action: { label: 'Reload', run: reload },
+          })
+        return // the editor stays read-only
+      }
       if (stop) return
       editor.readOnly = !locked
       setBoard({ editor, readOnly: !locked })
@@ -72,13 +90,12 @@ export default function Page() {
           role: 'status',
         })
       if (r.status === 'unreadable') {
-        const text = `Saved data could not be read (${r.reason.replace('-', ' ')})`
         note('unreadable', {
-          text,
+          text: `${WHY[r.reason]} Changes are NOT being saved.`,
           role: 'alert',
           action:
             r.reason === 'unavailable'
-              ? undefined
+              ? { label: 'Retry', run: reload }
               : {
                   label: 'Start empty and keep a backup copy',
                   run: () =>

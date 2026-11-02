@@ -50,3 +50,149 @@ test('a second tab opens read-only', async ({ page, context }) => {
   ).toBeVisible()
   await expect(page.getByText('Open in another tab')).toHaveCount(0)
 })
+
+/** Writes `value` under the board key (the page has created the database by the time it is ready). */
+const seed = (page: Page, value: unknown) =>
+  page.evaluate(
+    (v) =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('whiteboard', 1)
+        open.onerror = () => reject(open.error)
+        open.onsuccess = () => {
+          const db = open.result
+          const tx = db.transaction('boards', 'readwrite')
+          tx.objectStore('boards').put(v, 'local')
+          tx.oncomplete = () => {
+            db.close()
+            resolve()
+          }
+          tx.onerror = () => reject(tx.error)
+        }
+      }),
+    value,
+  )
+const storedKeys = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<string[]>((resolve, reject) => {
+        const open = indexedDB.open('whiteboard', 1)
+        open.onerror = () => reject(open.error)
+        open.onsuccess = () => {
+          const db = open.result
+          const req = db
+            .transaction('boards')
+            .objectStore('boards')
+            .getAllKeys()
+          req.onerror = () => reject(req.error)
+          req.onsuccess = () => {
+            db.close()
+            resolve(req.result as string[])
+          }
+        }
+      }),
+  )
+
+test('a board from a newer version says plainly that changes are not saved', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await ready(page)
+  const stored = { version: 99, boardId: 'local', elements: [] }
+  await seed(page, stored)
+  await page.reload()
+  await ready(page)
+  const note = page.getByRole('alert').filter({ hasText: 'newer version' })
+  await expect(note).toContainText('Changes are NOT being saved')
+  await expect(
+    note.getByRole('button', { name: 'Start empty and keep a backup copy' }),
+  ).toBeVisible()
+  await page.keyboard.press('r')
+  await page.mouse.move(200, 200)
+  await page.mouse.down()
+  await page.mouse.move(300, 280, { steps: 5 })
+  await page.mouse.up()
+  await page.waitForTimeout(400) // past the 200 ms debounce: still nothing written
+  expect(await storedKeys(page)).toEqual(['local'])
+  expect(
+    await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const open = indexedDB.open('whiteboard', 1)
+          open.onsuccess = () => {
+            const req = open.result
+              .transaction('boards')
+              .objectStore('boards')
+              .get('local')
+            req.onsuccess = () => resolve(req.result)
+          }
+        }),
+    ),
+  ).toEqual(stored)
+})
+
+test('invalid elements are dropped with a notice and the stored board is kept as a backup', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await ready(page)
+  const good = {
+    id: 'a',
+    type: 'shape',
+    x: 100,
+    y: 100,
+    w: 80,
+    h: 60,
+    rotation: 0,
+    z: 'a0',
+    style: {
+      stroke: '#111111',
+      fill: null,
+      strokeWidth: 2,
+      opacity: 1,
+      dash: 'solid',
+    },
+    locked: false,
+    author: { kind: 'human', id: 'local' },
+    v: 0,
+    data: { kind: 'rect' },
+  }
+  const stored = {
+    version: 1,
+    boardId: 'local',
+    savedAt: 4242,
+    elements: [good, { id: 'broken' }],
+    camera: { x: 0, y: 0, zoom: 1 },
+    undo: { undo: [], redo: [], maxDepth: 200 },
+  }
+  await seed(page, stored)
+  await page.reload()
+  await ready(page)
+  await expect(
+    page.getByRole('status').filter({ hasText: '1 invalid elements' }),
+  ).toContainText('backup')
+  expect(await elements(page)).toHaveLength(1)
+  const keys = await storedKeys(page)
+  expect(keys.filter((k) => k.startsWith('local:backup:4242-'))).toHaveLength(1)
+})
+
+test('unavailable storage says changes are not saved and offers Retry', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'indexedDB', {
+      value: undefined,
+      configurable: true,
+    })
+  })
+  await page.goto('/')
+  await ready(page)
+  const note = page.getByRole('alert').filter({ hasText: 'storage' })
+  await expect(note).toContainText(
+    'Browser storage is unavailable. Changes are NOT being saved.',
+  )
+  const retry = note.getByRole('button', { name: 'Retry' })
+  await Promise.all([page.waitForEvent('load'), retry.click()]) // Retry reloads the page
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'storage' }),
+  ).toBeVisible()
+})
