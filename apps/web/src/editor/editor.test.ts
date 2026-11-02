@@ -921,3 +921,88 @@ describe('Editor', () => {
     })
   })
 })
+
+describe('sync hooks: onBatch, applyExternal and author', () => {
+  it('author defaults to the local human', () => {
+    expect(ed.author).toEqual({ kind: 'human', id: 'local' })
+  })
+
+  it('onBatch fires after every successful commit with the batch, its inverse and the kind', () => {
+    const calls: [Batch, Batch, string][] = []
+    ed.onBatch = (b, inv, kind) => calls.push([b, inv, kind])
+    ed.commit(add('a'))
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.[0].ops).toEqual(add('a').ops)
+    expect(calls[0]?.[1].ops).toEqual([{ op: 'remove', id: 'a' }])
+    expect(calls[0]?.[2]).toBe('edit')
+    ed.undoOnce()
+    ed.redoOnce()
+    expect(calls.map((c) => c[2])).toEqual(['edit', 'undo', 'redo'])
+    // the inverse really undoes: applying it removes what the batch added
+    const inv = calls[2]?.[1] as Batch
+    ed.applyExternal(inv)
+    expect(ed.scene.els.has('a')).toBe(false)
+  })
+
+  it('onBatch does not fire when the commit is invalid, and the scene is unchanged', () => {
+    const onBatch = vi.fn()
+    ed.onBatch = onBatch
+    expect(() =>
+      ed.commit(batch({ op: 'add', el: { ...shape('x'), w: Number.NaN } })),
+    ).toThrow(OpError)
+    expect(onBatch).not.toHaveBeenCalled()
+    expect(ed.scene.els.size).toBe(0)
+  })
+
+  it('applyExternal applies a batch without recording undo or calling onBatch, and returns the inverse', () => {
+    const onBatch = vi.fn()
+    ed.onBatch = onBatch
+    const inv = ed.applyExternal(add('r'))
+    expect(ed.scene.els.has('r')).toBe(true)
+    expect(ed.undo.canUndo).toBe(false) // the remote change is nobody's undo entry
+    expect(onBatch).not.toHaveBeenCalled()
+    expect(inv.ops).toEqual([{ op: 'remove', id: 'r' }])
+    ed.applyExternal(inv)
+    expect(ed.scene.els.has('r')).toBe(false)
+  })
+
+  it('applyExternal works on a read-only editor, updates the index and notifies listeners, and prunes the selection', () => {
+    ed.readOnly = true
+    const changed = vi.fn()
+    ed.onChange(changed)
+    ed.applyExternal(add('r'))
+    expect(changed).toHaveBeenCalledTimes(1)
+    expect(ed.index.pick({ x: 5, y: 5 }, 1, ed.scene)?.id).toBe('r')
+    ed.selection.add('r')
+    ed.applyExternal(batch({ op: 'remove', id: 'r' }))
+    expect(ed.selection.has('r')).toBe(false)
+    expect(ed.index.pick({ x: 5, y: 5 }, 1, ed.scene)).toBeNull()
+  })
+
+  it('applyExternal throws OpError and changes nothing for an invalid batch', () => {
+    ed.applyExternal(add('a'))
+    const changed = vi.fn()
+    ed.onChange(changed)
+    const bad = batch(
+      { op: 'add', el: shape('b') },
+      { op: 'add', el: shape('a') },
+    ) // the second id already exists
+    expect(() => ed.applyExternal(bad)).toThrow(OpError)
+    expect([...ed.scene.els.keys()]).toEqual(['a'])
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('applyExternal leaves the local undo stack alone: a local edit still undoes after a remote one', () => {
+    ed.commit(add('mine'))
+    ed.applyExternal(add('theirs'))
+    ed.undoOnce()
+    expect([...ed.scene.els.keys()]).toEqual(['theirs'])
+  })
+
+  it('applyExternal returns an empty inverse when every op was dropped (a patch to a removed element)', () => {
+    const inv = ed.applyExternal(
+      batch({ op: 'patch', id: 'ghost', set: { x: 5 } }),
+    )
+    expect(inv.ops).toEqual([])
+  })
+})

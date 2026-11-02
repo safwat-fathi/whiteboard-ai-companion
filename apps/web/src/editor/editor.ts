@@ -65,6 +65,17 @@ export class Editor {
   readonly tools: Record<string, Tool>
   tool: Tool
   readOnly = false
+  /** Who new elements are authored by. Local mode keeps `local`; server mode sets `owner`, the author the server stamps. */
+  author: { kind: 'human' | 'agent'; id: string } = {
+    kind: 'human',
+    id: 'local',
+  }
+  /** Called after every successful commit (edit, undo and redo alike) with the batch and its inverse; the sync client sends it. */
+  onBatch?: (
+    batch: Batch,
+    inverse: Batch,
+    kind: 'edit' | 'undo' | 'redo',
+  ) => void
   /** Element drawn by a DOM overlay (text being edited); omitted from the canvas so it is never drawn twice. */
   hidden: Id | null = null
   viewport: Viewport = { width: 0, height: 0, dpr: 1 }
@@ -252,6 +263,25 @@ export class Editor {
     for (const id of this.selection)
       if (!this.scene.els.has(id)) this.selection.delete(id)
     this.changed()
+    this.onBatch?.(batch, applied.inverse, kind)
+  }
+
+  /**
+   * Applies a batch that is not a local edit (the server's, or a local one being rolled back or replayed): index, selection
+   * and redraw are updated as for commit(), but the undo stack is untouched, onBatch is not called and read-only does not
+   * matter. Returns the inverse (empty when every op was dropped); throws OpError and changes nothing for an invalid batch.
+   */
+  applyExternal(batch: Batch): Batch {
+    const applied = applyBatch(this.scene, batch)
+    for (const id of applied.touched) {
+      const el = this.scene.els.get(id)
+      if (el) this.index.upsert(el)
+      else this.index.remove(id)
+    }
+    for (const id of this.selection)
+      if (!this.scene.els.has(id)) this.selection.delete(id)
+    this.changed()
+    return applied.inverse
   }
 
   // The toolbar keeps focus in a text field, so undo/redo can arrive mid-gesture or mid-edit: end it first (a text edit is
@@ -446,7 +476,7 @@ export class Editor {
         z: lastZ,
         style: { ...DEFAULT_STYLE },
         locked: false,
-        author: { kind: 'human', id: 'local' },
+        author: { ...this.author },
         v: 0,
         data: {
           blobId: item.blobId,

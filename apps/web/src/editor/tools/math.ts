@@ -221,7 +221,7 @@ export const mathTool = (ed: Editor): MathTool => {
           z: zBetween(ordered(ed.scene).at(-1)?.z ?? null, null),
           style: { ...DEFAULT_STYLE },
           locked: false,
-          author: { kind: 'human', id: 'local' },
+          author: { ...ed.author },
           v: 0,
           data: { latex: '', display: true, size: DEFAULT_SIZE },
         },

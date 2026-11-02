@@ -55,7 +55,7 @@ export const shapeTool =
           ...(linear ? {} : { fill: NEW_SHAPE_FILL }),
         },
         locked: false,
-        author: { kind: 'human' as const, id: 'local' },
+        author: { ...ed.author },
         v: 0,
       }
       let el: Element

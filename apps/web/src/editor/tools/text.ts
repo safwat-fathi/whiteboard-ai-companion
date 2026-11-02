@@ -190,7 +190,7 @@ export const textTool = (ed: Editor): TextTool => {
           z: zBetween(ordered(ed.scene).at(-1)?.z ?? null, null),
           style: { ...DEFAULT_STYLE },
           locked: false,
-          author: { kind: 'human', id: 'local' },
+          author: { ...ed.author },
           v: 0,
           data: { text: '', size: SIZE, align: 'left', dir: 'auto' },
         },

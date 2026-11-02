@@ -393,3 +393,13 @@ describe('math tool', () => {
     expect([back.w, back.h]).toEqual([m.w, m.h])
   })
 })
+
+describe('author', () => {
+  it('a new equation carries Editor.author', () => {
+    ed.author = { kind: 'human', id: 'owner' }
+    start()
+    type('x^2')
+    cmdEnter()
+    expect(els()[0]?.author).toEqual({ kind: 'human', id: 'owner' })
+  })
+})

@@ -469,3 +469,13 @@ describe('the open draft reaches the snapshot, not the scene', () => {
     expect(area().maxLength).toBe(100_000)
   })
 })
+
+describe('author', () => {
+  it('a new text carries Editor.author', () => {
+    ed.author = { kind: 'human', id: 'owner' }
+    start()
+    type('hello')
+    blur()
+    expect(els()[0]?.author).toEqual({ kind: 'human', id: 'owner' })
+  })
+})

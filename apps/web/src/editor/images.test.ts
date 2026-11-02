@@ -207,6 +207,16 @@ describe('importImage & Editor.addImages', () => {
     expect(stored?.mime).toBe('image/png')
   })
 
+  it('a dropped image carries Editor.author', async () => {
+    t.ed.author = { kind: 'human', id: 'owner' }
+    const r = await t.ed.addImages([fileOf(makePngBytes(120, 80), 'a.png')])
+    expect(r.added).toHaveLength(1)
+    expect(t.ed.scene.els.get(r.added[0] as string)?.author).toEqual({
+      kind: 'human',
+      id: 'owner',
+    })
+  })
+
   it('deduplicates identical drops (1 blob, 2 elements), places 10 files in a 4-col grid in 1 undo step', async () => {
     const png = makePngBytes(120, 80)
     const putSpy = vi.spyOn(IDBObjectStore.prototype, 'put')

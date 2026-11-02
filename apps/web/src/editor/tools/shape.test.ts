@@ -162,3 +162,15 @@ describe('shape tools', () => {
     expect(els()).toEqual([])
   })
 })
+
+describe('author', () => {
+  it('a new shape carries Editor.author', () => {
+    ed.author = { kind: 'human', id: 'owner' }
+    ed.setTool('rect')
+    drag(ed.tool, [
+      [10, 20],
+      [60, 40],
+    ])
+    expect(els()[0]?.author).toEqual({ kind: 'human', id: 'owner' })
+  })
+})
