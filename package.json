@@ -6,6 +6,7 @@
     "build": "pnpm --filter @whiteboard/web build",
     "test": "pnpm -r --if-present test",
     "lint": "biome check .",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p apps/web",
     "e2e": "playwright test"
   },
   "devDependencies": {
