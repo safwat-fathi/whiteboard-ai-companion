@@ -3,6 +3,7 @@ import {
   type Element,
   type Platform,
   type Point,
+  type ShapeData,
 } from '@whiteboard/core'
 import { vi } from 'vitest'
 import { Editor } from './editor'
@@ -15,11 +16,12 @@ const ctx = new Proxy({} as Record<string, unknown>, {
     return true
   },
 })
+const noop = new Proxy({}, { get: () => () => {} })
 const platform: Platform = {
   createCanvas: () => ({ width: 0, height: 0, getContext: () => null }),
   measureText: (_f, t) => t.length * 8,
   registerFont: () => {},
-  createPath2D: () => ({}) as Path2D,
+  createPath2D: () => noop as Path2D,
 }
 
 /** A real Editor in jsdom with a no-op canvas. Call `done()` in afterEach. At zoom 1 and camera 0 screen == world. */
@@ -85,7 +87,7 @@ export const mk = (
   w = 100,
   h = 60,
   extra: {
-    kind?: 'rect' | 'ellipse' | 'arrow' | 'line'
+    kind?: ShapeData['kind']
     rotation?: number
     locked?: boolean
     points?: [number, number][]
@@ -112,6 +114,27 @@ export const mk = (
     ...(extra.start ? { start: extra.start } : {}),
     ...(extra.end ? { end: extra.end } : {}),
   },
+})
+
+export const mkText = (
+  id: string,
+  x: number,
+  y: number,
+  rotation = 0,
+): Element => ({
+  id,
+  type: 'text',
+  x,
+  y,
+  w: 80,
+  h: 28,
+  rotation,
+  z: 'a0',
+  style: { ...DEFAULT_STYLE },
+  locked: false,
+  author: { kind: 'human', id: 'local' },
+  v: 0,
+  data: { text: 'hello', size: 20, align: 'left', dir: 'auto' },
 })
 
 export const put = (ed: Editor, ...els: Element[]) =>

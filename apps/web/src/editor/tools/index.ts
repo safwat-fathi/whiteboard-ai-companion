@@ -25,6 +25,8 @@ export interface Tool {
   /** Called at the start of every Editor frame (camera/viewport may have changed). */
   onFrame?(): void
   onCancel?(): void
+  /** The pointer left the canvas. Drop hover state only: a running gesture holds pointer capture and carries on. */
+  onPointerLeave?(): void
   drawOverlay?(ctx: CanvasRenderingContext2D): void
   /** Navigation-only tools (Hand) keep receiving pointer events and can be selected while the editor is read-only. */
   navigates?: boolean

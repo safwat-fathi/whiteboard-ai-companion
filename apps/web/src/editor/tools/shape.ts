@@ -9,6 +9,7 @@ import {
   zBetween,
 } from '@whiteboard/core'
 import type { Editor } from '../editor'
+import { COLORS } from './highlight'
 import type { Tool } from './index'
 import { bindTo, frame, rebase, shapeAt } from './transform'
 
@@ -146,7 +147,7 @@ export const shapeTool =
       drawOverlay(ctx) {
         if (!from || !to) return
         ctx.save()
-        ctx.strokeStyle = '#4f8cff'
+        ctx.strokeStyle = COLORS.select
         ctx.lineWidth = 1 / ed.camera.zoom
         if (linear) {
           const a = end(from.world, from.snap)

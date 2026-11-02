@@ -106,6 +106,7 @@ export class Editor {
       this.onPointer('move', e),
     )
     on(this.overlay, 'pointerup', (e: PointerEvent) => this.onPointer('up', e))
+    on(this.overlay, 'pointerleave', () => this.tool.onPointerLeave?.())
     on(this.overlay, 'dblclick', (e: MouseEvent) => {
       if (this.readOnly) return
       const screen = this.toScreen(e.clientX, e.clientY)
@@ -199,6 +200,11 @@ export class Editor {
   /** Overlay-only change (selection, marquee, handles, previews): the next frame leaves the scene canvas as it is. */
   invalidateOverlay(): void {
     this.request()
+  }
+
+  /** CSS cursor over the board; '' is the default arrow. Tools set it and reset it in `onCancel`. */
+  setCursor(cursor: string): void {
+    this.overlay.style.cursor = cursor
   }
 
   private request(): void {

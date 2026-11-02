@@ -11,6 +11,7 @@ import {
   toLocal,
 } from '@whiteboard/core'
 import type { Editor } from '../editor'
+import { COLORS, drawGroupBox, drawHighlight, LOOK } from './highlight'
 import type { Tool, ToolEvent } from './index'
 import {
   applyPatch,
@@ -25,7 +26,6 @@ import {
   worldPts,
 } from './transform'
 
-const BLUE = '#4f8cff'
 const HANDLE = 8 // screen px
 const HIT = 6 // screen px
 const ROT = 24 // screen px above the top edge
@@ -56,6 +56,8 @@ type Gesture =
 
 export const selectTool = (ed: Editor): Tool => {
   let g: Gesture | null = null
+  let hover: Id | null = null // element under the pointer while no gesture runs
+  let cam = ed.camera
   const z = () => ed.camera.zoom
   const els = () =>
     [...ed.selection]
@@ -82,6 +84,13 @@ export const selectTool = (ed: Editor): Tool => {
     for (const i of ids) ed.selection.add(i)
     ed.invalidateOverlay()
   }
+  // Only a change of id repaints, and only the overlay.
+  const setHover = (id: Id | null) => {
+    if (id === hover) return
+    hover = id
+    ed.setCursor(id ? 'pointer' : '')
+    ed.invalidateOverlay()
+  }
   const commitPatch = (label: string, el: Element, patch: Patch | null) => {
     const b = patch && buildBatch(ed.scene, label, new Map([[el.id, patch]]))
     if (b) ed.commit(b)
@@ -91,6 +100,7 @@ export const selectTool = (ed: Editor): Tool => {
     id: 'select',
     key: 'v',
     onPointerDown(e: ToolEvent) {
+      setHover(null)
       g = null
       if (e.button !== 0) return
       const sel = single()
@@ -134,7 +144,10 @@ export const selectTool = (ed: Editor): Tool => {
       }
     },
     onPointerMove(e: ToolEvent) {
-      if (!g) return
+      if (!g) {
+        setHover(ed.index.pick(e.world, z(), ed.scene)?.id ?? null)
+        return
+      }
       if (g.k === 'move') {
         if (
           !g.moved &&
@@ -252,23 +265,41 @@ export const selectTool = (ed: Editor): Tool => {
     },
     onCancel() {
       g = null
+      setHover(null)
       ed.invalidateOverlay()
+    },
+    onPointerLeave: () => setHover(null),
+    // A pan or zoom moves the content under a pointer that sent no event: the old hover would be stale. This frame redraws.
+    onFrame() {
+      if (ed.camera === cam) return
+      cam = ed.camera
+      if (!hover) return
+      hover = null
+      ed.setCursor('')
     },
     drawOverlay(ctx) {
       const k = z()
       const m = g?.k === 'move' && g.moved ? g.d : { x: 0, y: 0 }
       ctx.save()
-      ctx.strokeStyle = BLUE
+      const over =
+        hover && !ed.readOnly && !ed.selection.has(hover)
+          ? ed.scene.els.get(hover)
+          : undefined
+      if (over) drawHighlight(ctx, over, k, LOOK.hover)
+      ctx.strokeStyle = COLORS.select
       ctx.fillStyle = '#fff'
       ctx.lineWidth = 1 / k
       const sel = single()
-      for (const el of els()) {
+      const shown = els().map((el) => {
         const live =
           g && 'el' in g && g.el.id === el.id && 'patch' in g && g.patch
             ? applyPatch(el, g.patch)
             : el
-        frame(ctx, live, el.locked ? 0 : m.x, el.locked ? 0 : m.y)
-      }
+        const d = el.locked ? { x: 0, y: 0 } : m
+        return { ...live, x: live.x + d.x, y: live.y + d.y } as Element
+      })
+      for (const el of shown) drawHighlight(ctx, el, k, LOOK.select)
+      if (shown.length > 1) drawGroupBox(ctx, shown, k)
       if (sel && g?.k !== 'move') {
         const el =
           'el' in (g ?? {}) && g && 'patch' in g && g.patch
@@ -305,7 +336,7 @@ export const selectTool = (ed: Editor): Tool => {
         }
       }
       if (g?.k === 'marquee') {
-        ctx.fillStyle = 'rgba(79,140,255,0.12)'
+        ctx.fillStyle = COLORS.marqueeFill
         ctx.fillRect(g.a.x, g.a.y, g.b.x - g.a.x, g.b.y - g.a.y)
         ctx.strokeRect(g.a.x, g.a.y, g.b.x - g.a.x, g.b.y - g.a.y)
       }
