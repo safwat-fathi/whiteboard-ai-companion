@@ -156,7 +156,9 @@ export async function loadBoard(boardId: string): Promise<LoadResult> {
   let undo = raw.undo
   let undoDropped = false
   try {
-    UndoManager.fromJSON(createScene(), undo as never)
+    const m = UndoManager.fromJSON(createScene(), undo as never)
+    undoDropped = m.dropped > 0
+    undo = m.toJSON() // only the entries that passed the batch schema
   } catch {
     undo = undefined
     undoDropped = true

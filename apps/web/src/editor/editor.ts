@@ -5,6 +5,7 @@ import {
   createScene,
   type Element,
   type Id,
+  OpError,
   ordered,
   type Platform,
   type Point,
@@ -163,14 +164,23 @@ export class Editor {
   // committed, then undone), or a later commit would patch an element that undo removed.
   undoOnce(): void {
     this.tool.onCancel?.()
-    const r = this.undo.undo()
-    if (r?.batch.ops.length) this.commit(r.batch, 'undo')
+    this.replay(this.undo.undo(), 'undo')
   }
 
   redoOnce(): void {
     this.tool.onCancel?.()
-    const r = this.undo.redo()
-    if (r?.batch.ops.length) this.commit(r.batch, 'redo')
+    this.replay(this.undo.redo(), 'redo')
+  }
+
+  // An entry loaded from storage can pass the batch schema yet fail element validation when applied (OpError, nothing
+  // changed): the entry is consumed and undo carries on, it never throws.
+  private replay(r: { batch: Batch } | null, kind: 'undo' | 'redo') {
+    if (!r?.batch.ops.length) return
+    try {
+      this.commit(r.batch, kind)
+    } catch (e) {
+      if (!(e instanceof OpError)) throw e
+    }
   }
 
   setTool(id: string): void {

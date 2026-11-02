@@ -172,6 +172,60 @@ describe('corrupt record', () => {
   })
 })
 
+describe('stored undo history is validated entry by entry', () => {
+  const entry = (
+    set: Record<string, unknown>,
+    back: Record<string, unknown>,
+  ) => ({
+    original: {
+      batchId: 'o',
+      label: 'Move',
+      ops: [{ op: 'patch', id: 'a', set }],
+    },
+    inverse: {
+      batchId: 'i',
+      label: 'Undo Move',
+      ops: [{ op: 'patch', id: 'a', set: back }],
+    },
+  })
+  const stored = (undo: unknown) =>
+    rec({ elements: [mk('a', 10, 10)], undo, savedAt: 7 })
+
+  it('drops the bad entries, keeps the good ones, reports undoDropped and keeps a backup', async () => {
+    const good = entry({ x: 10 }, { x: 0 })
+    const undo = {
+      undo: [good, { original: 1 }, null],
+      redo: [],
+      maxDepth: 200,
+    }
+    await raw('local', stored(undo))
+    const p = createPersistence(t.ed, 'local')
+    const r = await p.load()
+    expect(r).toMatchObject({ status: 'ok', dropped: 0, undoDropped: true })
+    expect(t.ed.undo.toJSON().undo).toEqual([good])
+    expect(
+      (await rawKeys()).filter((k) => k.startsWith('local:backup:7-')),
+    ).toHaveLength(1)
+    t.ed.undoOnce()
+    expect((t.ed.scene.els.get('a') as { x: number }).x).toBe(0)
+  })
+
+  it('a stored entry that passes the schema but cannot be applied never makes undo throw', async () => {
+    // the original matches the live element, so the inverse is applied; w must be >= 0, so applying it fails validation
+    const undo = {
+      undo: [entry({ w: 100 }, { w: -1 })],
+      redo: [],
+      maxDepth: 200,
+    }
+    await raw('local', stored(undo))
+    const p = createPersistence(t.ed, 'local')
+    await p.load()
+    expect(() => t.ed.undoOnce()).not.toThrow()
+    expect(t.ed.undo.canUndo).toBe(false) // the entry is consumed
+    expect((t.ed.scene.els.get('a') as { w: number }).w).toBe(100)
+  })
+})
+
 describe('dropped data is backed up before saving starts', () => {
   const original = () =>
     rec({ elements: [mk('a', 0, 0), { id: 'x' }], savedAt: 42 })

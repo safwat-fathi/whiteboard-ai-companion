@@ -92,6 +92,28 @@ const storedKeys = (page: Page) =>
       }),
   )
 
+const GOOD = {
+  id: 'a',
+  type: 'shape',
+  x: 100,
+  y: 100,
+  w: 80,
+  h: 60,
+  rotation: 0,
+  z: 'a0',
+  style: {
+    stroke: '#111111',
+    fill: null,
+    strokeWidth: 2,
+    opacity: 1,
+    dash: 'solid',
+  },
+  locked: false,
+  author: { kind: 'human', id: 'local' },
+  v: 0,
+  data: { kind: 'rect' },
+}
+
 test('a board from a newer version says plainly that changes are not saved', async ({
   page,
 }) => {
@@ -135,32 +157,11 @@ test('invalid elements are dropped with a notice and the stored board is kept as
 }) => {
   await page.goto('/')
   await ready(page)
-  const good = {
-    id: 'a',
-    type: 'shape',
-    x: 100,
-    y: 100,
-    w: 80,
-    h: 60,
-    rotation: 0,
-    z: 'a0',
-    style: {
-      stroke: '#111111',
-      fill: null,
-      strokeWidth: 2,
-      opacity: 1,
-      dash: 'solid',
-    },
-    locked: false,
-    author: { kind: 'human', id: 'local' },
-    v: 0,
-    data: { kind: 'rect' },
-  }
   const stored = {
     version: 1,
     boardId: 'local',
     savedAt: 4242,
-    elements: [good, { id: 'broken' }],
+    elements: [GOOD, { id: 'broken' }],
     camera: { x: 0, y: 0, zoom: 1 },
     undo: { undo: [], redo: [], maxDepth: 200 },
   }
@@ -195,4 +196,38 @@ test('unavailable storage says changes are not saved and offers Retry', async ({
   await expect(
     page.getByRole('alert').filter({ hasText: 'storage' }),
   ).toBeVisible()
+})
+
+test('a malformed stored undo entry is dropped with a notice; the board and the good history load', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await ready(page)
+  const entry = {
+    original: {
+      batchId: 'o',
+      label: 'Move',
+      ops: [{ op: 'patch', id: 'a', set: { x: 100 } }],
+    },
+    inverse: {
+      batchId: 'i',
+      label: 'Undo Move',
+      ops: [{ op: 'patch', id: 'a', set: { x: 60 } }],
+    },
+  }
+  await seed(page, {
+    version: 1,
+    boardId: 'local',
+    savedAt: 99,
+    elements: [{ ...GOOD, x: 100 }],
+    camera: { x: 0, y: 0, zoom: 1 },
+    undo: { undo: [entry, { original: 1 }], redo: [], maxDepth: 200 },
+  })
+  await page.reload()
+  await ready(page)
+  await expect(
+    page.getByRole('status').filter({ hasText: 'undo history' }),
+  ).toContainText('backup')
+  await page.keyboard.press('ControlOrMeta+z')
+  expect(((await elements(page)) as { x: number }[])[0]?.x).toBe(60)
 })

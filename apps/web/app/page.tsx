@@ -89,6 +89,11 @@ export default function Page() {
           text: `${r.dropped} invalid elements were dropped (a backup copy of the stored board was kept)`,
           role: 'status',
         })
+      if (r.status === 'ok' && r.undoDropped)
+        note('undo-dropped', {
+          text: 'Some undo history could not be restored and was dropped (a backup copy of the stored board was kept)',
+          role: 'status',
+        })
       if (r.status === 'unreadable') {
         note('unreadable', {
           text: `${WHY[r.reason]} Changes are NOT being saved.`,

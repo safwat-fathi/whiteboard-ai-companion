@@ -244,4 +244,33 @@ describe('UndoManager', () => {
         .maxDepth,
     ).toBe(200)
   })
+
+  it('fromJSON drops entries that fail the batch schema and counts them', () => {
+    const { scene, um, commit } = setup([shape('a')])
+    commit(batch({ op: 'patch', id: 'a', set: { x: 1 } }))
+    const good = JSON.parse(JSON.stringify(um.toJSON())).undo[0]
+    const empty = { batchId: 'x', label: 'x', ops: [] }
+    const m = UndoManager.fromJSON(scene, {
+      undo: [
+        null,
+        'junk',
+        { original: null, inverse: null },
+        { original: good.original, inverse: empty },
+        {
+          original: { ...good.original, ops: [{ op: 'nope' }] },
+          inverse: good.inverse,
+        },
+        good,
+      ],
+      redo: [good, {}],
+      maxDepth: 200,
+    })
+    expect(m.dropped).toBe(6)
+    expect(m.toJSON().undo).toEqual([good])
+    expect(m.toJSON().redo).toEqual([good])
+    expect(UndoManager.fromJSON(scene, um.toJSON()).dropped).toBe(0)
+    // what survives still undoes
+    const r = m.undo()
+    expect(r?.batch.ops).toHaveLength(1)
+  })
 })

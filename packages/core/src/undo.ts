@@ -1,8 +1,23 @@
 import type { Scene } from './scene'
-import type { Batch, Element, Id, Op } from './schema'
+import {
+  type Batch,
+  BatchSchema,
+  type Element,
+  type Id,
+  type Op,
+} from './schema'
 
 type Entry = { original: Batch; inverse: Batch }
 export type UndoJSON = { undo: Entry[]; redo: Entry[]; maxDepth: number }
+
+// A stored entry is kept only when both its batches pass the batch schema, so undo never meets a malformed one.
+const validEntries = (list: unknown[]): Entry[] =>
+  list.flatMap((e) => {
+    const { original, inverse } = (e ?? {}) as Partial<Entry>
+    const o = BatchSchema.safeParse(original)
+    const i = BatchSchema.safeParse(inverse)
+    return o.success && i.success ? [{ original: o.data, inverse: i.data }] : []
+  })
 
 const eq = (a: unknown, b: unknown): boolean =>
   a === b ||
@@ -37,6 +52,8 @@ function getPath(el: Element, key: string): unknown {
 export class UndoManager {
   private undoS: Entry[] = []
   private redoS: Entry[] = []
+  /** Stored entries `fromJSON` left out because they failed the batch schema. */
+  dropped = 0
 
   constructor(
     private scene: Scene,
@@ -94,8 +111,10 @@ export class UndoManager {
         ? json.maxDepth
         : 200,
     )
-    m.undoS = structuredClone(json.undo)
-    m.redoS = structuredClone(json.redo)
+    m.undoS = structuredClone(validEntries(json.undo))
+    m.redoS = structuredClone(validEntries(json.redo))
+    m.dropped =
+      json.undo.length + json.redo.length - m.undoS.length - m.redoS.length
     return m
   }
 
