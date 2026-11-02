@@ -86,12 +86,14 @@ export const selectTool = (ed: Editor): Tool => {
     for (const i of ids) ed.selection.add(i)
     ed.invalidateOverlay()
   }
-  // Only a change of id repaints, and only the overlay.
+  // A hover is drawn unless the element is selected (drawOverlay). Only a change of what is drawn repaints, and only the overlay.
+  const drawn = (id: Id | null) => !!id && !ed.selection.has(id)
   const setHover = (id: Id | null) => {
     if (id === hover) return
+    const repaint = drawn(hover) || drawn(id)
     hover = id
     ed.setCursor(id ? 'pointer' : '')
-    ed.invalidateOverlay()
+    if (repaint) ed.invalidateOverlay()
   }
   const commitPatch = (label: string, el: Element, patch: Patch | null) => {
     const b = patch && buildBatch(ed.scene, label, new Map([[el.id, patch]]))
@@ -271,13 +273,15 @@ export const selectTool = (ed: Editor): Tool => {
       ed.invalidateOverlay()
     },
     onPointerLeave: () => setHover(null),
-    // A pan or zoom moves the content under a pointer that sent no event: the old hover would be stale. This frame redraws.
+    // A pan or zoom moves the content under a pointer that sent no event, and a delete or undo can remove the hovered
+    // element: the old hover would be stale. This frame redraws.
     onFrame() {
-      if (ed.camera === cam) return
+      const panned = ed.camera !== cam
       cam = ed.camera
-      if (!hover) return
-      hover = null
-      ed.setCursor('')
+      if (hover && (panned || !ed.scene.els.has(hover))) {
+        hover = null
+        ed.setCursor('')
+      }
     },
     drawOverlay(ctx) {
       const k = z()

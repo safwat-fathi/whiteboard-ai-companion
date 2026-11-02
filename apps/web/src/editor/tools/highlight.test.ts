@@ -3,7 +3,7 @@ import { DEFAULT_STYLE, type Element } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '../editor'
 import { drag, mk, mkText, ptr, put, setup } from '../test-utils'
-import { COLORS, GROUP_GAP, LOOK, PAD } from './highlight'
+import { COLORS, drawGroupBox, GROUP_GAP, LOOK, PAD } from './highlight'
 
 let ed: Editor
 let done: () => void
@@ -225,6 +225,29 @@ describe('hover', () => {
     })
     expect(() => draw()).not.toThrow()
     expect(hasStroke(draw(), COLORS.hover)).toBe(false)
+    expect(cursor()).toBe('pointer') // stale until the next frame...
+    flush()
+    expect(cursor()).toBe('') // ...which clears the hover of a deleted element
+    ptr('pointermove', 10, 10) // and a later hover on b works as usual
+    expect(cursor()).toBe('')
+    ptr('pointermove', 210, 10)
+    expect(cursor()).toBe('pointer')
+  })
+
+  it('does not repaint the overlay when neither the old nor the new hover is drawn (selected or none)', () => {
+    drag(ed.tool, [[10, 10]]) // selects a
+    flush()
+    const inv = vi.spyOn(ed, 'invalidateOverlay')
+    ptr('pointermove', 20, 20) // none -> a (selected: no hover highlight is drawn)
+    expect(cursor()).toBe('pointer')
+    ptr('pointermove', 500, 500) // a -> none
+    expect(cursor()).toBe('')
+    expect(inv).not.toHaveBeenCalled()
+    ptr('pointermove', 210, 10) // none -> b: drawn
+    expect(inv).toHaveBeenCalledTimes(1)
+    ptr('pointermove', 20, 20) // b -> a (selected): b's highlight must go
+    expect(inv).toHaveBeenCalledTimes(2)
+    expect(hasStroke(draw(), COLORS.hover)).toBe(false)
   })
 
   it('does not show in a read-only editor', () => {
@@ -351,13 +374,39 @@ describe('selection highlight', () => {
     const ops = draw()
     expect(ops.filter((o) => o.k === 'translate')).toHaveLength(2) // each member outlined
     expect(ops.some((o) => o.k === 'setLineDash' && o.a.length > 0)).toBe(true)
-    const g = GROUP_GAP + PAD
+    const g = DEFAULT_STYLE.strokeWidth / 2 + GROUP_GAP + PAD
     expect(ops.find((o) => o.k === 'strokeRect' && o.a[0] === -g)?.a).toEqual([
       -g,
       -g,
       300 + 2 * g,
       160 + 2 * g,
     ])
+  })
+
+  it.each([0.5, 2])(
+    'the group box clears the outline of the thickest member at zoom %s',
+    (k) => {
+      const thick = {
+        ...mk('a', 0, 0, 100, 60),
+        style: { ...DEFAULT_STYLE, strokeWidth: 40 },
+      }
+      put(ed, thick, mk('b', 200, 100, 100, 60))
+      sel('a', 'b')
+      ed.camera = { x: 0, y: 0, zoom: k }
+      const ops = draw()
+      const box = ops.find((o) => o.k === 'strokeRect')
+      const memberEdge = -(40 / 2 + PAD / k) // a's highlight, left of x = 0
+      expect(box?.a[0]).toBeLessThan(memberEdge)
+      expect(box?.a[0]).toBeCloseTo(-(20 + (PAD + GROUP_GAP) / k), 9)
+    },
+  )
+
+  it('a large selection does not overflow the call stack', () => {
+    const many = Array.from({ length: 150_000 }, (_, i) =>
+      mk(`m${i}`, i, 0, 1, 1),
+    )
+    const r = rec()
+    expect(() => drawGroupBox(r.ctx, many, 1)).not.toThrow()
   })
 })
 

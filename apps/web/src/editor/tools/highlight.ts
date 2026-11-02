@@ -91,25 +91,34 @@ export function drawHighlight(
   ctx.restore()
 }
 
-/** One dashed box around all of `els`, outside their individual highlights. */
+/**
+ * One dashed box around all of `els`, outside their individual highlights: padded by the thickest shape's half stroke
+ * (bounds() leaves it out for closed shapes) plus the highlight gap and `GROUP_GAP`, so it never touches a member's outline.
+ */
 export function drawGroupBox(
   ctx: CanvasRenderingContext2D,
   els: Element[],
   k: number,
 ) {
-  const r = els.map(bounds)
-  const g = (PAD + GROUP_GAP) / k
-  const x = Math.min(...r.map((b) => b.minX)) - g
-  const y = Math.min(...r.map((b) => b.minY)) - g
+  // A loop, not Math.min(...spread): a huge selection would overflow the argument limit.
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  let stroke = 0
+  for (const el of els) {
+    const b = bounds(el)
+    minX = Math.min(minX, b.minX)
+    minY = Math.min(minY, b.minY)
+    maxX = Math.max(maxX, b.maxX)
+    maxY = Math.max(maxY, b.maxY)
+    if (el.type === 'shape') stroke = Math.max(stroke, el.style.strokeWidth)
+  }
+  const g = stroke / 2 + (PAD + GROUP_GAP) / k
   ctx.save()
   ctx.strokeStyle = COLORS.select
   ctx.lineWidth = 1.5 / k
   ctx.setLineDash([6 / k, 4 / k])
-  ctx.strokeRect(
-    x,
-    y,
-    Math.max(...r.map((b) => b.maxX)) + g - x,
-    Math.max(...r.map((b) => b.maxY)) + g - y,
-  )
+  ctx.strokeRect(minX - g, minY - g, maxX - minX + 2 * g, maxY - minY + 2 * g)
   ctx.restore()
 }
