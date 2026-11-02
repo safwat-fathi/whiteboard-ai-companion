@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   type Batch,
+  cameraFor,
   DEFAULT_STYLE,
   type Element,
   type Op,
@@ -41,7 +42,7 @@ const platform: Platform = {
   createCanvas: () => ({ width: 0, height: 0, getContext: () => null }),
   measureText: (_f, t) => t.length * 8,
   registerFont: () => {},
-  createPath2D: () => ({}) as Path2D,
+  createPath2D: () => new Proxy({}, { get: () => () => {} }) as Path2D,
 }
 
 let frames: FrameRequestCallback[] = []
@@ -445,5 +446,101 @@ describe('Editor', () => {
     expect(listeners).toHaveLength(1) // re-armed
     e2.dispose()
     h2.remove()
+  })
+
+  describe('flyTo and pulse', () => {
+    const runNextFrame = (now: number) => {
+      vi.spyOn(performance, 'now').mockReturnValue(now)
+      const cb = frames.shift()
+      cb?.(now)
+    }
+
+    it('flyTo resolves done with the camera equal to the target', async () => {
+      ed.viewport = { width: 800, height: 600, dpr: 1 }
+      vi.spyOn(performance, 'now').mockReturnValue(1000)
+      const targetRect = { minX: 400, minY: 300, maxX: 600, maxY: 450 }
+      const expected = cameraFor(targetRect, ed.viewport)
+
+      const p = ed.flyTo(targetRect, { duration: 400 })
+      runNextFrame(1200) // mid-flight (t = 0.5)
+      expect(ed.camera.x).not.toBe(0)
+      expect(ed.camera).not.toEqual(expected)
+
+      runNextFrame(1400) // end of flight (t = 1)
+      expect(await p).toBe('done')
+      expect(ed.camera).toEqual(expected)
+    })
+
+    it('a wheel event mid-flight resolves cancelled and leaves the camera where it was', async () => {
+      ed.viewport = { width: 800, height: 600, dpr: 1 }
+      vi.spyOn(performance, 'now').mockReturnValue(1000)
+      const p = ed.flyTo(
+        { minX: 1000, minY: 1000, maxX: 1200, maxY: 1200 },
+        { duration: 400 },
+      )
+      runNextFrame(1200)
+      const midCam = { ...ed.camera }
+
+      host.dispatchEvent(
+        new WheelEvent('wheel', { deltaX: 0, deltaY: 0, cancelable: true }),
+      )
+      expect(await p).toBe('cancelled')
+      expect(ed.camera).toEqual(midCam)
+    })
+
+    it('a second flyTo replaces the first', async () => {
+      ed.viewport = { width: 800, height: 600, dpr: 1 }
+      vi.spyOn(performance, 'now').mockReturnValue(1000)
+      const p1 = ed.flyTo(
+        { minX: 500, minY: 500, maxX: 700, maxY: 700 },
+        { duration: 400 },
+      )
+      const secondRect = { minX: 2000, minY: 1500, maxX: 2200, maxY: 1700 }
+      const p2 = ed.flyTo(secondRect, { duration: 400 })
+      expect(await p1).toBe('cancelled')
+
+      runNextFrame(1400)
+      expect(await p2).toBe('done')
+      expect(ed.camera).toEqual(cameraFor(secondRect, ed.viewport))
+    })
+
+    it('prefers-reduced-motion: reduce jumps in the same call', async () => {
+      ed.viewport = { width: 800, height: 600, dpr: 1 }
+      vi.stubGlobal('matchMedia', (q: string) => ({
+        matches: q.includes('prefers-reduced-motion'),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }))
+      const rect = { minX: 300, minY: 200, maxX: 500, maxY: 400 }
+      const res = await ed.flyTo(rect)
+      expect(res).toBe('done')
+      expect(ed.camera).toEqual(cameraFor(rect, ed.viewport))
+    })
+
+    it('pulse of a deleted id does not throw, and neither flyTo nor pulse marks dirty or adds undo', async () => {
+      ed.viewport = { width: 800, height: 600, dpr: 1 }
+      ed.commit(add('a'))
+      const undoBefore = ed.undo.toJSON()
+      const changed = vi.fn()
+      ed.onChange(changed)
+
+      vi.spyOn(performance, 'now').mockReturnValue(1000)
+      ed.pulse(['a', 'missing-id'])
+      expect(() => runNextFrame(1100)).not.toThrow()
+
+      // Delete 'a' while pulse is active
+      ed.scene.els.delete('a')
+      expect(() => runNextFrame(1300)).not.toThrow()
+
+      const p = ed.flyTo(
+        { minX: 100, minY: 100, maxX: 200, maxY: 200 },
+        { duration: 300 },
+      )
+      runNextFrame(1600)
+      expect(await p).toBe('done')
+
+      expect(changed).not.toHaveBeenCalled()
+      expect(ed.undo.toJSON()).toEqual(undoBefore)
+    })
   })
 })

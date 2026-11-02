@@ -2,17 +2,22 @@ import {
   applyBatch,
   type Batch,
   type BlobStore,
+  boundsOf,
   type Camera,
   cacheBudgetBytes,
+  cameraFor,
   createScene,
   DEFAULT_STYLE,
   type Element,
+  flightCamera,
+  flightDuration,
   type Id,
   newId,
   OpError,
   ordered,
   type Platform,
   type Point,
+  type Rect,
   RenderCache,
   type RenderStats,
   render,
@@ -89,6 +94,15 @@ export class Editor {
   private panning: Point | null = null
   private off: (() => void)[] = []
   private unDpr?: () => void
+  private flight: {
+    sample: (t: number) => Camera
+    to: Camera
+    start: number
+    duration: number
+    resolve: (r: 'done' | 'cancelled') => void
+  } | null = null
+  private pulses: { target: Rect | Id[]; start: number; reduced: boolean }[] =
+    []
 
   constructor(
     readonly host: HTMLElement,
@@ -259,6 +273,7 @@ export class Editor {
     const next = this.tools[id]
     if (!next) throw new Error(`unknown tool: ${id}`)
     if (next === this.tool) return
+    this.cancelFlight()
     this.tool.onCancel?.()
     this.tool = next
     this.invalidate()
@@ -486,6 +501,7 @@ export class Editor {
 
   /** Replaces the board contents; undo history is reset unless `undo` JSON is given. */
   setScene(elements: Element[], camera?: Camera, undo?: UndoJSON): void {
+    this.cancelFlight()
     this.scene.els = createScene(elements).els
     this.index.load(elements)
     this.undo = undo
@@ -495,6 +511,75 @@ export class Editor {
     this.cache.dispose()
     if (camera) this.camera = camera
     this.changed()
+  }
+
+  private isReducedMotion(): boolean {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    )
+  }
+
+  private resolveTargetRect(target: Rect | Id[]): Rect | null {
+    if (Array.isArray(target)) {
+      const rects = target
+        .map((id) => this.scene.els.get(id))
+        .filter((e): e is Element => !!e)
+        .map((el) => boundsOf(el))
+      if (!rects.length) return null
+      return {
+        minX: Math.min(...rects.map((r) => r.minX)),
+        minY: Math.min(...rects.map((r) => r.minY)),
+        maxX: Math.max(...rects.map((r) => r.maxX)),
+        maxY: Math.max(...rects.map((r) => r.maxY)),
+      }
+    }
+    return target
+  }
+
+  cancelFlight(): void {
+    if (!this.flight) return
+    const f = this.flight
+    this.flight = null
+    f.resolve('cancelled')
+  }
+
+  flyTo(
+    target: Rect | Id[],
+    opts?: { padding?: number; maxZoom?: number; duration?: number },
+  ): Promise<'done' | 'cancelled'> {
+    this.cancelFlight()
+    const rect = this.resolveTargetRect(target)
+    if (!rect) return Promise.resolve('done')
+    const to = cameraFor(rect, this.viewport, {
+      padding: opts?.padding,
+      maxZoom: opts?.maxZoom,
+    })
+    if (this.isReducedMotion() || opts?.duration === 0) {
+      this.camera = to
+      this.invalidate()
+      return Promise.resolve('done')
+    }
+    const duration = Math.max(
+      1,
+      opts?.duration ?? flightDuration(this.camera, to, this.viewport),
+    )
+    const sample = flightCamera(this.camera, to, this.viewport)
+    const start = performance.now()
+    return new Promise<'done' | 'cancelled'>((resolve) => {
+      this.flight = { sample, to, start, duration, resolve }
+      this.invalidate()
+    })
+  }
+
+  pulse(target: Rect | Id[]): void {
+    this.pulses.push({
+      target: Array.isArray(target) ? [...target] : { ...target },
+      start: performance.now(),
+      reduced: this.isReducedMotion(),
+    })
+    this.invalidateOverlay()
   }
 
   /** Tells change listeners (autosave) that the saved board is stale without committing anything (an open text draft). */
@@ -541,6 +626,8 @@ export class Editor {
   }
 
   dispose(): void {
+    this.cancelFlight()
+    this.pulses.length = 0
     this.tool.onCancel?.()
     this.disposed = true
     this.unDpr?.()
@@ -603,6 +690,21 @@ export class Editor {
 
   private frame() {
     const { width, height, dpr } = this.viewport
+    const now = performance.now()
+    let settledFlight: (() => void) | undefined
+    if (this.flight) {
+      const t = Math.min(
+        1,
+        Math.max(0, (now - this.flight.start) / this.flight.duration),
+      )
+      this.camera = t >= 1 ? this.flight.to : this.flight.sample(t)
+      this.sceneDirty = true
+      if (t >= 1) {
+        const f = this.flight
+        this.flight = null
+        settledFlight = () => f.resolve('done')
+      }
+    }
     this.tool.onFrame?.()
     const sctx = this.sceneCanvas.getContext('2d')
     if (sctx && this.sceneDirty) {
@@ -632,11 +734,57 @@ export class Editor {
       const s = this.camera.zoom * dpr
       octx.setTransform(s, 0, 0, s, -this.camera.x * s, -this.camera.y * s)
       this.tool.drawOverlay?.(octx)
+      if (this.pulses.length) {
+        const PULSE_MS = 1200
+        const k = this.camera.zoom
+        const active: typeof this.pulses = []
+        octx.save()
+        octx.strokeStyle = '#1a56db'
+        octx.lineWidth = 2 / k
+        for (const p of this.pulses) {
+          const elapsed = now - p.start
+          if (elapsed >= PULSE_MS) continue
+          const rect = this.resolveTargetRect(p.target)
+          if (!rect) continue
+          active.push(p)
+          const rw = rect.maxX - rect.minX
+          const rh = rect.maxY - rect.minY
+          if (p.reduced) {
+            const pad = 6 / k
+            octx.globalAlpha = 0.85
+            octx.strokeRect(
+              rect.minX - pad,
+              rect.minY - pad,
+              rw + pad * 2,
+              rh + pad * 2,
+            )
+          } else {
+            const u = Math.max(0, elapsed / PULSE_MS)
+            for (const offset of [0, 0.25]) {
+              const phase = (u - offset) / (1 - offset)
+              if (phase < 0 || phase > 1) continue
+              const pad = (4 + phase * 20) / k
+              octx.globalAlpha = Math.max(0, 1 - phase)
+              octx.strokeRect(
+                rect.minX - pad,
+                rect.minY - pad,
+                rw + pad * 2,
+                rh + pad * 2,
+              )
+            }
+          }
+        }
+        octx.restore()
+        this.pulses = active
+      }
     }
+    if (this.flight || this.pulses.length > 0) this.request()
+    settledFlight?.()
   }
 
   private onWheel(e: WheelEvent) {
     e.preventDefault()
+    this.cancelFlight()
     const unit =
       e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.viewport.height : 1
     const dx = e.deltaX * unit
@@ -655,6 +803,7 @@ export class Editor {
   }
 
   private onPointer(kind: 'down' | 'move' | 'up', e: PointerEvent) {
+    if (kind === 'down') this.cancelFlight()
     const screen = this.toScreen(e.clientX, e.clientY)
     if (this.panning || (kind === 'down' && this.space)) {
       if (kind === 'down') {
@@ -684,6 +833,7 @@ export class Editor {
 
   private onKeyDown(e: KeyboardEvent) {
     if (typing(e.target)) return
+    this.cancelFlight()
     const mod = e.ctrlKey || e.metaKey
     const k = shortcutKey(e) // the physical key on a non-Latin layout, so Arabic typists keep R/V/T and Ctrl+Z
     if (e.code === 'Space') {
