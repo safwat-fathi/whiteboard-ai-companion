@@ -44,7 +44,7 @@ export class Editor {
   readOnly = false
   viewport: Viewport = { width: 0, height: 0, dpr: 1 }
 
-  private index = new SpatialIndex()
+  readonly index = new SpatialIndex() // tools read it (pick/search)
   private cache = new RenderCache()
   private platform: Platform
   private listeners = new Set<() => void>()

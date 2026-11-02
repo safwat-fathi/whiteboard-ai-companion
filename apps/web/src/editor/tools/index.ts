@@ -1,6 +1,8 @@
 import type { Point } from '@whiteboard/core'
 import type { Editor } from '../editor'
 import { handTool } from './hand'
+import { selectTool } from './select'
+import { shapeTool } from './shape'
 
 export type ToolEvent = {
   world: Point
@@ -25,4 +27,13 @@ export interface Tool {
 }
 
 /** A new tool is one file plus one entry here. Each Editor instantiates every factory once; tool state lives in the closure. */
-export const tools: Record<string, (ed: Editor) => Tool> = { hand: handTool }
+export const tools: Record<string, (ed: Editor) => Tool> = {
+  hand: handTool,
+  select: selectTool,
+  rect: shapeTool('rect'),
+  ellipse: shapeTool('ellipse'),
+  diamond: shapeTool('diamond'),
+  triangle: shapeTool('triangle'),
+  line: shapeTool('line'),
+  arrow: shapeTool('arrow'),
+}

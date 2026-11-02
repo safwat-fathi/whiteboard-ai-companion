@@ -158,7 +158,7 @@ describe('Editor', () => {
 
   const stub = (onCancel = () => {}, navigates = false) => ({
     id: 'other',
-    key: 'o',
+    key: 'q',
     navigates,
     onPointerDown() {},
     onPointerMove() {},
@@ -265,7 +265,7 @@ describe('Editor', () => {
 
   it('tool keys come from the registry', () => {
     ed.tools.other = stub()
-    key('o')
+    key('q')
     expect(ed.tool.id).toBe('other')
     key('h')
     expect(ed.tool.id).toBe('hand')
@@ -284,7 +284,7 @@ describe('Editor', () => {
     key('h')
     expect(ed.tool.id).toBe('hand')
     ed.tools.other = stub()
-    key('o')
+    key('q')
     expect(ed.tool.id).toBe('hand')
   })
 
