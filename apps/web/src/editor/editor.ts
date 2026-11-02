@@ -59,6 +59,7 @@ export class Editor {
   readonly platform: Platform
   private listeners = new Set<() => void>()
   private camListeners = new Set<() => void>()
+  private toolListeners = new Set<() => void>()
   private sceneCanvas = canvas(0)
   private overlay = canvas(1)
   private ro?: ResizeObserver
@@ -174,6 +175,7 @@ export class Editor {
     this.tool.onCancel?.()
     this.tool = next
     this.invalidate()
+    for (const fn of this.toolListeners) fn()
   }
 
   /** Enters edit mode for a text element (double-click / Enter in the select tool). */
@@ -212,6 +214,12 @@ export class Editor {
   onCameraChange(fn: () => void): () => void {
     this.camListeners.add(fn)
     return () => this.camListeners.delete(fn)
+  }
+
+  /** Fires when the active tool changes, whoever changed it (a shortcut, a tool finishing, the toolbar). */
+  onToolChange(fn: () => void): () => void {
+    this.toolListeners.add(fn)
+    return () => this.toolListeners.delete(fn)
   }
 
   /** Replaces the board contents; undo history is reset unless `undo` JSON is given. */
@@ -268,6 +276,7 @@ export class Editor {
     this.overlay.remove()
     this.listeners.clear()
     this.camListeners.clear()
+    this.toolListeners.clear()
   }
 
   private cameraChanged() {
@@ -421,7 +430,12 @@ export class Editor {
     } else if (mod && k === 'y') {
       e.preventDefault()
       if (!this.readOnly) this.redoOnce()
-    } else if (!this.readOnly && this.tool.onKey?.(e)) {
+    } else if (
+      !this.readOnly &&
+      // A focused button keeps Enter (like Space above) so it can be pressed from the keyboard.
+      !(e.key === 'Enter' && e.target instanceof HTMLButtonElement) &&
+      this.tool.onKey?.(e)
+    ) {
       e.preventDefault()
     } else if (!mod && !e.altKey) {
       const t = Object.values(this.tools).find((t) => t.key === k)

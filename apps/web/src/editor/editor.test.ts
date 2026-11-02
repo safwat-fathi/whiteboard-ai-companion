@@ -327,6 +327,19 @@ describe('Editor', () => {
     expect(ed.camera.x).toBe(10)
   })
 
+  it('a focused button keeps Enter, so a keyboard user can press a toolbar button', () => {
+    const onKey = vi.fn(() => true)
+    ed.tools.other = { ...stub(), onKey }
+    ed.tool = ed.tools.other
+    const btn = document.createElement('button')
+    document.body.append(btn)
+    expect(key('Enter', {}, btn)).toBe(true) // not prevented
+    expect(onKey).not.toHaveBeenCalled()
+    btn.remove()
+    expect(key('Enter')).toBe(false) // body: the tool claims it
+    expect(onKey).toHaveBeenCalledTimes(1)
+  })
+
   it('normalises wheel deltaMode lines', () => {
     host.dispatchEvent(
       new WheelEvent('wheel', { deltaY: 2, deltaMode: 1, cancelable: true }),

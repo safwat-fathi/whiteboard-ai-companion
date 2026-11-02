@@ -10,12 +10,18 @@ import {
 } from '../src/editor/persist'
 import { browserPlatform } from '../src/editor/platform'
 import { type Note, Notices } from './Notice'
+import { Toolbar } from './Toolbar'
 
 const BOARD = 'local'
 
 export default function Page() {
   const host = useRef<HTMLDivElement>(null)
   const [notes, setNotes] = useState<Note[]>([])
+  // Set once the stored board is loaded; null while loading.
+  const [board, setBoard] = useState<{
+    editor: Editor
+    readOnly: boolean
+  } | null>(null)
   useEffect(() => {
     const note = (key: string, n: Omit<Note, 'key'> | null) =>
       setNotes((all) => [
@@ -47,6 +53,7 @@ export default function Page() {
       const r = await p.load()
       if (stop) return
       editor.readOnly = !locked
+      setBoard({ editor, readOnly: !locked })
       // Published after load so tests wait for the stored board.
       // Test hook for Playwright; absent from production builds.
       if (process.env.NODE_ENV !== 'production')
@@ -98,6 +105,10 @@ export default function Page() {
     <>
       <div ref={host} style={{ position: 'fixed', inset: 0 }} />
       <Notices notes={notes} />
+      <Toolbar
+        editor={board?.editor ?? null}
+        readOnly={board?.readOnly ?? true}
+      />
     </>
   )
 }

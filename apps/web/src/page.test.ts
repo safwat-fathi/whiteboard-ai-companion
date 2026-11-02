@@ -9,6 +9,11 @@ const order: string[] = []
 vi.mock('./editor/editor', () => ({
   Editor: class {
     readOnly = false
+    tool = { id: 'hand' }
+    tools = {}
+    onToolChange() {
+      return () => {}
+    }
     dispose() {}
   },
 }))
