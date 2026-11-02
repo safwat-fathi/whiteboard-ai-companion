@@ -238,6 +238,10 @@ describe('dropped data is backed up before saving starts', () => {
     const r = await p.load()
     expect(r).toMatchObject({ status: 'ok', dropped: 1 })
     expect([...t.ed.scene.els.keys()]).toEqual(['a'])
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 5000)
+    await createPersistence(t.ed, 'local').load() // reloaded before any save: the same backup key, not a second copy
+    vi.useRealTimers()
     const [key, ...more] = await backupKeys()
     expect(more).toEqual([])
     expect(await rawGet(key as string)).toEqual(original())

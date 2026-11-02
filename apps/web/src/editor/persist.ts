@@ -117,10 +117,14 @@ const clampCamera = (c: Camera): Camera => ({
   zoom: Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, c.zoom)),
 })
 
-/** Copies a stored record to `${boardId}:backup:${savedAt}-${now}`; rejects when the write fails. */
-const backup = (boardId: string, raw: unknown) => {
+/** Copies a stored record to `${boardId}:backup:${savedAt}-${tag}`; rejects when the write fails. */
+const backup = (
+  boardId: string,
+  raw: unknown,
+  tag: string | number = Date.now(),
+) => {
   const at = isObj(raw) && Number(raw.savedAt) ? raw.savedAt : Date.now()
-  return put(`${boardId}:backup:${at}-${Date.now()}`, raw)
+  return put(`${boardId}:backup:${at}-${tag}`, raw)
 }
 
 export function saveBoard(boardId: string, record: BoardRecord): Promise<void> {
@@ -307,7 +311,7 @@ export function createPersistence(
       // Saving would erase what was dropped for good: keep the stored record first. If that fails, stay blocked, board untouched.
       if (r.status === 'ok' && canWrite && (r.dropped || r.undoDropped))
         try {
-          await backup(boardId, r.raw)
+          await backup(boardId, r.raw, 'dropped') // a fixed tag: reloading before the next save rewrites the same key
         } catch {
           r = { status: 'unreadable', reason: 'unavailable', raw: r.raw }
         }
