@@ -34,6 +34,7 @@ export function browserPlatform(): Platform {
     },
     // Fonts are loaded via CSS/document.fonts (see fonts.ts).
     registerFont: () => {},
-    createPath2D: () => new Path2D(),
+    createPath2D: (d?: string) =>
+      d === undefined ? new Path2D() : new Path2D(d),
   }
 }

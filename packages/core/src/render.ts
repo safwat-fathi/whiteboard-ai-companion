@@ -1,6 +1,13 @@
 import { bounds, type Point, type Rect, routeArrow } from './geometry'
 import type { SpatialIndex } from './index'
-import { type CanvasLike, FONT_STACK, type Platform } from './platform'
+import {
+  type CanvasLike,
+  FONT_STACK,
+  type MathBitmapSource,
+  type MathPaths,
+  type MathProvider,
+  type Platform,
+} from './platform'
 import { ordered, type Scene } from './scene'
 import {
   type Camera,
@@ -207,6 +214,218 @@ type TextBitmap = {
   close(): void
 }
 
+type MathEl = Element & { type: 'math' }
+type MathBitmap = {
+  bmp: MathBitmapSource
+  dx: number
+  dy: number
+  dw: number
+  dh: number
+  close(): void
+}
+
+const mathPending = new WeakMap<MathProvider, Set<string>>()
+
+function drawPlaceholder(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  scale: number,
+  label?: string,
+  platform?: Platform,
+) {
+  ctx.save()
+  ctx.fillStyle = 'rgba(148, 163, 184, 0.12)'
+  ctx.fillRect(x, y, w, h)
+  ctx.strokeStyle = '#64748b'
+  ctx.lineWidth = Math.max(1 / scale, 1)
+  ctx.setLineDash([4 / scale, 4 / scale])
+  ctx.strokeRect(x, y, w, h)
+  if (label && platform) {
+    const fontSize = Math.min(14, Math.max(8, Math.min(w, h) * 0.22))
+    ctx.font = `${fontSize}px ${FONT_STACK}`
+    ctx.fillStyle = '#475569'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(label, x + w / 2, y + h / 2)
+  }
+  ctx.restore()
+}
+
+function drawVectorMath(
+  ctx: CanvasRenderingContext2D,
+  mp: MathPaths,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: string,
+  platform: Platform,
+) {
+  const [vx, vy, vw, vh] = mp.viewBox
+  if (vw <= 0 || vh <= 0) return
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(w / vw, h / vh)
+  ctx.translate(-vx, -vy)
+  for (const item of mp.items) {
+    ctx.save()
+    const [a, b, c, d, e, f] = item.m
+    ctx.transform(a, b, c, d, e, f)
+    ctx.fillStyle = item.fill === 'currentColor' ? color : item.fill
+    ctx.fill(platform.createPath2D(item.d))
+    ctx.restore()
+  }
+  ctx.restore()
+}
+
+function drawMathError(
+  ctx: CanvasRenderingContext2D,
+  el: MathEl,
+  platform: Platform,
+  scale: number,
+) {
+  const { x, y, w, h } = el
+  ctx.save()
+  ctx.fillStyle = 'rgba(220, 38, 38, 0.08)'
+  ctx.fillRect(x, y, w, h)
+  ctx.strokeStyle = '#dc2626'
+  ctx.lineWidth = Math.max(1 / scale, 1)
+  ctx.setLineDash([3 / scale, 3 / scale])
+  ctx.strokeRect(x, y, w, h)
+
+  const fontSize = Math.max(10, Math.min(16, el.data.size * 0.6))
+  const font = `${fontSize}px ${FONT_STACK}`
+  ctx.font = font
+  ctx.fillStyle = '#dc2626'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  ctx.direction = 'ltr'
+
+  const pad = 4
+  const maxW = Math.max(8, w - pad * 2)
+  const src = el.data.latex
+  const lines: string[] = []
+  let cur = ''
+  for (const ch of src) {
+    const next = cur + ch
+    if (cur.length > 0 && platform.measureText(font, next) > maxW) {
+      lines.push(cur)
+      cur = ch
+    } else {
+      cur = next
+    }
+  }
+  if (cur) lines.push(cur)
+
+  const lh = fontSize * 1.3
+  for (let i = 0; i < lines.length; i++) {
+    const ly = y + pad + i * lh
+    if (ly + fontSize > y + h + 2 && i > 0) break
+    ctx.fillText(lines[i] as string, x + pad, ly)
+  }
+  ctx.restore()
+}
+
+function drawMath(
+  ctx: CanvasRenderingContext2D,
+  el: MathEl,
+  platform: Platform,
+  scale: number,
+  cache?: RenderCache,
+) {
+  const bucket = zoomBucket(scale)
+  const hit = cache?.get<MathBitmap>(bucket, el.id, el.v)
+  if (hit) {
+    ctx.drawImage(hit.bmp, el.x + hit.dx, el.y + hit.dy, hit.dw, hit.dh)
+    return
+  }
+
+  const provider = platform.math
+  const { latex, display } = el.data
+  const color = el.style.stroke
+  const rKey = `${display ? 1 : 0}|${color}|${latex}`
+  const entry = provider?.peek(latex, display, color)
+  if (!entry) {
+    drawPlaceholder(ctx, el.x, el.y, el.w, el.h, scale)
+    if (provider) {
+      let pend = mathPending.get(provider)
+      if (!pend) {
+        pend = new Set()
+        mathPending.set(provider, pend)
+      }
+      if (!pend.has(rKey)) {
+        pend.add(rKey)
+        provider.request(latex, display, color, () => {
+          pend?.delete(rKey)
+        })
+      }
+    }
+    return
+  }
+  mathPending.get(provider as MathProvider)?.delete(rKey)
+
+  if (!entry.ok) {
+    drawMathError(ctx, el, platform, scale)
+    return
+  }
+
+  const emW = Math.max(1e-6, entry.width)
+  const emH = Math.max(1e-6, entry.height + entry.depth)
+  const worldPerEm = Math.min(el.w / emW, el.h / emH)
+  const dw = emW * worldPerEm
+  const dh = emH * worldPerEm
+  const dx = (el.w - dw) / 2
+  const dy = (el.h - dh) / 2
+  const pxPerEm = worldPerEm * bucket
+  const pw = Math.max(1, Math.ceil(dw * bucket))
+  const ph = Math.max(1, Math.ceil(dh * bucket))
+
+  if (pw > MAX_BITMAP || ph > MAX_BITMAP) {
+    const mp = entry.paths()
+    if (mp) {
+      drawVectorMath(ctx, mp, el.x + dx, el.y + dy, dw, dh, color, platform)
+      return
+    }
+    const maxEm = Math.max(emW, emH)
+    const cappedPxPerEm = Math.max(1, Math.floor(MAX_BITMAP / maxEm))
+    const bmp = entry.bitmapFor(cappedPxPerEm)
+    if (bmp) {
+      ctx.drawImage(bmp, el.x + dx, el.y + dy, dw, dh)
+      bmp.close?.()
+    }
+    return
+  }
+
+  const bmp = entry.bitmapFor(pxPerEm)
+  if (!bmp) {
+    const mp = entry.paths()
+    if (mp) {
+      drawVectorMath(ctx, mp, el.x + dx, el.y + dy, dw, dh, color, platform)
+    } else {
+      drawPlaceholder(ctx, el.x, el.y, el.w, el.h, scale)
+    }
+    return
+  }
+
+  if (cache) {
+    const item: MathBitmap = {
+      bmp,
+      dx,
+      dy,
+      dw,
+      dh,
+      close() {
+        bmp.close?.()
+      },
+    }
+    cache.set(bucket, el.id, el.v, item, pw * ph * 4)
+  }
+  ctx.drawImage(bmp, el.x + dx, el.y + dy, dw, dh)
+}
+
 // Geometry in world space, built once per element object (elements are replaced, never mutated). Keyed per platform
 // because a Path2D from one platform's constructor is not valid on another's context.
 const paths = new WeakMap<Platform, WeakMap<Element, Path2D>>()
@@ -366,7 +585,7 @@ export function render(
   for (const el of visible) {
     // save/restore (and the dash array) only for elements that change alpha, dash or transform: at 5,000 elements
     // they cost about a third of a frame's JS time (task 12). Plain elements set every style they use.
-    if (el.type === 'text') {
+    if (el.type === 'text' || el.type === 'math') {
       const state = el.rotation !== 0 || el.style.opacity !== 1
       if (state) {
         ctx.save()
@@ -379,7 +598,8 @@ export function render(
           ctx.translate(-cx, -cy)
         }
       }
-      drawText(ctx, el, platform, s, opts.cache)
+      if (el.type === 'text') drawText(ctx, el, platform, s, opts.cache)
+      else drawMath(ctx, el, platform, s, opts.cache)
       if (state) ctx.restore()
       drawn++
       continue

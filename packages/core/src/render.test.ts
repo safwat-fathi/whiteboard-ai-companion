@@ -1,10 +1,13 @@
-import { createCanvas } from '@napi-rs/canvas'
-import { describe, expect, it } from 'vitest'
+import { createCanvas, loadImage } from '@napi-rs/canvas'
+import { describe, expect, it, vi } from 'vitest'
+import { fixViewBox, renderMath } from '../../math/src/index'
+import { createNodeMathProvider, rasterizeSvgNode } from '../../math/src/node'
+import equations from '../../math/test/fixtures/equations.json'
 import { matchesGolden } from '../test/matchesGolden'
-import { bounds } from './geometry'
+import { bounds, fitMath } from './geometry'
 import { SpatialIndex } from './index'
-import { nodePlatform } from './node'
-import type { Platform } from './platform'
+import { nodePlatform, registerBundledFonts } from './node'
+import type { MathEntry, MathProvider, Platform } from './platform'
 import {
   RenderCache,
   render,
@@ -477,5 +480,352 @@ describe('bound arrowheads', () => {
     expect(calls).toContain('lineTo 300.000 230.000')
     expect(calls).toContain(wing(2.6))
     expect(calls).toContain(wing(-2.6))
+  })
+})
+
+function mathEl(
+  id: string,
+  over: Partial<Element & { type: 'math' }> = {},
+): Element {
+  const base = mk(id, { x: 20, y: 20, w: 120, h: 60 })
+  return {
+    ...base,
+    type: 'math',
+    ...over,
+    data: {
+      latex: '\\frac{a}{b}',
+      display: true,
+      size: 28,
+      ...(over.data ?? {}),
+    },
+  } as Element
+}
+
+function nonWhitePixels(c: ReturnType<typeof canvas>['c']): number {
+  const data = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+  let count = 0
+  for (let i = 0; i < data.length; i += 4) {
+    if (
+      (data[i] ?? 255) < 250 ||
+      (data[i + 1] ?? 255) < 250 ||
+      (data[i + 2] ?? 255) < 250
+    )
+      count++
+  }
+  return count
+}
+
+describe('math rendering', () => {
+  registerBundledFonts()
+
+  it('draws placeholder on miss and calls request once across 10 frames', () => {
+    const request = vi.fn()
+    const provider: MathProvider = {
+      peek: () => undefined,
+      request,
+    }
+    const p: Platform = { ...platform, math: provider }
+    const scene = createScene([mathEl('m1')])
+    const { c, ctx } = canvas()
+    for (let i = 0; i < 10; i++) {
+      render(ctx, scene, cam, vp, p)
+    }
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(nonWhitePixels(c)).toBeGreaterThan(20)
+  })
+
+  it('draws ready result and hits RenderCache on second frame without calling bitmapFor again', () => {
+    const bmpCanvas = createCanvas(120, 60)
+    const bctx = bmpCanvas.getContext('2d')
+    bctx.fillStyle = '#1e1e1e'
+    bctx.fillRect(10, 10, 100, 40)
+    let closed = 0
+    const bitmapFor = vi.fn(() =>
+      Object.assign(bmpCanvas as unknown as CanvasImageSource, {
+        close: () => void closed++,
+      }),
+    )
+    const entry: MathEntry = {
+      ok: true,
+      width: 4,
+      height: 1.5,
+      depth: 0.5,
+      bitmapFor,
+      paths: () => null,
+    }
+    const provider: MathProvider = {
+      peek: () => entry,
+      request: vi.fn(),
+    }
+    const p: Platform = { ...platform, math: provider }
+    const cache = new RenderCache()
+    const scene = createScene([mathEl('m1')])
+    const { c, ctx } = canvas()
+    render(ctx, scene, cam, vp, p, { cache })
+    render(ctx, scene, cam, vp, p, { cache })
+    expect(bitmapFor).toHaveBeenCalledTimes(1)
+    expect(nonWhitePixels(c)).toBeGreaterThan(500)
+    cache.dispose()
+    expect(closed).toBe(1)
+  })
+
+  it('does not draw a stale result after element deletion or v change', () => {
+    const entries = new Map<string, MathEntry>()
+    let triggerReady: (() => void) | undefined
+    const oldBmp = vi.fn()
+    const newBmp = vi.fn(() => {
+      const bc = createCanvas(80, 40)
+      bc.getContext('2d').fillRect(0, 0, 80, 40)
+      return bc as unknown as CanvasImageSource
+    })
+    const provider: MathProvider = {
+      peek: (latex) => entries.get(latex),
+      request: (_latex, _display, _color, onReady) => {
+        triggerReady = onReady
+      },
+    }
+    const p: Platform = { ...platform, math: provider }
+    const el = mathEl('m1', {
+      data: { latex: 'old', display: true, size: 28 },
+    })
+    const scene = createScene([el])
+    const { c, ctx } = canvas()
+    render(ctx, scene, cam, vp, p)
+    // Delete m1 before old finishes
+    scene.els.delete('m1')
+    entries.set('old', {
+      ok: true,
+      width: 2,
+      height: 1,
+      depth: 0,
+      bitmapFor: oldBmp,
+      paths: () => null,
+    })
+    triggerReady?.()
+    render(ctx, scene, cam, vp, p)
+    expect(oldBmp).not.toHaveBeenCalled()
+    expect(nonWhitePixels(c)).toBe(0)
+
+    // Now test v / latex change before old finishes
+    const elV2 = mathEl('m2', {
+      v: 2,
+      data: { latex: 'new', display: true, size: 28 },
+    })
+    entries.set('new', {
+      ok: true,
+      width: 2,
+      height: 1,
+      depth: 0,
+      bitmapFor: newBmp,
+      paths: () => null,
+    })
+    scene.els.set('m2', elV2)
+    render(ctx, scene, cam, vp, p)
+    expect(oldBmp).not.toHaveBeenCalled()
+    expect(newBmp).toHaveBeenCalledTimes(1)
+  })
+
+  it('draws red monospace source when result is {ok: false}', () => {
+    const provider: MathProvider = {
+      peek: () => ({ ok: false, error: 'Undefined control sequence \\nope' }),
+      request: vi.fn(),
+    }
+    const p: Platform = { ...platform, math: provider }
+    const scene = createScene([
+      mathEl('err', {
+        w: 180,
+        h: 50,
+        data: { latex: '\\nope + 1', display: true, size: 28 },
+      }),
+    ])
+    const { c, ctx } = canvas()
+    render(ctx, scene, cam, vp, p)
+    const data = c.getContext('2d').getImageData(20, 20, 180, 50).data
+    let redPixels = 0
+    for (let i = 0; i < data.length; i += 4) {
+      if (
+        (data[i] ?? 0) > 180 &&
+        (data[i + 1] ?? 255) < 100 &&
+        (data[i + 2] ?? 255) < 100
+      )
+        redPixels++
+    }
+    expect(redPixels).toBeGreaterThan(20)
+  })
+
+  it('uses paths() when bitmap exceeds 4096 px, and falls back to upscaled capped bitmap when paths() is null', () => {
+    const bitmapFor = vi.fn((pxPerEm: number) => {
+      const s = Math.max(1, Math.ceil(10 * pxPerEm))
+      const bc = createCanvas(s, s)
+      const g = bc.getContext('2d')
+      g.fillStyle = '#1e1e1e'
+      g.fillRect(0, 0, s, s)
+      return bc as unknown as CanvasImageSource
+    })
+    const pathsSpy = vi.fn(() => ({
+      viewBox: [0, 0, 1000, 1000] as [number, number, number, number],
+      items: [
+        {
+          d: 'M 10 10 L 990 10 L 990 990 L 10 990 Z',
+          m: [1, 0, 0, 1, 0, 0] as [
+            number,
+            number,
+            number,
+            number,
+            number,
+            number,
+          ],
+          fill: '#1e1e1e',
+        },
+      ],
+    }))
+    const entryWithPaths: MathEntry = {
+      ok: true,
+      width: 10,
+      height: 8,
+      depth: 2,
+      bitmapFor,
+      paths: pathsSpy,
+    }
+    // At zoom 20, w=300 -> 6000 px > 4096
+    const bigEl = mathEl('big', {
+      x: 0,
+      y: 0,
+      w: 300,
+      h: 300,
+      data: { latex: 'X', display: true, size: 30 },
+    })
+    const highZoom: Camera = { x: 0, y: 0, zoom: 20 }
+    const { c: c1, ctx: ctx1 } = canvas()
+    render(ctx1, createScene([bigEl]), highZoom, vp, {
+      ...platform,
+      math: { peek: () => entryWithPaths, request: vi.fn() },
+    })
+    expect(pathsSpy).toHaveBeenCalled()
+    expect(bitmapFor).not.toHaveBeenCalled()
+    expect(nonWhitePixels(c1)).toBeGreaterThan(1000)
+
+    // Fallback when paths() returns null
+    const entryNoPaths: MathEntry = {
+      ...entryWithPaths,
+      paths: () => null,
+    }
+    const { c: c2, ctx: ctx2 } = canvas()
+    render(ctx2, createScene([bigEl]), highZoom, vp, {
+      ...platform,
+      math: { peek: () => entryNoPaths, request: vi.fn() },
+    })
+    expect(bitmapFor).toHaveBeenCalledTimes(1)
+    const calledPxPerEm = bitmapFor.mock.calls[0]?.[0] ?? 0
+    expect(calledPxPerEm * 10).toBeLessThanOrEqual(4096)
+    expect(nonWhitePixels(c2)).toBeGreaterThan(1000)
+  })
+
+  it('applies rotation and opacity to math elements', () => {
+    const bmpCanvas = createCanvas(100, 40)
+    const g = bmpCanvas.getContext('2d')
+    g.fillStyle = '#000000'
+    g.fillRect(0, 0, 100, 40)
+    const provider: MathProvider = {
+      peek: () => ({
+        ok: true,
+        width: 5,
+        height: 1.5,
+        depth: 0.5,
+        bitmapFor: () => bmpCanvas as unknown as CanvasImageSource,
+        paths: () => null,
+      }),
+      request: vi.fn(),
+    }
+    const p: Platform = { ...platform, math: provider }
+    const el = mathEl('rot', {
+      x: 100,
+      y: 100,
+      w: 100,
+      h: 40,
+      rotation: Math.PI / 2,
+      style: { ...mk('s').style, opacity: 0.5 },
+    })
+    const { c, ctx } = canvas(300, 300)
+    render(ctx, createScene([el]), cam, { width: 300, height: 300, dpr: 1 }, p)
+    // Centre is (150, 120); rotated 90 deg, top of rotated box is at (150, 75), which was outside unrotated [100..140] in Y
+    const px = c.getContext('2d').getImageData(150, 75, 1, 1).data
+    // With 0.5 opacity black on white, channel value is ~127
+    expect(px[0]).toBeGreaterThan(90)
+    expect(px[0]).toBeLessThan(170)
+  })
+
+  it('renders 5 equations across zooms 0.05, 1, 4, 20 matching Node reference within tolerance', async () => {
+    const subset = equations.slice(0, 5)
+    for (const eq of subset) {
+      await renderMath(eq.latex, { display: true, color: '#1e1e1e' })
+    }
+    const provider = createNodeMathProvider()
+    const p: Platform = { ...platform, math: provider }
+
+    for (const eq of subset) {
+      const res = await renderMath(eq.latex, {
+        display: true,
+        color: '#1e1e1e',
+      })
+      expect(res.ok).toBe(true)
+      if (!res.ok) continue
+
+      for (const zoom of [0.05, 1, 4, 20]) {
+        const size = 28
+        const { w, h } = fitMath(res, size)
+        const el = mathEl(String(eq.id), {
+          x: 0,
+          y: 0,
+          w,
+          h,
+          data: { latex: eq.latex, display: true, size },
+        })
+        const outW = Math.max(8, Math.ceil(w * zoom))
+        const outH = Math.max(8, Math.ceil(h * zoom))
+        const { c, ctx } = canvas(outW, outH)
+        const cache = new RenderCache()
+        render(
+          ctx,
+          createScene([el]),
+          { x: 0, y: 0, zoom },
+          { width: outW, height: outH, dpr: 1 },
+          p,
+          { cache },
+        )
+        expect(nonWhitePixels(c)).toBeGreaterThan(0)
+
+        // Compare at zoom 1 and 4 against direct SVG rasterisation
+        if (zoom === 1 || zoom === 4) {
+          const refSvg = await rasterizeSvgNode(
+            fixViewBox(res.svg, size * zoom).svg,
+            outW,
+            outH,
+          )
+          const refCanvas = createCanvas(outW, outH)
+          const rctx = refCanvas.getContext('2d')
+          rctx.fillStyle = '#fff'
+          rctx.fillRect(0, 0, outW, outH)
+          const img = await loadImage(refSvg.toBuffer('image/png'))
+          rctx.drawImage(img, 0, 0, w * zoom, h * zoom)
+
+          const a = c.getContext('2d').getImageData(0, 0, outW, outH).data
+          const b = rctx.getImageData(0, 0, outW, outH).data
+          let diff = 0
+          const total = outW * outH
+          for (let i = 0; i < a.length; i += 4) {
+            if (
+              Math.abs((a[i] ?? 0) - (b[i] ?? 0)) > 32 ||
+              Math.abs((a[i + 1] ?? 0) - (b[i + 1] ?? 0)) > 32 ||
+              Math.abs((a[i + 2] ?? 0) - (b[i + 2] ?? 0)) > 32
+            ) {
+              diff++
+            }
+          }
+          expect(diff / total).toBeLessThanOrEqual(0.02)
+        }
+        cache.dispose()
+      }
+    }
   })
 })

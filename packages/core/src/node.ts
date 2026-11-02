@@ -17,7 +17,10 @@ export function nodePlatform(): Platform {
         ? null
         : { ascent: m.fontBoundingBoxAscent, descent: m.fontBoundingBoxDescent }
     },
-    createPath2D: () => new Path2D() as unknown as globalThis.Path2D,
+    createPath2D: (d?: string) =>
+      (d === undefined
+        ? new Path2D()
+        : new Path2D(d)) as unknown as globalThis.Path2D,
     registerFont(family, path) {
       if (!GlobalFonts.registerFromPath(path, family))
         throw new Error(`registerFromPath failed for ${family}`)
