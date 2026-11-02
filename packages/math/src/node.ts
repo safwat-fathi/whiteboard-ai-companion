@@ -76,8 +76,8 @@ export function createNodeMathProvider(onReady?: () => void) {
             mp,
             0,
             0,
-            pw,
-            ph,
+            hit.width * pxPerEm,
+            (hit.height + hit.depth) * pxPerEm,
             (d) => new Path2D(d) as unknown as globalThis.Path2D,
           )
           return Object.assign(c as unknown as CanvasImageSource, {

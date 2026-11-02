@@ -426,6 +426,8 @@ function drawMath(
   const pxPerEm = worldPerEm * bucket
   const pw = Math.max(1, Math.ceil(dw * bucket))
   const ph = Math.max(1, Math.ceil(dh * bucket))
+  const bmpW = pw / bucket
+  const bmpH = ph / bucket
 
   if (pw > MAX_BITMAP || ph > MAX_BITMAP) {
     const mp = entry.paths()
@@ -459,19 +461,19 @@ function drawMath(
       bmp,
       dx,
       dy,
-      dw,
-      dh,
+      dw: bmpW,
+      dh: bmpH,
       close() {
         bmp.close?.()
       },
     }
     const byteSize = pw * ph * 4
     cache.set(bucket, el.id, el.v, item, byteSize)
-    ctx.drawImage(bmp, el.x + dx, el.y + dy, dw, dh)
+    ctx.drawImage(bmp, el.x + dx, el.y + dy, bmpW, bmpH)
     if (byteSize > cache.cap) item.close()
     return
   }
-  ctx.drawImage(bmp, el.x + dx, el.y + dy, dw, dh)
+  ctx.drawImage(bmp, el.x + dx, el.y + dy, bmpW, bmpH)
 }
 
 type ImageEl = Element & { type: 'image' }

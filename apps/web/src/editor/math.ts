@@ -97,14 +97,16 @@ export function createWebMathProvider(
           depth: res.depth,
           paths: () => parsed,
           bitmapFor(pxPerEm: number): MathBitmapSource | null {
-            const rounded = Math.round(pxPerEm * 100) / 100
-            const predecoded = decodedBitmaps.get(rounded)
-            if (predecoded) {
-              decodedBitmaps.delete(rounded)
-              return predecoded
+            if (!parsed) {
+              const rounded = Math.round(pxPerEm * 100) / 100
+              const predecoded = decodedBitmaps.get(rounded)
+              if (predecoded) {
+                decodedBitmaps.delete(rounded)
+                return predecoded
+              }
+              decodeFromBlobUrl(pxPerEm)
+              return null
             }
-            decodeFromBlobUrl(pxPerEm)
-            if (!parsed) return null
 
             const pw = Math.max(1, Math.ceil(res.width * pxPerEm))
             const ph = Math.max(
@@ -117,8 +119,14 @@ export function createWebMathProvider(
                 '2d',
               ) as unknown as CanvasRenderingContext2D | null
               if (!ctx) return null
-              mod.drawMathPaths(ctx, parsed, 0, 0, pw, ph, (d) =>
-                createPath2D(d),
+              mod.drawMathPaths(
+                ctx,
+                parsed,
+                0,
+                0,
+                res.width * pxPerEm,
+                (res.height + res.depth) * pxPerEm,
+                (d) => createPath2D(d),
               )
               if (typeof c.transferToImageBitmap === 'function') {
                 return c.transferToImageBitmap()
@@ -136,8 +144,14 @@ export function createWebMathProvider(
               c.height = ph
               const ctx = c.getContext('2d')
               if (!ctx) return null
-              mod.drawMathPaths(ctx, parsed, 0, 0, pw, ph, (d) =>
-                createPath2D(d),
+              mod.drawMathPaths(
+                ctx,
+                parsed,
+                0,
+                0,
+                res.width * pxPerEm,
+                (res.height + res.depth) * pxPerEm,
+                (d) => createPath2D(d),
               )
               return Object.assign(c as unknown as CanvasImageSource, {
                 close() {
