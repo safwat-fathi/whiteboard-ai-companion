@@ -493,6 +493,27 @@ function drawImage(
 ) {
   const provider = platform.images
   const { blobId, naturalW, naturalH, crop } = el.data
+  const sx = crop ? crop.x : 0
+  const sy = crop ? crop.y : 0
+  const sw = crop ? crop.w : naturalW
+  const sh = crop ? crop.h : naturalH
+  if (sw <= 0 || sh <= 0) return
+
+  const ratio = Math.max((el.w * scale) / sw, (el.h * scale) / sh)
+  const bucket = zoomBucket(ratio)
+  const cropKey = crop ? `${crop.x},${crop.y},${crop.w},${crop.h}` : 'full'
+  const cacheId = `img:${blobId}:${cropKey}`
+
+  // The bucket copy first: originals share the cache and are evicted before buckets, so once a copy exists the
+  // original is not needed at all (peeking it first re-decoded it every frame when two photos did not fit the cap).
+  if (bucket < 1 && cache) {
+    const hit = cache.get<ImageBucketBitmap>(bucket, cacheId, 0)
+    if (hit) {
+      ctx.drawImage(hit.bmp, el.x, el.y, el.w, el.h)
+      return
+    }
+  }
+
   const entry = provider?.peek(blobId)
   if (entry === undefined) {
     drawPlaceholder(ctx, el.x, el.y, el.w, el.h, scale)
@@ -527,57 +548,40 @@ function drawImage(
     return
   }
 
-  const sx = crop ? crop.x : 0
-  const sy = crop ? crop.y : 0
-  const sw = crop ? crop.w : entry.w || naturalW
-  const sh = crop ? crop.h : entry.h || naturalH
-  if (sw <= 0 || sh <= 0) return
-
-  const ratio = Math.max((el.w * scale) / sw, (el.h * scale) / sh)
-  const bucket = zoomBucket(ratio)
-
   // Zoom-in or 1:1 with source draws the original bitmap directly
   if (bucket >= 1 || !cache) {
     ctx.drawImage(entry.bitmap, sx, sy, sw, sh, el.x, el.y, el.w, el.h)
     return
   }
 
-  const cropKey = crop ? `${crop.x},${crop.y},${crop.w},${crop.h}` : 'full'
-  const cacheId = `img:${blobId}:${cropKey}`
-  let hit = cache.get<ImageBucketBitmap>(bucket, cacheId, 0)
-  if (!hit) {
-    const bw = Math.max(1, Math.ceil(sw * bucket))
-    const bh = Math.max(1, Math.ceil(sh * bucket))
-    if (bw > MAX_BITMAP || bh > MAX_BITMAP) {
-      ctx.drawImage(entry.bitmap, sx, sy, sw, sh, el.x, el.y, el.w, el.h)
-      return
-    }
-    const c = platform.createCanvas(bw, bh)
-    const g = c.getContext('2d') as CanvasRenderingContext2D
-    g.imageSmoothingEnabled = true
-    g.imageSmoothingQuality = 'high'
-    g.drawImage(entry.bitmap, sx, sy, sw, sh, 0, 0, bw, bh)
-    const frozen = (
-      c as { transferToImageBitmap?: () => ImageBitmap }
-    ).transferToImageBitmap?.()
-    hit = {
-      bmp: (frozen ?? c) as unknown as CanvasImageSource,
-      close() {
-        if (frozen) frozen.close()
-        else {
-          c.width = 0
-          c.height = 0
-        }
-      },
-    }
-    const byteSize = bw * bh * 4
-    cache.set(bucket, cacheId, 0, hit, byteSize, 'bucket')
-    ctx.drawImage(hit.bmp, el.x, el.y, el.w, el.h)
-    if (byteSize > cache.cap) hit.close()
+  const bw = Math.max(1, Math.ceil(sw * bucket))
+  const bh = Math.max(1, Math.ceil(sh * bucket))
+  if (bw > MAX_BITMAP || bh > MAX_BITMAP) {
+    ctx.drawImage(entry.bitmap, sx, sy, sw, sh, el.x, el.y, el.w, el.h)
     return
   }
-
-  ctx.drawImage(hit.bmp, el.x, el.y, el.w, el.h)
+  const c = platform.createCanvas(bw, bh)
+  const g = c.getContext('2d') as CanvasRenderingContext2D
+  g.imageSmoothingEnabled = true
+  g.imageSmoothingQuality = 'high'
+  g.drawImage(entry.bitmap, sx, sy, sw, sh, 0, 0, bw, bh)
+  const frozen = (
+    c as { transferToImageBitmap?: () => ImageBitmap }
+  ).transferToImageBitmap?.()
+  const made: ImageBucketBitmap = {
+    bmp: (frozen ?? c) as unknown as CanvasImageSource,
+    close() {
+      if (frozen) frozen.close()
+      else {
+        c.width = 0
+        c.height = 0
+      }
+    },
+  }
+  const byteSize = bw * bh * 4
+  cache.set(bucket, cacheId, 0, made, byteSize, 'bucket')
+  ctx.drawImage(made.bmp, el.x, el.y, el.w, el.h)
+  if (byteSize > cache.cap) made.close()
 }
 
 // Geometry in world space, built once per element object (elements are replaced, never mutated). Keyed per platform

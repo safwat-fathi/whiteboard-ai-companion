@@ -1011,4 +1011,72 @@ describe('image rendering and RenderCache tiers', () => {
     expect(interiorDark(c1)).toBe(0)
     expect(interiorDark(c2)).toBeGreaterThan(20)
   })
+
+  // C1 (m2-validation): the bucket copy must be looked up BEFORE the original is peeked. Originals share the cache and
+  // are evicted first, so peeking one for an image whose bucket copy is already cached used to placeholder it and
+  // re-decode it on every frame once two photos did not fit in the cap together.
+  it('two images at the cache cap settle on their bucket copies: bounded decodes, no placeholder', () => {
+    const BLOB_B = 'b'.repeat(64)
+    const src = fourColorImage(256, 256)
+    // An original is 262,144 bytes and each bucket copy at zoom 0.5 is 65,536: room for one original and both copies
+    // (393,216), not for two originals.
+    const cache = new RenderCache(450_000)
+    const ready: (() => void)[] = []
+    let requests = 0
+    // The web provider in miniature: originals live in the same cache (tier 'original'); request() decodes later.
+    const provider: ImageProvider = {
+      peek: (id) => {
+        const hit = cache.get<{ bitmap: CanvasImageSource; close(): void }>(
+          1,
+          `orig:${id}`,
+          0,
+        )
+        return hit ? { bitmap: hit.bitmap, w: 256, h: 256 } : undefined
+      },
+      request: (id, cb) => {
+        requests++
+        ready.push(() => {
+          cache.set(
+            1,
+            `orig:${id}`,
+            0,
+            { bitmap: src as unknown as CanvasImageSource, close() {} },
+            256 * 256 * 4,
+            'original',
+          )
+          cb()
+        })
+      },
+    }
+    const p: Platform = { ...platform, images: provider }
+    const el = (id: string, blobId: string, x: number) =>
+      imageEl(id, {
+        x,
+        y: 0,
+        w: 256,
+        h: 256,
+        data: { blobId, naturalW: 256, naturalH: 256 },
+      })
+    const scene = createScene([el('a', BLOB_A, 0), el('b', BLOB_B, 300)])
+    const { c, ctx } = canvas()
+    const frame = () => {
+      ctx.clearRect(0, 0, vp.width, vp.height)
+      render(ctx, scene, { x: 0, y: 0, zoom: 0.5 }, vp, p, { cache })
+      for (const f of ready.splice(0)) f()
+    }
+    for (let i = 0; i < 6; i++) frame()
+    const settled = requests
+    for (let i = 0; i < 14; i++) frame() // 20 frames in all
+    expect(requests).toBe(settled) // nothing left to decode once both bucket copies exist
+    expect(requests).toBeLessThanOrEqual(4)
+    // both images are really drawn: the red quadrant of each sits at its scaled top-left
+    const d = c.getContext('2d')
+    const red = (x: number, y: number) => {
+      const px = d.getImageData(x, y, 1, 1).data
+      return [px[0], px[1], px[2]]
+    }
+    expect(red(30, 30)).toEqual([255, 0, 0])
+    expect(red(180, 30)).toEqual([255, 0, 0])
+    cache.dispose()
+  })
 })
