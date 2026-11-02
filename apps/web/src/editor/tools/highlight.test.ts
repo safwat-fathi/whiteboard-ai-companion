@@ -196,17 +196,20 @@ describe('hover', () => {
 
   it('is cleared when the pointer leaves, the tool changes, or the camera moves', () => {
     ptr('pointermove', 10, 10)
+    expect(hasStroke(draw(), COLORS.hover)).toBe(true)
     overlay().dispatchEvent(new Event('pointerleave'))
     expect(cursor()).toBe('')
     expect(hasStroke(draw(), COLORS.hover)).toBe(false)
 
     ptr('pointermove', 10, 10)
+    expect(cursor()).toBe('pointer')
     ed.setTool('hand')
     expect(cursor()).toBe('')
     ed.setTool('select')
     expect(hasStroke(draw(), COLORS.hover)).toBe(false)
 
     ptr('pointermove', 10, 10)
+    expect(cursor()).toBe('pointer')
     ed.panBy(30, 30) // the element is no longer under the pointer
     flush()
     expect(cursor()).toBe('')
@@ -240,7 +243,10 @@ describe('hover', () => {
     expect(ed.lastRender).not.toBe(first) // control: a scene invalidation does repaint
     const before = ed.lastRender
     const inv = vi.spyOn(ed, 'invalidate')
+    const invOverlay = vi.spyOn(ed, 'invalidateOverlay')
     ptr('pointermove', 10, 10)
+    expect(cursor()).toBe('pointer') // hover took effect...
+    expect(invOverlay).toHaveBeenCalled() // ...and asked for an overlay repaint
     flush()
     drag(ed.tool, [[10, 10]]) // select
     flush()

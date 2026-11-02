@@ -287,7 +287,7 @@ export const selectTool = (ed: Editor): Tool => {
           : undefined
       if (over) drawHighlight(ctx, over, k, LOOK.hover)
       ctx.strokeStyle = COLORS.select
-      ctx.fillStyle = '#fff'
+      ctx.fillStyle = COLORS.handleFill
       ctx.lineWidth = 1 / k
       const sel = single()
       const shown = els().map((el) => {

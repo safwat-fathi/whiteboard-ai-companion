@@ -10,6 +10,7 @@ export const COLORS = {
   hover: '#4f8cff',
   hoverHalo: 'rgba(79,140,255,0.2)',
   marqueeFill: 'rgba(26,86,219,0.1)',
+  handleFill: '#fff',
 }
 /** Gap between an element's edge and its highlight. */
 export const PAD = 4
