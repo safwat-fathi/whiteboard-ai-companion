@@ -8,6 +8,7 @@ import {
   openDatabase,
   schemaVersion,
 } from './db'
+import { attachGateway } from './gateway'
 import { createHttpServer } from './http'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
@@ -25,6 +26,7 @@ const server = createHttpServer({
   schemaVersion: () => schemaVersion(db),
 })
 
+const gateway = attachGateway(server, { boards, config })
 const timer = setInterval(() => boards.tick(), 30_000) // time-based snapshots and idle eviction
 timer.unref()
 
@@ -41,12 +43,14 @@ function stop(signal: string) {
   console.log(`${signal}: shutting down`)
   clearInterval(timer)
   setTimeout(() => process.exit(1), 5_000).unref() // a stuck connection must not keep the process alive
-  server.close(() => {
-    boards.close()
-    db.close()
-    process.exit(0)
+  void gateway.close().then(() => {
+    server.close(() => {
+      boards.close()
+      db.close()
+      process.exit(0)
+    })
+    server.closeAllConnections()
   })
-  server.closeAllConnections()
 }
 process.on('SIGINT', () => stop('SIGINT'))
 process.on('SIGTERM', () => stop('SIGTERM'))

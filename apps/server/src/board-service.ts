@@ -100,6 +100,8 @@ export class BoardService {
   }
   /** Number of boards held in memory (for tests and health). */
   activeCount = () => this.live.size
+  /** Live subscribers of a board (0 when it is not in memory): lets tests prove a closed socket was released. */
+  subscriberCount = (boardId: string) => this.live.get(boardId)?.subs.size ?? 0
 
   /** The current scene of a board (loaded on demand) in z order of insertion. */
   scene(boardId: string): { headSeq: number; elements: Element[] } {
