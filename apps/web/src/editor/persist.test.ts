@@ -663,6 +663,7 @@ describe('stop when ending the open edit throws', () => {
     const p = createPersistence(t.ed, 'local')
     p.start()
     put(t.ed, mk('a', 0, 0))
+    t.ed.setTool('select') // the Hand tool has no onCancel (the editor starts on Hand), so spy on a tool that does
     vi.spyOn(t.ed.tool, 'onCancel').mockImplementation(() => {
       throw new Error('boom')
     })
