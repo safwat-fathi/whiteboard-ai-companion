@@ -104,19 +104,41 @@ const MAX_BITMAP = 4096
 
 type TextEl = Element & { type: 'text' }
 
+const metrics = new WeakMap<
+  Platform,
+  Map<string, { ascent: number; descent: number } | null>
+>()
+function fontMetrics(platform: Platform, font: string) {
+  let m = metrics.get(platform)
+  if (!m) {
+    m = new Map()
+    metrics.set(platform, m)
+  }
+  if (!m.has(font)) m.set(font, platform.fontMetrics?.(font) ?? null)
+  return m.get(font) ?? null
+}
+
 function drawLines(
   ctx: CanvasRenderingContext2D,
   el: TextEl,
   lines: ReturnType<typeof layoutText>['lines'],
+  platform: Platform,
 ) {
   const { size } = el.data
   ctx.font = `${size}px ${FONT_STACK}`
+  // Same baseline as a CSS line box: the font's content area (ascent + descent) centred in the 1.4 line.
+  const fm = fontMetrics(platform, `${size}px ${FONT_STACK}`)
+  const lh = size * 1.4
   ctx.fillStyle = el.style.stroke // text colour is the style's stroke
   ctx.textAlign = 'left' // line.x is the visual left edge, whatever the direction
-  ctx.textBaseline = 'middle'
+  ctx.textBaseline = fm ? 'alphabetic' : 'middle'
   for (const l of lines) {
     ctx.direction = l.dir
-    ctx.fillText(l.text, l.x, l.y + (size * 1.4) / 2)
+    ctx.fillText(
+      l.text,
+      l.x,
+      l.y + (fm ? (lh - (fm.ascent + fm.descent)) / 2 + fm.ascent : lh / 2),
+    )
   }
 }
 
@@ -135,7 +157,7 @@ function drawText(
   if (pw < 1 || ph < 1 || pw > MAX_BITMAP || ph > MAX_BITMAP || !cache) {
     ctx.save()
     ctx.translate(el.x, el.y)
-    drawLines(ctx, el, lines)
+    drawLines(ctx, el, lines, platform)
     ctx.restore()
     return
   }
@@ -144,7 +166,7 @@ function drawText(
     const canvas = platform.createCanvas(pw, ph)
     const c = canvas.getContext('2d') as CanvasRenderingContext2D
     c.scale(bucket, bucket)
-    drawLines(c, el, lines)
+    drawLines(c, el, lines, platform)
     bmp = {
       canvas,
       close() {

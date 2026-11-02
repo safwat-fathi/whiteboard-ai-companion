@@ -244,6 +244,32 @@ describe('text rendering', () => {
     await matchesGolden(c, 'text-mixed-zoom2', TIGHT)
   })
 
+  it('draws the baseline where a CSS line box puts it, and falls back to middle without metrics', () => {
+    const el = txt('b', { text: 'Hello', size: 40 }, { x: 0, y: 0 })
+    const run = (p: typeof platform) => {
+      const { ctx } = canvas()
+      const ys: number[] = []
+      let baseline = ''
+      const fill = ctx.fillText.bind(ctx)
+      ctx.fillText = ((t: string, x: number, y: number) => {
+        ys.push(y)
+        baseline = ctx.textBaseline
+        fill(t, x, y)
+      }) as typeof ctx.fillText
+      render(ctx, createScene([el]), cam, vp, p)
+      return { ys, baseline }
+    }
+    const fm = platform.fontMetrics?.(`40px ${FONT_STACK}`)
+    expect(fm).toBeTruthy()
+    const { ascent: a = 0, descent: d = 0 } = fm ?? {}
+    const r = run(platform)
+    expect(r.baseline).toBe('alphabetic')
+    expect(r.ys[0]).toBeCloseTo((56 - (a + d)) / 2 + a, 6)
+    const old = run({ ...platform, fontMetrics: undefined })
+    expect(old.baseline).toBe('middle')
+    expect(old.ys[0]).toBe(28)
+  })
+
   it('draws text and counts it', () => {
     const { ctx } = canvas()
     expect(render(ctx, createScene(goldenEls()), cam, vp, platform).drawn).toBe(

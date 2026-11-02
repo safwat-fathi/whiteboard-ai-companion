@@ -42,6 +42,7 @@ test('IME composition is not committed until it ends', async ({ page }) => {
   expect(await texts(page)).toEqual([])
   await cdp.send('Input.insertText', { text: 'مرحبا' })
   expect(await texts(page)).toEqual([])
+  await page.waitForTimeout(50) // compositionend grace tick
   await page.keyboard.press('Escape')
   expect(await texts(page)).toEqual(['مرحبا'])
 })

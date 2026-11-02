@@ -19,6 +19,16 @@ export function browserPlatform(): Platform {
       measure.font = font
       return measure.measureText(text).width
     },
+    fontMetrics: (font) => {
+      measure ??= document.createElement('canvas').getContext('2d')
+      if (!measure) return null
+      measure.font = font
+      const m = measure.measureText('x')
+      return {
+        ascent: m.fontBoundingBoxAscent,
+        descent: m.fontBoundingBoxDescent,
+      }
+    },
     // Fonts are loaded via CSS/document.fonts (see fonts.ts).
     registerFont: () => {},
     createPath2D: () => new Path2D(),

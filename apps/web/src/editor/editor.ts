@@ -285,6 +285,7 @@ export class Editor {
 
   private frame() {
     const { width, height, dpr } = this.viewport
+    this.tool.onFrame?.()
     const sctx = this.sceneCanvas.getContext('2d')
     if (sctx) {
       const scene = this.hidden

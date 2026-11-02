@@ -10,6 +10,13 @@ export function nodePlatform(): Platform {
       scratch.font = font
       return scratch.measureText(text).width
     },
+    fontMetrics(font) {
+      scratch.font = font
+      const m = scratch.measureText('x')
+      return m.fontBoundingBoxAscent === undefined
+        ? null
+        : { ascent: m.fontBoundingBoxAscent, descent: m.fontBoundingBoxDescent }
+    },
     createPath2D: () => new Path2D() as unknown as globalThis.Path2D,
     registerFont(family, path) {
       if (!GlobalFonts.registerFromPath(path, family))

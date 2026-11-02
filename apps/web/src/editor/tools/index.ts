@@ -22,6 +22,8 @@ export interface Tool {
   onPointerUp(e: ToolEvent): void
   onKey?(e: KeyboardEvent): boolean
   onDoubleClick?(e: ToolEvent): void
+  /** Called at the start of every Editor frame (camera/viewport may have changed). */
+  onFrame?(): void
   onCancel?(): void
   drawOverlay?(ctx: CanvasRenderingContext2D): void
   /** Navigation-only tools (Hand) keep receiving pointer events and can be selected while the editor is read-only. */

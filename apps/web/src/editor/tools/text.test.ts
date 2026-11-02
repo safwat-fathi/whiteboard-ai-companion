@@ -1,8 +1,23 @@
 // @vitest-environment jsdom
-import { layoutText, ordered } from '@whiteboard/core'
+import { layoutText, ordered, render } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '../editor'
 import { drag, ev, key, ptr, setup } from '../test-utils'
+
+vi.mock('@whiteboard/core', async (orig) => ({
+  ...(await orig<typeof import('@whiteboard/core')>()),
+  render: vi.fn(),
+}))
+const frame = () => {
+  vi.stubGlobal('requestAnimationFrame', (f: () => void) => {
+    f()
+    return 1
+  })
+  ;(ed as unknown as { raf: number }).raf = 0 // the shared stub never clears it
+  ed.invalidate()
+  const calls = vi.mocked(render).mock.calls
+  return [...(calls.at(-1)?.[1].els.keys() ?? [])]
+}
 
 let ed: Editor
 let done: () => void
@@ -153,6 +168,9 @@ describe('text tool', () => {
     expect(Number.isFinite(t?.h)).toBe(true)
     expect(t?.w).toBeGreaterThanOrEqual(1)
     expect(t?.h).toBeGreaterThanOrEqual(1)
+    if (t?.type !== 'text') throw new Error('no text')
+    const l = layoutText(t, ed.platform)
+    expect([t.w, t.h]).toEqual([l.width, l.height])
   })
 
   it('Esc and Ctrl/Cmd+Enter commit; plain Enter does not', () => {
@@ -211,6 +229,100 @@ describe('text tool', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 't' }))
     expect(area()).toBeNull()
     expect(ed.tool.id).toBe('select')
+  })
+
+  it('plaintext bidi only while dir is auto', () => {
+    start()
+    expect(area().style.unicodeBidi).toBe('plaintext')
+    type('مرحبا\nhello')
+    expect(area().style.unicodeBidi).toBe('plaintext')
+    blur()
+    const t = els()[0]
+    if (t?.type !== 'text') throw new Error('no text')
+    ed.scene.els.set(t.id, { ...t, data: { ...t.data, dir: 'rtl' } })
+    ed.editText(t.id)
+    expect(area().style.unicodeBidi).toBe('normal')
+    expect(area().dir).toBe('rtl')
+  })
+
+  it('the textarea follows wheel zoom and pan while editing', () => {
+    start(10, 20)
+    expect(area().style.fontSize).toBe('24px')
+    ;(ed as unknown as { raf: number }).raf = 0
+    vi.stubGlobal('requestAnimationFrame', (f: () => void) => {
+      f()
+      return 1
+    })
+    ed.host.dispatchEvent(
+      new WheelEvent('wheel', {
+        deltaY: -69.3147,
+        ctrlKey: true,
+        clientX: 0,
+        clientY: 0,
+      }),
+    )
+    expect(Number.parseFloat(area().style.fontSize)).toBeCloseTo(48, 0)
+    expect(Number.parseFloat(area().style.left)).toBeCloseTo(20, 0)
+    ;(ed as unknown as { raf: number }).raf = 0
+    ed.panBy(30, 0)
+    expect(Number.parseFloat(area().style.left)).toBeCloseTo(50, 0)
+  })
+
+  it('IME composition guards Esc/Enter; Esc commits after compositionend', async () => {
+    start()
+    type('x')
+    const press = (
+      k: string,
+      init: KeyboardEventInit & { keyCode?: number } = {},
+    ) =>
+      area().dispatchEvent(
+        new KeyboardEvent('keydown', { key: k, bubbles: true, ...init }),
+      )
+    press('Escape', { isComposing: true })
+    press('Escape', { keyCode: 229 })
+    area().dispatchEvent(new Event('compositionstart'))
+    press('Escape')
+    press('Enter', { ctrlKey: true })
+    expect(els()).toEqual([])
+    area().dispatchEvent(new Event('compositionend'))
+    press('Escape') // Safari: keydown straight after compositionend is still the IME's
+    expect(els()).toEqual([])
+    await new Promise((r) => setTimeout(r))
+    press('Escape')
+    expect(els()).toHaveLength(1)
+  })
+
+  it('the edited element is hidden from the frame while editing and drawn after commit and cancel', () => {
+    const t = seedText('abc')
+    const id = t?.id as string
+    expect(frame()).toContain(id)
+    ed.editText(id)
+    expect(frame()).not.toContain(id)
+    blur()
+    expect(frame()).toContain(id)
+    ed.editText(id)
+    ed.tool.onCancel?.()
+    expect(frame()).toContain(id)
+  })
+
+  it('creation uses the pointer-down position', () => {
+    ed.setTool('text')
+    ed.tool.onPointerDown(ev(10, 20))
+    ed.tool.onPointerUp(ev(14, 22))
+    type('x')
+    blur()
+    expect([els()[0]?.x, els()[0]?.y]).toEqual([10, 20])
+  })
+
+  it('click-away commits and the same click selects the element under it', () => {
+    const t = seedText('abc')
+    ed.setTool('text')
+    drag(ed.tool, [[300, 300]])
+    type('second')
+    ptr('pointerdown', (t?.x ?? 0) + 2, (t?.y ?? 0) + 2)
+    expect(els()).toHaveLength(2)
+    expect(ed.tool.id).toBe('select')
+    expect([...ed.selection]).toEqual([t?.id])
   })
 
   it('dispose removes the textarea', () => {

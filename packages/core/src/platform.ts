@@ -9,6 +9,8 @@ export interface CanvasLike {
 export interface Platform {
   createCanvas(w: number, h: number): CanvasLike
   measureText(font: string, text: string): number
+  /** Font ascent/descent (fontBoundingBox) in px; lets text sit on the same baseline as a CSS line box. Optional. */
+  fontMetrics?(font: string): { ascent: number; descent: number } | null
   registerFont(family: string, path: string): void
   /** render.ts never touches the global Path2D; the browser platform passes `() => new Path2D()`. */
   createPath2D(): Path2D

@@ -5,6 +5,7 @@ import {
   layoutText,
   newId,
   ordered,
+  type Point,
   resolveDir,
   zBetween,
 } from '@whiteboard/core'
@@ -19,9 +20,10 @@ const SLACK = 2 // css px of room at the text's trailing edge so the caret is no
 
 /**
  * The edited element is hidden from the canvas (Editor.hidden) while a transparent <textarea> sits over it, so the
- * text is drawn once. Commit (blur, Esc, Ctrl/Cmd+Enter, click elsewhere) is one batch; Esc commits, it does not discard.
+ * text is drawn once. Blank text deletes an existing element (undoable). Commit (blur, Esc, Ctrl/Cmd+Enter, click elsewhere) is one batch; Esc commits, it does not discard.
  */
 export const textTool = (ed: Editor): TextTool => {
+  let down: Point | null = null
   let cur: { ta: HTMLTextAreaElement; el: TextEl; isNew: boolean } | null = null
 
   // The element as it would be committed for `text` (layout is the source of w/h).
@@ -46,6 +48,8 @@ export const textTool = (ed: Editor): TextTool => {
     const r = ed.host.getBoundingClientRect()
     const st = cur.ta.style
     cur.ta.dir = resolveDir(cur.ta.value, el.data.dir)
+    // auto = per-paragraph direction, as layoutText does; forced ltr/rtl keep the plain dir attribute
+    st.unicodeBidi = el.data.dir === 'auto' ? 'plaintext' : 'normal'
     st.left = `${p.x - r.left - shift}px`
     st.top = `${p.y - r.top}px`
     st.width = `${el.w * z + SLACK}px`
@@ -110,8 +114,19 @@ export const textTool = (ed: Editor): TextTool => {
     ed.host.append(ta)
     ta.addEventListener('input', sync)
     ta.addEventListener('blur', finish)
+    // Esc/Enter belong to the IME while composing. Safari reports keyCode 229 and fires keydown after compositionend,
+    // so the flag is cleared a tick late.
+    let composing = false
+    ta.addEventListener('compositionstart', () => {
+      composing = true
+    })
+    ta.addEventListener('compositionend', () =>
+      setTimeout(() => {
+        composing = false
+      }),
+    )
     ta.addEventListener('keydown', (e) => {
-      if (e.isComposing) return // Esc/Enter belong to the IME while composing
+      if (composing || e.isComposing || e.keyCode === 229) return
       if (
         e.key === 'Escape' ||
         (e.key === 'Enter' && (e.ctrlKey || e.metaKey))
@@ -129,20 +144,28 @@ export const textTool = (ed: Editor): TextTool => {
     id: 'text',
     key: 't',
     edit: (el) => begin(el, false),
-    onPointerDown() {
-      // Clicking away while editing commits (the blur that follows is then a no-op).
-      if (cur) finish()
+    onPointerDown(e) {
+      // Clicking away while editing commits (the blur that follows is then a no-op) and the click goes on to the select tool.
+      if (cur) {
+        finish()
+        ed.tool.onPointerDown(e)
+        return
+      }
+      down = e.button === 0 ? e.world : null
     },
+    onFrame: sync,
     onPointerMove() {},
     // Creating on pointer-up: the browser moves focus on mousedown, which would blur a textarea focused earlier.
-    onPointerUp(e) {
-      if (e.button !== 0 || cur || ed.tool.id !== 'text') return
+    onPointerUp() {
+      const at = down
+      down = null
+      if (!at || cur || ed.tool.id !== 'text') return
       begin(
         {
           id: newId(),
           type: 'text',
-          x: e.world.x,
-          y: e.world.y,
+          x: at.x,
+          y: at.y,
           w: 1,
           h: SIZE * 1.4,
           rotation: 0,
