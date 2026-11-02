@@ -18,7 +18,7 @@ export class OpError extends Error {
 
 const NOT_PATCHABLE = new Set(['type', 'id', 'v', 'author'])
 
-// Patches address leaf paths only (e.g. `data.kind`), not whole `data`/`style` objects.
+// Whole style/data objects are accepted if they validate; callers should patch leaf paths (e.g. `data.kind`).
 // Follow a dotted path through object schemas (unwrapping optional/nullable); undefined if unknown.
 function leaf(root: z.ZodType, path: string[]): z.ZodType | undefined {
   let s = root
@@ -49,6 +49,11 @@ function checkPatch(set: Record<string, unknown>) {
 }
 
 export function validateBatch(input: unknown): Batch {
+  // zod's record silently drops an own `__proto__` key, so reject it from the raw input.
+  for (const op of (input as { ops?: { op?: string; set?: object }[] } | null)
+    ?.ops ?? [])
+    if (op?.op === 'patch' && op.set && Object.hasOwn(op.set, '__proto__'))
+      throw new OpError('__proto__', 'is not a patchable field')
   const r = BatchSchema.safeParse(input)
   if (!r.success) {
     const { path, message } = r.error.issues[0] as z.core.$ZodIssue

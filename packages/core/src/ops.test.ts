@@ -94,8 +94,21 @@ describe('validateBatch', () => {
       ),
     ).toBe('data.text')
   })
+  it('rejects inherited property names as patch keys', () => {
+    for (const k of ['constructor', 'toString', '__proto__'])
+      expect(
+        fieldOf(batch([{ op: 'patch', id: 'a1', set: { [k]: {} } }])),
+      ).toBe(k)
+  })
+  it('nullable field keeps null as a value', () => {
+    expect(
+      validateBatch(
+        batch([{ op: 'patch', id: 'a1', set: { 'style.fill': null } }]),
+      ),
+    ).toBeTruthy()
+  })
   it('treats null on optional patch fields as unset', () => {
-    for (const k of ['parentId', 'data.start', 'data.radius', 'style.fill'])
+    for (const k of ['parentId', 'data.start', 'data.radius'])
       expect(
         validateBatch(batch([{ op: 'patch', id: 'a1', set: { [k]: null } }])),
       ).toBeTruthy()
