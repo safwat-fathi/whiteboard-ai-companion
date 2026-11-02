@@ -9,7 +9,17 @@ import {
 } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '../editor'
-import { drag, ev, key, mk, ptr, put, rotPt, setup } from '../test-utils'
+import {
+  drag,
+  ev,
+  key,
+  mk,
+  mkText,
+  ptr,
+  put,
+  rotPt,
+  setup,
+} from '../test-utils'
 
 let ed: Editor
 let done: () => void
@@ -303,6 +313,49 @@ describe('select tool', () => {
     ed.tool.onPointerDown(ev(100, 30)) // start handle, no movement
     ed.tool.onPointerUp(ev(100, 30))
     expect(ordered(ed.scene)).toEqual(before)
+  })
+
+  describe('a selected text has only the rotate handle (drawText ignores w/h, so a resize would break w/h == layout)', () => {
+    const labels = (c: { mock: { calls: { 0: { label: string } }[] } }) =>
+      c.mock.calls.map((a) => a[0].label)
+
+    it('dragging where the se/e/s handles would be never resizes', () => {
+      put(ed, mkText('t', 100, 100)) // 80 x 28
+      sel('t')
+      const commit = vi.spyOn(ed, 'commit')
+      for (const from of [
+        [180, 128], // se
+        [180, 114], // e
+        [140, 128], // s
+      ] as [number, number][])
+        drag(ed.tool, [from, [from[0] + 40, from[1] + 30]])
+      expect(labels(commit)).not.toContain('Resize')
+      expect([get('t').w, get('t').h]).toEqual([80, 28])
+    })
+
+    it('the rotate handle still rotates a text', () => {
+      put(ed, mkText('t', 100, 100))
+      sel('t')
+      const commit = vi.spyOn(ed, 'commit')
+      drag(ed.tool, [
+        [140, 100 - 24],
+        [300, 114],
+      ])
+      expect(labels(commit)).toEqual(['Rotate'])
+      expect(get('t').rotation).toBeCloseTo(Math.PI / 2, 6)
+    })
+
+    it('the overlay draws one handle for a text and nine for a box', () => {
+      put(ed, mkText('t', 100, 100), mk('r', 300, 100))
+      const fills = (id: string) => {
+        sel(id)
+        const r = rec()
+        ed.tool.drawOverlay?.(r.ctx)
+        return r.calls.filter(([c]) => c === 'fillRect').length
+      }
+      expect(fills('t')).toBe(1)
+      expect(fills('r')).toBe(9)
+    })
   })
 
   const rec = () => {

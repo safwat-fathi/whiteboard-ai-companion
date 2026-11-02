@@ -72,6 +72,8 @@ export const selectTool = (ed: Editor): Tool => {
     const r = HIT / z()
     if (Math.hypot(q.x - (el.x + el.w / 2), q.y - (el.y - ROT / z())) <= r)
       return 'rot'
+    // A text can only rotate: drawText ignores w/h (the layout owns them), so a resize would break w/h == layout.
+    if (el.type === 'text') return null
     return (
       HANDLES.find(
         ([, fx, fy]) =>
@@ -322,7 +324,7 @@ export const selectTool = (ed: Editor): Tool => {
           ctx.translate(el.x + el.w / 2, el.y + el.h / 2)
           ctx.rotate(el.rotation)
           const pts: Point[] = [
-            ...HANDLES.map(([, fx, fy]) => ({
+            ...(el.type === 'text' ? [] : HANDLES).map(([, fx, fy]) => ({
               x: (fx - 0.5) * el.w,
               y: (fy - 0.5) * el.h,
             })),
