@@ -108,6 +108,7 @@ export const BatchSchema = z.object({
 })
 export type Batch = z.infer<typeof BatchSchema>
 
+/** (x, y) is the world point at the viewport's top-left (not the centre); zoom is CSS px per world unit. */
 export type Camera = { x: number; y: number; zoom: number }
 export const ZOOM_MIN = 0.05
 export const ZOOM_MAX = 20

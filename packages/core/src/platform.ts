@@ -10,6 +10,8 @@ export interface Platform {
   createCanvas(w: number, h: number): CanvasLike
   measureText(font: string, text: string): number
   registerFont(family: string, path: string): void
+  /** render.ts never touches the global Path2D; the browser platform passes `() => new Path2D()`. */
+  createPath2D(): Path2D
 }
 
 /** Plex Arabic subset first, Latin companion second: the arabic subset has no ASCII (S1 RESULT). */

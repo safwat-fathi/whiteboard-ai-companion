@@ -3,8 +3,6 @@ import { createCanvas, GlobalFonts, Path2D } from '@napi-rs/canvas'
 import type { CanvasLike, Platform } from './platform'
 
 export function nodePlatform(): Platform {
-  // render.ts builds Path2D from the global, which Node lacks.
-  globalThis.Path2D ??= Path2D as unknown as typeof globalThis.Path2D
   const scratch = createCanvas(1, 1).getContext('2d')
   return {
     createCanvas: (w, h) => createCanvas(w, h) as unknown as CanvasLike,
@@ -12,6 +10,7 @@ export function nodePlatform(): Platform {
       scratch.font = font
       return scratch.measureText(text).width
     },
+    createPath2D: () => new Path2D() as unknown as globalThis.Path2D,
     registerFont(family, path) {
       if (!GlobalFonts.registerFromPath(path, family))
         throw new Error(`registerFromPath failed for ${family}`)

@@ -10,9 +10,16 @@ import {
   screenToWorld,
   worldToScreen,
   zoomAt,
+  zoomBucket,
 } from './render'
 import { createScene } from './scene'
-import { type Camera, type ShapeData, ZOOM_MAX, ZOOM_MIN } from './schema'
+import {
+  type Camera,
+  type Element,
+  type ShapeData,
+  ZOOM_MAX,
+  ZOOM_MIN,
+} from './schema'
 import { mk } from './test-utils'
 
 const platform = nodePlatform()
@@ -26,9 +33,11 @@ type MkOpts = NonNullable<Parameters<typeof mk>[1]>
 const shape = (id: string, kind: ShapeData['kind'], p: MkOpts = {}) =>
   mk(id, { w: 80, h: 60, data: { kind }, ...p } as MkOpts)
 
-function goldenScene() {
+const TIGHT = { maxMeanDiff: 0.05, maxBigDiffRatio: 0.0005 } // same engine: only noise-level drift allowed
+
+function goldenEls(): Element[] {
   const blue = '#cfe3ff'
-  return createScene([
+  return [
     shape('r', 'rect', { x: 20, y: 20, fill: blue }),
     shape('r2', 'rect', { x: 120, y: 20 }),
     shape('rr', 'rect', {
@@ -91,15 +100,46 @@ function goldenScene() {
         ],
       },
     }),
-  ])
+  ]
 }
+const goldenScene = () => createScene(goldenEls())
 
 describe('render', () => {
   it('matches the shapes golden', async () => {
     const { c, ctx } = canvas()
     render(ctx, goldenScene(), cam, vp, platform)
-    await matchesGolden(c, 'shapes')
+    await matchesGolden(c, 'shapes', TIGHT)
   })
+
+  it('matches the panned and zoomed golden', async () => {
+    const { c, ctx } = canvas()
+    render(ctx, goldenScene(), { x: 60, y: 90, zoom: 2 }, vp, platform)
+    await matchesGolden(c, 'shapes-zoom2', TIGHT)
+  })
+
+  it('matches the dpr 2 golden', async () => {
+    const v2 = { ...vp, dpr: 2 }
+    const { c, ctx } = canvas(1200, 800)
+    render(ctx, goldenScene(), cam, v2, platform)
+    await matchesGolden(c, 'shapes-dpr2', TIGHT)
+  })
+
+  // UPDATE_GOLDEN would make the check overwrite the golden instead of comparing
+  it.skipIf(process.env.UPDATE_GOLDEN === '1')(
+    'the golden check rejects a missing element and a 5 px shift',
+    async () => {
+      const els = goldenEls()
+      const missing = els.filter((e) => e.id !== 'r')
+      const shifted = els.map((e) => (e.id === 'rr' ? { ...e, x: e.x + 5 } : e))
+      for (const variant of [missing, shifted]) {
+        const { c, ctx } = canvas()
+        render(ctx, createScene(variant), cam, vp, platform)
+        await expect(matchesGolden(c, 'shapes', TIGHT)).rejects.toThrow(
+          /golden shapes/,
+        )
+      }
+    },
+  )
 
   it('renders identical pixels twice', () => {
     const scene = goldenScene()
@@ -151,11 +191,12 @@ describe('render', () => {
       }
       const brute = els.filter((e) => {
         const b = bounds(e)
+        const p = e.style.strokeWidth / 2 // render pads the cull by half the stroke
         return (
-          b.minX <= view.x1 &&
-          b.maxX >= view.x0 &&
-          b.minY <= view.y1 &&
-          b.maxY >= view.y0
+          b.minX - p <= view.x1 &&
+          b.maxX + p >= view.x0 &&
+          b.minY - p <= view.y1 &&
+          b.maxY + p >= view.y0
         )
       }).length
       expect(brute).toBeGreaterThan(0)
@@ -166,6 +207,68 @@ describe('render', () => {
       expect(render(ctx, scene, camera, vp, platform).drawn).toBe(brute)
     })
   }
+})
+
+describe('culling of strokes and bound arrows', () => {
+  const boundArrow = (x: number, y: number) =>
+    shape('arrow', 'arrow', {
+      x,
+      y,
+      data: {
+        kind: 'arrow',
+        start: { id: 'a', fx: 1, fy: 0.5 },
+        end: { id: 'b', fx: 0, fy: 0.5 },
+        points: [
+          [0, 0],
+          [10, 0],
+        ],
+      },
+    })
+  const targets = (x: number) => [
+    shape('a', 'rect', { x, y: 50, w: 40, h: 40 }),
+    shape('b', 'rect', { x: x + 200, y: 50, w: 40, h: 40 }),
+  ]
+  const run = (els: Element[], withIndex: boolean) => {
+    const index = new SpatialIndex()
+    index.load(els)
+    const { ctx } = canvas()
+    return render(
+      ctx,
+      createScene(els),
+      cam,
+      vp,
+      platform,
+      withIndex ? { index } : {},
+    )
+  }
+
+  for (const withIndex of [false, true]) {
+    it(`draws a bound arrow whose stored points are off-screen (index ${withIndex})`, () => {
+      const els = [...targets(20), boundArrow(5000, 5000)]
+      expect(run(els, withIndex).drawn).toBe(3)
+    })
+
+    it(`culls a bound arrow whose routed path is off-screen (index ${withIndex})`, () => {
+      const els = [...targets(3000), boundArrow(100, 70)]
+      expect(run(els, withIndex).drawn).toBe(0)
+    })
+  }
+
+  it('keeps a shape whose stroke reaches into the view at zoom 20', () => {
+    // viewport is 30 world units wide at zoom 20; the stroke (width 10) reaches 5 units left of x
+    const near = shape('n', 'rect', {
+      x: 33,
+      y: 1,
+      w: 5,
+      h: 5,
+      style: { ...mk('s').style, strokeWidth: 10 },
+    })
+    const far = { ...near, id: 'f', x: 36 }
+    const { ctx } = canvas()
+    const z = { x: 0, y: 0, zoom: 20 }
+    expect(render(ctx, createScene([near]), z, vp, platform).drawn).toBe(1)
+    expect(render(ctx, createScene([far]), z, vp, platform).drawn).toBe(0)
+  })
 })
 
 describe('camera', () => {
@@ -187,6 +290,16 @@ describe('camera', () => {
     const after = screenToWorld(s, z, dvp)
     expect(after.x).toBeCloseTo(before.x, 9)
     expect(after.y).toBeCloseTo(before.y, 9)
+  })
+
+  it('zoomAt ignores non-finite and non-positive factors', () => {
+    const c = { x: 1, y: 2, zoom: 3 }
+    for (const f of [Number.NaN, Number.POSITIVE_INFINITY, 0, -2])
+      expect(zoomAt(c, { x: 5, y: 5 }, f)).toBe(c)
+  })
+
+  it('zoomBucket is 2^ceil(log2 zoom)', () => {
+    expect([0.3, 1, 3, 20].map(zoomBucket)).toEqual([0.5, 1, 4, 32])
   })
 
   it('zoomAt clamps at both limits and stays anchored', () => {

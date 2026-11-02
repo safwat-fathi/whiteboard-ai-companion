@@ -12,18 +12,28 @@ import {
 
 export type RenderStats = { drawn: number; culled: number }
 
-// Camera convention: (x, y) is the world point at the viewport's top-left; zoom is CSS px per world unit.
-export const worldToScreen = (p: Point, c: Camera, _vp: Viewport): Point => ({
+// Camera convention: (x, y) is the world point at the viewport's top-left (S1 used the centre; this differs deliberately),
+// zoom is CSS px per world unit.
+export const worldToScreen = (
+  p: Point,
+  c: Camera,
+  _viewport: Viewport,
+): Point => ({
   x: (p.x - c.x) * c.zoom,
   y: (p.y - c.y) * c.zoom,
 })
-export const screenToWorld = (p: Point, c: Camera, _vp: Viewport): Point => ({
+export const screenToWorld = (
+  p: Point,
+  c: Camera,
+  _viewport: Viewport,
+): Point => ({
   x: p.x / c.zoom + c.x,
   y: p.y / c.zoom + c.y,
 })
 
 /** Zooms by `factor` (clamped to ZOOM_MIN..ZOOM_MAX) keeping the world point under `screenPoint` (CSS px) fixed. */
 export function zoomAt(c: Camera, screenPoint: Point, factor: number): Camera {
+  if (!Number.isFinite(factor) || factor <= 0) return c
   const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, c.zoom * factor))
   return {
     x: c.x + screenPoint.x * (1 / c.zoom - 1 / zoom),
@@ -68,10 +78,12 @@ export class RenderCache {
   }
 }
 
-// Geometry in world space, built once per element object (elements are replaced, never mutated).
-const paths = new WeakMap<Element, Path2D>()
+// Geometry in world space, built once per element object (elements are replaced, never mutated). Keyed per platform
+// because a Path2D from one platform's constructor is not valid on another's context.
+const paths = new WeakMap<Platform, WeakMap<Element, Path2D>>()
 
 const HEAD = 12
+const headSize = (el: Element) => Math.max(HEAD, el.style.strokeWidth * 4)
 function arrowHead(p: Path2D, tip: Point, from: Point, size: number) {
   const a = Math.atan2(tip.y - from.y, tip.x - from.x)
   for (const d of [2.6, -2.6]) {
@@ -80,9 +92,9 @@ function arrowHead(p: Path2D, tip: Point, from: Point, size: number) {
   }
 }
 
-function build(el: Element, scene: Scene): Path2D {
+function build(el: Element, scene: Scene, platform: Platform): Path2D {
   const { x, y, w, h } = el
-  const p = new Path2D()
+  const p = platform.createPath2D()
   if (el.type !== 'shape') return p
   const { kind, radius } = el.data
   if (kind === 'line' || kind === 'arrow') {
@@ -95,7 +107,7 @@ function build(el: Element, scene: Scene): Path2D {
     p.moveTo(first.x, first.y)
     for (const q of rest) p.lineTo(q.x, q.y)
     const heads = el.data.arrowheads ?? { start: false, end: kind === 'arrow' }
-    const size = Math.max(HEAD, el.style.strokeWidth * 4)
+    const size = headSize(el)
     const second = pts[1]
     const prev = pts[pts.length - 2]
     const last = pts[pts.length - 1]
@@ -122,15 +134,51 @@ function build(el: Element, scene: Scene): Path2D {
 const isLinear = (el: Element) =>
   el.type === 'shape' && (el.data.kind === 'line' || el.data.kind === 'arrow')
 
-function pathOf(el: Element, scene: Scene): Path2D {
-  const bound = el.type === 'shape' && (el.data.start || el.data.end)
-  if (bound) return build(el, scene) // follows its targets, so never cached
-  const hit = paths.get(el)
+const isBound = (el: Element) =>
+  el.type === 'shape' && (el.data.start || el.data.end)
+
+function pathOf(el: Element, scene: Scene, platform: Platform): Path2D {
+  if (isBound(el)) return build(el, scene, platform) // follows its targets, so never cached
+  let m = paths.get(platform)
+  if (!m) {
+    m = new WeakMap()
+    paths.set(platform, m)
+  }
+  const hit = m.get(el)
   if (hit) return hit
-  const p = build(el, scene)
-  paths.set(el, p)
+  const p = build(el, scene, platform)
+  m.set(el, p)
   return p
 }
+
+const inflate = (r: Rect, d: number): Rect => ({
+  minX: r.minX - d,
+  minY: r.minY - d,
+  maxX: r.maxX + d,
+  maxY: r.maxY + d,
+})
+
+// Stroke and arrowheads reach past bounds(), and a bound arrow's routed points differ from its stored ones, so
+// lines/arrows are culled here by their routed points plus stroke and head extent.
+function linearRect(el: Element, scene: Scene): Rect {
+  const pts = routeArrow(el, scene).map(([px, py]) => ({
+    x: el.x + px,
+    y: el.y + py,
+  }))
+  if (!pts.length) pts.push({ x: el.x, y: el.y })
+  const xs = pts.map((p) => p.x)
+  const ys = pts.map((p) => p.y)
+  const r = {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys),
+  }
+  return inflate(r, el.style.strokeWidth / 2 + headSize(el))
+}
+
+// Max stroke is 100, so strokeWidth / 2 <= 50 for the index query.
+const MAX_STROKE_PAD = 50
 
 const intersects = (a: Rect, b: Rect) =>
   a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY
@@ -141,7 +189,7 @@ export function render(
   scene: Scene,
   camera: Camera,
   viewport: Viewport,
-  _platform: Platform, // used by text drawing (Task 7)
+  platform: Platform, // path creation now; text measuring/drawing in Task 7
   opts: { index?: SpatialIndex; cache?: RenderCache } = {},
 ): RenderStats {
   const { width, height, dpr } = viewport
@@ -159,17 +207,30 @@ export function render(
     maxX: camera.x + width / camera.zoom,
     maxY: camera.y + height / camera.zoom,
   }
-  const visible = (
+  // ponytail: the linear scan is O(n) per frame; keep a separate index of lines/arrows if that ever shows in profiles.
+  const closed = (
     opts.index
-      ? opts.index.search(view).flatMap((f) => scene.els.get(f.id) ?? [])
-      : ordered(scene).filter((el) => intersects(bounds(el), view))
-  ).sort((a, b) => (a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : 1))
+      ? opts.index
+          .search(inflate(view, MAX_STROKE_PAD))
+          .flatMap((f) => scene.els.get(f.id) ?? [])
+      : ordered(scene)
+  ).filter(
+    (el) =>
+      !isLinear(el) &&
+      intersects(inflate(bounds(el), el.style.strokeWidth / 2), view),
+  )
+  const linear = ordered(scene).filter(
+    (el) => isLinear(el) && intersects(linearRect(el, scene), view),
+  )
+  const visible = [...closed, ...linear].sort((a, b) =>
+    a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : 1,
+  )
 
   let drawn = 0
   for (const el of visible) {
     // text: Task 7 (uses opts.cache and the platform)
     if (el.type !== 'shape') continue
-    const path = pathOf(el, scene)
+    const path = pathOf(el, scene, platform)
     const { stroke, fill, strokeWidth, opacity, dash } = el.style
     ctx.save()
     ctx.globalAlpha = opacity
