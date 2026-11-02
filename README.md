@@ -13,7 +13,7 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 - **Books with page citations.** Upload a PDF, get hybrid search (keywords + embeddings) scoped to a topic, chapter or the whole book. Answers say what is from your book and what is general explanation.
 - **Jump to the AI's work.** Follow the AI live, get an off-screen indicator, or click any chat chip or activity row to fly to where it drew, now or weeks ago.
 - **A from-scratch canvas.** Freehand, shapes, text (Arabic/RTL), LaTeX math (MathJax), charts, images, select/move/resize.
-- **Simple to run.** No login, no Docker, no database server: Node, one SQLite file, a [Meta Llama API](https://llama.developer.meta.com) key (`META_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings. Runs on a laptop and on a small VPS.
+- **Simple to run.** No login, no Docker, no database server: Node, one SQLite file, a [Meta Model API](https://api.meta.ai) key (`META_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings. Runs on a laptop and on a small VPS.
 
 ## Hackathon & Meta AI Integration
 
@@ -21,9 +21,9 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 
 Whiteboard AI is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (October 26 – November 4, 2026), hosted by **Meta** and **Cerebral Valley**.
 
-The project re-imagines how learners interact with textbooks and technical subjects by uniting Meta's open foundation models with an interactive visual workspace via the **Meta Model API**:
+The project re-imagines how learners interact with textbooks and technical subjects by uniting Meta foundation models with an interactive visual workspace via the **Meta Model API**:
 
-- **AI Tutor with Visual Explanations:** Powered directly by the **Meta Model API** (`https://api.llama.com/compat/v1`) using **Llama 4 Maverick** (`Llama-4-Maverick-17B-128E-Instruct-FP8`), **Llama 4 Scout** (`Llama-4-Scout-17B-16E-Instruct-FP8`), **Llama 3.3 70B** (`Llama-3.3-70B-Instruct`) for tool orchestration and mathematical reasoning, and **Llama 3.2 Vision** (`Llama-3.2-90B-Vision-Instruct` / `Llama-3.2-11B-Vision-Instruct`) for whiteboard perception and textbook diagram/page transcription.
+- **AI Tutor with Visual Explanations:** Powered directly by the **Meta Model API** (`https://api.meta.ai/v1`) using Meta's **Muse** series (`muse-spark-1.3`, `muse-wonder-1.0`) for real-time tool orchestration, mathematical reasoning, and textbook diagram/page transcription (with open-weights Llama 4 supported via OpenRouter `meta-llama/llama-4-maverick`).
 - **The Board is the AI's Context:** Instead of text-only conversations, the student and AI share an infinite 2D canvas. The AI can point, draw diagrams, write formatted MathJax equations, and place textbook figures directly into view.
 - **Grounded in Your Books:** Upload any PDF to get hybrid search (dense `baai/bge-m3` embeddings + BM25) with verifiable page citations, distinguishing textbook source material from general explanation.
 - **Local-First & Accessible:** Runs natively without Docker or external DB servers (Node, SQLite in WAL mode) to ensure low latency and easy accessibility for any student or researcher.
@@ -102,9 +102,10 @@ Set in `.env` (server) — the full list is in [`deployment`](docs/plans/deploym
 | Key                                                            | Purpose                                                                                                                               |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `META_API_KEY`                                                 | Meta Model API secret (chat, tool loop, vision, summaries, page OCR). Server-side only                                                |
-| `META_API_BASE_URL`                                            | Meta OpenAI-compatible base URL (`https://api.llama.com/compat/v1` by default)                                                        |
+| `META_API_BASE_URL`                                            | Meta OpenAI-compatible base URL (`https://api.meta.ai/v1` by default)                                                                 |
 | `OPENROUTER_API_KEY`                                           | Used exclusively for `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and historical M0 spike scripts. Server-side only           |
-| `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `CHEAP_MODEL` · `VISION_MODEL` | Meta Llama model IDs (e.g. `Llama-4-Maverick-17B-128E-Instruct-FP8`, `Llama-4-Scout-17B-16E-Instruct-FP8`, `Llama-3.3-70B-Instruct`) |
+| `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `CHEAP_MODEL` · `VISION_MODEL` | Meta model IDs (default `muse-spark-1.3`; `REVIEWER_MODEL=muse-wonder-1.0`; open-weights Llama 4 via OpenRouter)                     |
+| `SNAPSHOT_ADAPTER`                                             | Canvas snapshot delivery adapter (`follow-up-user` required for Meta Model API; `tool-result-image` supported on OpenRouter)          |
 | `EMBED_MODEL`                                                  | Embedding model ID (`baai/bge-m3`, 1024-d via OpenRouter embeddings endpoint)                                                         |
 | `DATA_DIR`                                                     | Where the SQLite file and blobs live (`./data` by default)                                                                            |
 | `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD`         | Spending and loop caps                                                                                                                |

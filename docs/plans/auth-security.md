@@ -32,7 +32,7 @@ There are no users. `author` is derived by the server from the channel: **WebSoc
 
 - `META_API_KEY` (all LLM/vision calls) and `OPENROUTER_API_KEY` (`baai/bge-m3` embeddings only) exist only in the server environment (`/etc/whiteboard/env`, mode 0640 on the VPS; `.env` locally, gitignored). Neither key is ever sent to the browser, written to logs, stored in the DB or pasted into chat. If a key ever leaks: revoke and rotate in the Meta developer portal / OpenRouter.
 - Set a **spend / rate limit** on the keys as the outer fence behind the in-app budgets.
-- **Privacy:** prompts, selected board content, pictures and retrieved book passages go to the Meta Model API (`https://api.llama.com/compat/v1`); book chunks and search queries go to OpenRouter's embeddings endpoint (`provider.data_collection: "deny"`, verified in **spike S3/S4b**). The board-context "What the AI sees" preview makes the outgoing context visible ([board-context](./board-context.md)).
+- **Privacy:** prompts, selected board content, pictures and retrieved book passages go to the Meta Model API (`https://api.meta.ai/v1`); book chunks and search queries go to OpenRouter's embeddings endpoint (`provider.data_collection: "deny"`, verified in **spike S3/S4b**). The board-context "What the AI sees" preview makes the outgoing context visible ([board-context](./board-context.md)).
 - Logs contain ids, timings, token counts and costs; never keys, prompts, book text or board text.
 
 ## Budgets
