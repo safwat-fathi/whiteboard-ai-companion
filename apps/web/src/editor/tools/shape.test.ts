@@ -2,7 +2,8 @@
 import { ordered } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '../editor'
-import { drag, mk, put, setup } from '../test-utils'
+import { drag, mk, ptr, put, setup } from '../test-utils'
+import { NEW_SHAPE_FILL } from './shape'
 
 let ed: Editor
 let done: () => void
@@ -119,5 +120,45 @@ describe('shape tools', () => {
   it('tool keys R O D L A are registered', () => {
     const k = Object.values(ed.tools).map((t) => t.key)
     for (const c of ['v', 'r', 'o', 'd', 'l', 'a']) expect(k).toContain(c)
+  })
+
+  it('a zero-size drag still yields at least 1x1; fill is NEW_SHAPE_FILL', () => {
+    ed.setTool('rect')
+    drag(ed.tool, [
+      [10, 10],
+      [10, 40],
+    ])
+    const [r] = els()
+    expect([r?.w, r?.h]).toEqual([1, 30])
+    expect(r?.style.fill).toBe(NEW_SHAPE_FILL)
+  })
+
+  it('non-primary buttons start no gesture', () => {
+    ed.setTool('rect')
+    ptr('pointerdown', 0, 0, 2)
+    ptr('pointermove', 80, 80, 2)
+    ptr('pointerup', 80, 80, 2)
+    expect(els()).toEqual([])
+    expect(ed.tool.id).toBe('rect')
+  })
+
+  it('pointercancel commits nothing', () => {
+    const commit = vi.spyOn(ed, 'commit')
+    ed.setTool('rect')
+    ptr('pointerdown', 0, 0)
+    ptr('pointermove', 80, 80)
+    ptr('pointercancel', 80, 80)
+    ptr('pointerup', 80, 80)
+    expect(commit).not.toHaveBeenCalled()
+    expect(els()).toEqual([])
+  })
+
+  it('is inert while readOnly', () => {
+    ed.setTool('rect')
+    ed.readOnly = true
+    ptr('pointerdown', 0, 0)
+    ptr('pointermove', 80, 80)
+    ptr('pointerup', 80, 80)
+    expect(els()).toEqual([])
   })
 })

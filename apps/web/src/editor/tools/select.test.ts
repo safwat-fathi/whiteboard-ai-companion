@@ -8,7 +8,7 @@ import {
 } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '../editor'
-import { drag, ev, key, mk, put, rotPt, setup } from '../test-utils'
+import { drag, ev, key, mk, ptr, put, rotPt, setup } from '../test-utils'
 
 let ed: Editor
 let done: () => void
@@ -193,6 +193,12 @@ describe('select tool', () => {
     expect(ar.y).toBe(30) // bbox re-based: start stays at y=30
     ed.undoOnce()
     expect(pts('ar')[1]).toEqual({ x: 300, y: 30 })
+    const back = get('ar')
+    expect(back.type === 'shape' && back.data.end).toEqual({
+      id: 'b',
+      fx: 0,
+      fy: 0.5,
+    })
     expect(get('b').x).toBe(300)
     expect(get('ar').h).toBe(0)
   })
@@ -296,5 +302,156 @@ describe('select tool', () => {
     ed.tool.onPointerDown(ev(100, 30)) // start handle, no movement
     ed.tool.onPointerUp(ev(100, 30))
     expect(ordered(ed.scene)).toEqual(before)
+  })
+
+  const rec = () => {
+    const calls: [string, unknown[]][] = []
+    const stack: number[] = []
+    let active = 0
+    const at: number[] = [] // transform depth at each fillRect
+    const ctx = new Proxy({} as Record<string, unknown>, {
+      get: (t, k: string) =>
+        k in t
+          ? t[k]
+          : (...a: unknown[]) => {
+              calls.push([k, a])
+              if (k === 'save') stack.push(active)
+              if (k === 'restore') active = stack.pop() ?? 0
+              if (k === 'translate' || k === 'rotate') active++
+              if (k === 'fillRect') at.push(active)
+            },
+      set: (t, k: string, v) => {
+        t[k] = v
+        return true
+      },
+    })
+    return {
+      ctx: ctx as unknown as CanvasRenderingContext2D,
+      calls,
+      at,
+      depth: () => stack.length,
+    }
+  }
+
+  it('overlay: shift-marquee with a rotated element selected draws the marquee in world space', () => {
+    put(ed, mk('a', 100, 100, 100, 60, { rotation: 0.5 }))
+    sel('a')
+    ed.tool.onPointerDown(ev(400, 400, { shift: true }))
+    ed.tool.onPointerMove(ev(450, 480, { shift: true }))
+    const r = rec()
+    ed.tool.drawOverlay?.(r.ctx)
+    const n = (k: string) => r.calls.filter(([c]) => c === k).length
+    expect(n('save')).toBe(n('restore'))
+    expect(r.depth()).toBe(0)
+    expect(r.at.at(-1)).toBe(0) // the marquee fillRect runs with no leaked translate/rotate
+    const last = r.calls.filter(([c]) => c === 'fillRect').at(-1)
+    expect(last?.[1]).toEqual([400, 400, 50, 80])
+  })
+
+  it('overlay: move preview skips frames offset for locked members', () => {
+    put(ed, mk('a', 0, 0), mk('l', 200, 0, 50, 50, { locked: true }))
+    sel('a', 'l')
+    ed.tool.onPointerDown(ev(10, 10))
+    ed.tool.onPointerMove(ev(40, 10))
+    const r = rec()
+    ed.tool.drawOverlay?.(r.ctx)
+    const tr = r.calls.filter(([c]) => c === 'translate').map(([, a]) => a)
+    expect(tr).toEqual([
+      [80, 30],
+      [225, 25],
+    ])
+  })
+
+  it('re-routes bound arrows when the target is resized and when rotated; one undo each', () => {
+    flow()
+    sel('b')
+    drag(ed.tool, [
+      [400, 60],
+      [450, 120],
+    ]) // se handle
+    let end = pts('ar')[1] as Point
+    let want = resolveEnd({ id: 'b', fx: 0, fy: 0.5 }, get('b'))
+    expect(get('b').h).toBeGreaterThan(60)
+    expect(end.y).toBeCloseTo(want.y, 6)
+    expect(end.y).not.toBeCloseTo(30, 3)
+    ed.undoOnce()
+    expect(pts('ar')[1]).toEqual({ x: 300, y: 30 })
+    expect(get('b').h).toBe(60)
+    sel('b')
+    drag(ed.tool, [
+      [350, -24],
+      [450, 30],
+    ]) // rotation handle -> 90 degrees
+    end = pts('ar')[1] as Point
+    want = resolveEnd({ id: 'b', fx: 0, fy: 0.5 }, get('b'))
+    expect(get('b').rotation).toBeCloseTo(Math.PI / 2, 6)
+    expect(end.x).toBeCloseTo(want.x, 6)
+    expect(end.y).toBeCloseTo(want.y, 6)
+    expect(end.x).not.toBeCloseTo(300, 3)
+    ed.undoOnce()
+    expect(pts('ar')[1]).toEqual({ x: 300, y: 30 })
+    expect(get('b').rotation).toBe(0)
+  })
+
+  it.each([0.05, 1, 20])(
+    'zoom %s: handle radius and edge tolerance are 6 screen px',
+    (zoom) => {
+      const w = 200 / zoom
+      const h = 120 / zoom
+      put(ed, mk('a', 100 / zoom, 100 / zoom, w, h))
+      ed.camera = { x: 0, y: 0, zoom }
+      const se = { x: 100 + 200, y: 100 + 120 } // screen px
+      // 5 px off the se handle grabs it and resizes by 10 screen px
+      sel('a')
+      ptr('pointerdown', se.x + 4, se.y + 3)
+      ptr('pointermove', se.x + 14, se.y + 3)
+      ptr('pointerup', se.x + 14, se.y + 3)
+      expect(get('a').w).toBeCloseTo(w + 14 / zoom, 6)
+      ed.undoOnce()
+      // 8 px off the handle (and outside the edge tolerance) misses everything
+      sel('a')
+      ptr('pointerdown', se.x + 8, se.y + 8)
+      ptr('pointerup', se.x + 8, se.y + 8)
+      expect(ed.selection.size).toBe(0)
+      // 5 px outside the right edge selects, 8 px does not
+      ptr('pointerdown', se.x + 5, 160)
+      ptr('pointerup', se.x + 5, 160)
+      expect([...ed.selection]).toEqual(['a'])
+      sel()
+      ptr('pointerdown', se.x + 8, 160)
+      ptr('pointerup', se.x + 8, 160)
+      expect(ed.selection.size).toBe(0)
+    },
+  )
+
+  it('pointercancel mid-drag commits nothing and leaves the scene untouched', () => {
+    put(ed, mk('a', 0, 0))
+    const commit = vi.spyOn(ed, 'commit')
+    ptr('pointerdown', 10, 10)
+    ptr('pointermove', 60, 60)
+    ptr('pointercancel', 60, 60)
+    ptr('pointerup', 60, 60)
+    expect(commit).not.toHaveBeenCalled()
+    expect(get('a').x).toBe(0)
+  })
+
+  it('is inert while readOnly', () => {
+    put(ed, mk('a', 0, 0))
+    ed.readOnly = true
+    const commit = vi.spyOn(ed, 'commit')
+    ptr('pointerdown', 10, 10)
+    ptr('pointermove', 60, 60)
+    ptr('pointerup', 60, 60)
+    expect(commit).not.toHaveBeenCalled()
+    expect(ed.selection.size).toBe(0)
+  })
+
+  it('a right-button press starts no gesture', () => {
+    put(ed, mk('a', 0, 0))
+    ptr('pointerdown', 10, 10, 2)
+    ptr('pointermove', 60, 60, 2)
+    ptr('pointerup', 60, 60, 2)
+    expect(get('a').x).toBe(0)
+    expect(ed.selection.size).toBe(0)
   })
 })

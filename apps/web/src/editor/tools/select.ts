@@ -92,6 +92,7 @@ export const selectTool = (ed: Editor): Tool => {
     key: 'v',
     onPointerDown(e: ToolEvent) {
       g = null
+      if (e.button !== 0) return
       const sel = single()
       if (sel && isLinear(sel)) {
         const p = worldPts(sel)
@@ -253,7 +254,7 @@ export const selectTool = (ed: Editor): Tool => {
           g && 'el' in g && g.el.id === el.id && 'patch' in g && g.patch
             ? applyPatch(el, g.patch)
             : el
-        frame(ctx, live, m.x, m.y)
+        frame(ctx, live, el.locked ? 0 : m.x, el.locked ? 0 : m.y)
       }
       if (sel && g?.k !== 'move') {
         const el =
@@ -273,6 +274,7 @@ export const selectTool = (ed: Editor): Tool => {
           }
           if (g?.k === 'end' && g.snap) frame(ctx, g.snap)
         } else {
+          ctx.save()
           ctx.translate(el.x + el.w / 2, el.y + el.h / 2)
           ctx.rotate(el.rotation)
           const pts: Point[] = [
@@ -286,6 +288,7 @@ export const selectTool = (ed: Editor): Tool => {
             ctx.fillRect(q.x - s / 2, q.y - s / 2, s, s)
             ctx.strokeRect(q.x - s / 2, q.y - s / 2, s, s)
           }
+          ctx.restore()
         }
       }
       if (g?.k === 'marquee') {

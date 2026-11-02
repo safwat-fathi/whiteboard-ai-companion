@@ -21,6 +21,8 @@ const META: Record<Kind, { key: string; label: string }> = {
   line: { key: 'l', label: 'Line' },
   arrow: { key: 'a', label: 'Arrow' },
 }
+/** Fill of newly created closed shapes: non-null so clicks inside pick them and arrows can bind. */
+export const NEW_SHAPE_FILL = '#ffffff'
 const DRAG = 3 // screen px before a press becomes a drag
 
 export const shapeTool =
@@ -47,7 +49,10 @@ export const shapeTool =
         type: 'shape' as const,
         rotation: 0,
         z: zBetween(top, null),
-        style: { ...DEFAULT_STYLE, ...(linear ? {} : { fill: '#ffffff' }) },
+        style: {
+          ...DEFAULT_STYLE,
+          ...(linear ? {} : { fill: NEW_SHAPE_FILL }),
+        },
         locked: false,
         author: { kind: 'human' as const, id: 'local' },
         v: 0,
@@ -84,8 +89,8 @@ export const shapeTool =
           ? [
               Math.min(a.x, b.x),
               Math.min(a.y, b.y),
-              Math.abs(b.x - a.x),
-              Math.abs(b.y - a.y),
+              Math.max(1, Math.abs(b.x - a.x)),
+              Math.max(1, Math.abs(b.y - a.y)),
             ]
           : [a.x - 60, a.y - 40, 120, 80]
         el = { ...base, x, y, w, h, data: { kind } }
@@ -110,6 +115,7 @@ export const shapeTool =
       id: kind,
       key: META[kind].key,
       onPointerDown(e) {
+        if (e.button !== 0) return
         from = {
           world: e.world,
           screen: e.screen,

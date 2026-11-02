@@ -125,3 +125,9 @@ export const rotPt = (p: Point, c: Point, a: number): Point => ({
   x: c.x + (p.x - c.x) * Math.cos(a) - (p.y - c.y) * Math.sin(a),
   y: c.y + (p.x - c.x) * Math.sin(a) + (p.y - c.y) * Math.cos(a),
 })
+
+/** Dispatches a real pointer event on the Editor's overlay canvas (client px == screen px; host is at 0,0 in jsdom). */
+export const ptr = (type: string, x: number, y: number, button = 0) =>
+  (document.querySelectorAll('canvas')[1] as HTMLCanvasElement).dispatchEvent(
+    new MouseEvent(type, { clientX: x, clientY: y, button, bubbles: true }),
+  )

@@ -154,7 +154,7 @@ export function deleteBatch(scene: Scene, ids: Iterable<Id>): Batch | null {
   return buildBatch(scene, 'Delete', new Map(), del)
 }
 
-/** Dashed rotated frame of `el` (axis-aligned bounds for linear elements) shifted by (dx, dy). */
+/** Solid rotated frame of `el` (axis-aligned bounds for linear elements) shifted by (dx, dy). */
 export function frame(
   ctx: CanvasRenderingContext2D,
   el: Element,

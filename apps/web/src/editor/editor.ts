@@ -93,9 +93,11 @@ export class Editor {
       this.onPointer('move', e),
     )
     on(this.overlay, 'pointerup', (e: PointerEvent) => this.onPointer('up', e))
-    on(this.overlay, 'pointercancel', (e: PointerEvent) =>
-      this.onPointer('up', e),
-    )
+    // A cancelled gesture (touch palm rejection, lost capture) must not commit.
+    on(this.overlay, 'pointercancel', () => {
+      this.panning = null
+      this.tool.onCancel?.()
+    })
     // The window-level key listeners assume one Editor per page.
     on(window, 'keydown', (e: KeyboardEvent) => this.onKeyDown(e))
     on(window, 'keyup', (e: KeyboardEvent) => {
