@@ -26,6 +26,33 @@ export function checkOrigin(
   return req.headers.origin === publicOrigin
 }
 
+const HOST_SHAPE = /^(?:[a-z0-9.-]+|\[[0-9a-f:]+\])(?::\d{1,5})?$/i
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
+const WILDCARD = new Set(['0.0.0.0', '::', '[::]'])
+
+/**
+ * Defence against DNS rebinding: a page on an attacker's hostname that resolves to 127.0.0.1 makes same-origin requests
+ * (no Origin header on a GET), so the Host must be one of ours: a loopback name, the public origin's host, or the
+ * specific address the server binds to. The shape is checked before parsing because `evil.test@localhost` parses as the
+ * hostname `localhost`. Ports are not compared: only the name can be forged by DNS.
+ */
+export function checkHost(
+  host: string | undefined,
+  o: { publicOrigin: string; host: string },
+): boolean {
+  if (!host || !HOST_SHAPE.test(host)) return false
+  let name: string
+  try {
+    name = new URL(`http://${host}`).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  if (LOOPBACK.has(name)) return true
+  if (name === new URL(o.publicOrigin).hostname.toLowerCase()) return true
+  const bind = o.host.toLowerCase()
+  return !WILDCARD.has(bind) && name === bind
+}
+
 export type HttpDeps = {
   config: Config
   boards: BoardService
@@ -150,6 +177,8 @@ export function createHttpServer(deps: HttpDeps): http.Server {
   const { config, boards } = deps
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
+    if (!checkHost(req.headers.host, config))
+      throw apiError('forbidden_origin', 'this Host is not allowed')
     const origin = req.headers.origin
     if (origin === config.publicOrigin) {
       res.setHeader('Access-Control-Allow-Origin', origin)

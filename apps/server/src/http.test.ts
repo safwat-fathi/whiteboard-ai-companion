@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
+import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type Database from 'better-sqlite3'
@@ -14,7 +15,7 @@ import {
   openDatabase,
   schemaVersion,
 } from './db'
-import { checkOrigin, createHttpServer } from './http'
+import { checkHost, checkOrigin, createHttpServer } from './http'
 
 const ORIGIN = 'http://localhost:3000'
 const cleanup: (() => void | Promise<void>)[] = []
@@ -103,7 +104,7 @@ async function boot() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-  return { call, json, boards, config }
+  return { call, json, boards, config, port }
 }
 
 describe('checkOrigin', () => {
@@ -127,6 +128,94 @@ describe('checkOrigin', () => {
       expect(ok(m, 'http://evil.test')).toBe(false)
       expect(ok(m, 'https://localhost:3000')).toBe(false)
     }
+  })
+})
+
+describe('checkHost (DNS rebinding)', () => {
+  const cfg = { publicOrigin: 'https://study.example.com', host: '127.0.0.1' }
+  it('allows loopback names, the public origin host and a specific bind host, with or without a port', () => {
+    for (const h of [
+      'localhost',
+      'localhost:4000',
+      '127.0.0.1:4000',
+      '[::1]:4000',
+      'LOCALHOST:4000',
+      'study.example.com',
+      'study.example.com:443',
+    ])
+      expect(checkHost(h, cfg), h).toBe(true)
+    expect(checkHost('10.0.0.5:4000', { ...cfg, host: '10.0.0.5' })).toBe(true)
+  })
+  it('refuses any other name, a missing or empty Host, and values that only parse as an allowed name', () => {
+    for (const h of [
+      undefined,
+      '',
+      'evil.test',
+      'evil.test:4000',
+      'localhost.evil.test',
+      'evil.test@localhost',
+      'localhost@evil.test',
+      'localhost:4000@evil.test',
+      'localhost:abc',
+      'localhost:4000/path',
+      'local host',
+      '10.0.0.5:4000',
+    ])
+      expect(checkHost(h, cfg), String(h)).toBe(false)
+  })
+  it('does not treat a wildcard bind address as an allowed Host', () => {
+    expect(checkHost('0.0.0.0:4000', { ...cfg, host: '0.0.0.0' })).toBe(false)
+  })
+})
+
+describe('Host gate on the server (DNS rebinding)', () => {
+  it('refuses a rebinding Host on GET, preflight and POST, and accepts the loopback names', async () => {
+    const { call, boards, port } = await boot()
+    boards.createBoard('private')
+    for (const host of [
+      'evil.test:4000',
+      'evil.test@localhost',
+      'localhost.evil.test',
+    ]) {
+      const get = await call('GET', '/api/boards', { headers: { Host: host } })
+      expect(get.status, host).toBe(403)
+      expect(get.json.error.code).toBe('forbidden_origin')
+      expect(get.text).not.toContain('private')
+      expect(
+        (
+          await call('OPTIONS', '/api/boards', {
+            origin: ORIGIN,
+            headers: { Host: host },
+          })
+        ).status,
+      ).toBe(403)
+      expect(
+        (await call('GET', '/api/health', { headers: { Host: host } })).status,
+      ).toBe(403)
+    }
+    // An empty or absent Host never reaches the handler through Node's http client, so send it raw.
+    const raw = (head: string) =>
+      new Promise<string>((resolve, reject) => {
+        const sock = net.connect(port, '127.0.0.1', () =>
+          sock.write(
+            `GET /api/boards HTTP/1.1\r\n${head}Connection: close\r\n\r\n`,
+          ),
+        )
+        let out = ''
+        sock.on('data', (d) => {
+          out += d
+        })
+        sock.on('close', () => resolve(out))
+        sock.on('error', reject)
+      })
+    expect(await raw('Host: \r\n')).toMatch(/^HTTP\/1\.1 403 /)
+    expect(await raw('')).toMatch(/^HTTP\/1\.1 400 /) // Node itself refuses an HTTP/1.1 request with no Host
+    expect(await raw('Host: evil.test\r\n')).toMatch(/^HTTP\/1\.1 403 /)
+    for (const host of ['localhost:4000', '127.0.0.1:4000', '[::1]:4000'])
+      expect(
+        (await call('GET', '/api/boards', { headers: { Host: host } })).status,
+        host,
+      ).toBe(200)
   })
 })
 
