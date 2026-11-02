@@ -4,7 +4,7 @@
 
 A personal **study companion**. Upload a book, choose what to study (a topic, a chapter, the whole book) and **chat with an AI tutor inside the app**. The tutor explains on a shared infinite whiteboard with text, LaTeX equations, diagrams, charts and figures from your book, and cites the pages. You can draw and write on the same board, select anything and ask about it, and jump to wherever the AI worked.
 
-> **Status: the editor runs, the tutor does not exist yet.** The from-scratch canvas editor (M1: shapes, Arabic/Latin text, undo, local save) is built; math and images (M2) are on branch `m2-math-images`. The server, the library and the AI tutor are planned (M3 to M5): the Meta Model API pieces below describe the plan and are **[spike]** until they are measured against that API (the M0 spikes ran on OpenRouter). Plan: [`docs/PLAN.md`](docs/PLAN.md); scope, gates and status per phase: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status: M1 (core canvas editor) and M2 (math and images) done; M3 (server sync, SQLite op log, blobs, access gate, deploy scripts) built and gate-verified.** The server runs locally and syncs multiple tabs over WebSocket; server PNG snapshot matches browser render; Caddy and systemd deployment configs are ready. The library and the AI tutor are planned (M4 to M5): the Meta Model API pieces below describe the plan and are **[spike]** until they are measured against that API (the M0 spikes ran on OpenRouter). Plan: [`docs/PLAN.md`](docs/PLAN.md); scope, gates and status per phase: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## What it does (v1)
 
@@ -34,7 +34,7 @@ The project re-imagines how learners interact with textbooks and technical subje
 Browser (Next.js) ── canvas · chat dock · library · source panel
    │ WebSocket (board ops)   │ SSE (tutor stream)   │ REST
    ▼                         ▼                      ▼
-NestJS server ── Board service · Tutor (AI SDK tool loop) · Context builder · Library · Snapshot render
+Node server (node:http + ws) ── Board service · Tutor (tool loop) · Context builder · Library · Snapshot render
    │                                              │
 SQLite (WAL, FTS5) + blobs on disk           Meta Model API (chat, tool loop, vision, page transcription)
                                              + OpenRouter (baai/bge-m3 embeddings only)
@@ -65,15 +65,33 @@ Start with the master plan, then the aspect you care about.
 
 ## Quick start
 
-Prerequisites: **Node 22+** and **pnpm 12** (`corepack enable`). The editor needs no API keys.
+Prerequisites: **Node 22+** and **pnpm 12** (`corepack enable`).
 
-```
+```bash
 pnpm install
-pnpm dev                         # the editor at http://localhost:3000 (saved in your browser)
-pnpm test && pnpm e2e            # unit tests, then the browser tests against the dev server
+cp .env.example .env             # optional for local server mode; required for AI keys in M4/M5
 ```
 
-Planned, from M3 on: `cp .env.example .env` and set `META_API_KEY` (tutor, vision) and `OPENROUTER_API_KEY` (`baai/bge-m3` embeddings); the server on :4000 and the data in `./data` arrive with M3.
+### Running
+
+- **Standalone local editor (M1/M2):**
+  ```bash
+  pnpm dev:web                   # editor at http://localhost:3000 (persists in browser IndexedDB)
+  ```
+- **Collaborative server mode (M3):**
+  ```bash
+  pnpm dev                       # web on :3000, server on :4000 (SQLite in ./data, WebSocket sync)
+  ```
+
+### Testing
+
+```bash
+pnpm lint                        # Biome check
+pnpm typecheck                   # TypeScript check across all packages and apps
+pnpm test                        # Vitest unit tests (core, math, web, server)
+pnpm e2e                         # Playwright browser editor tests
+pnpm e2e:server                  # Playwright M3 server gate (two tabs sync, server restart, Origin, PNG)
+```
 
 Deploying to a VPS (Node + systemd + Caddy, no Docker): [`docs/plans/deployment.md`](docs/plans/deployment.md).
 
@@ -91,14 +109,14 @@ Set in `.env` (server) — the full list is in [`deployment`](docs/plans/deploym
 | `DATA_DIR`                                                     | Where the SQLite file and blobs live (`./data` by default)                                                                            |
 | `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD`         | Spending and loop caps                                                                                                                |
 
-## Repo layout (planned)
+## Repo layout
 
 ```
 packages/core    schemas, scene store, ops/undo, renderer, blob interface, tool registry
 packages/math    MathJax renderer (renderMath), security allowlist
-apps/web         Next.js editor, chat dock, library
-apps/server      NestJS: WebSocket, REST, tutor, library, SQLite
-deploy/          Caddyfile, systemd units, env example, backup script
+apps/web         Next.js editor, sync client, HTTP blob store, chat dock, library
+apps/server      Node server: WebSocket (/ws), REST (/api), SQLite (WAL), blobs on disk, snapshot render
+deploy/          Caddyfile, systemd services, deploy.sh, backup.sh
 eval/            retrieval questions per book
 docs/            PLAN.md and docs/plans/*.md
 ```

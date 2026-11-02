@@ -2,7 +2,7 @@
 
 > Part of [PLAN.md](../PLAN.md) §15 · Related: [database](./database.md) · [ai-integration](./ai-integration.md) · [board-context](./board-context.md) · [auth-security](./auth-security.md) · [jump-to-ai](./jump-to-ai.md)
 
-Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops and agent events), **SSE** (`POST /api/chat`, the tutor stream). All bodies are validated with the zod schemas in `packages/core` (or `apps/server` for REST-only shapes). There is no auth in the app: the gate is outside ([auth-security](./auth-security.md)), but WebSocket and non-GET requests check `Origin` against `PUBLIC_ORIGIN`.
+Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops and agent events), **SSE** (`POST /api/chat`, the tutor stream). All bodies are validated with the zod schemas in `packages/core` (or `apps/server` for REST-only shapes). There is no auth in the app: the gate is outside ([auth-security](./auth-security.md)), but WebSocket handshakes and non-GET requests check `Origin` against `PUBLIC_ORIGIN`, and all HTTP requests and WebSocket handshakes validate the `Host` header to prevent DNS rebinding.
 
 ## Conventions
 
@@ -33,7 +33,7 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
 | `GET /api/boards/:id/activity` | AI turns and batches for the Activity tab ([jump-to-ai](./jump-to-ai.md)) |
 | `POST /api/boards/:id/context-preview` | Exact digest text, thumbnails and token estimate for a context descriptor ([board-context](./board-context.md)) |
 | `GET /api/boards/:id/export.png?x=&y=&w=&h=&width=` | Server render of a region (used by tests and the snapshot fallback) |
-| `POST /api/blobs` (multipart, ≤ 10 MB) · `GET /api/blobs/:id` | Image/picture upload and fetch (correct type, `nosniff`) |
+| `POST /api/blobs` (raw body, ≤ 10 MB) · `GET /api/blobs/:id` | Image/picture upload and fetch (raw stream with `Content-Type: image/png\|jpeg\|webp\|gif`, header-verified size/dimensions; returns `{id, byteLength, mediaType, width, height}`; `nosniff`) |
 | `POST /api/books` (multipart PDF) | Upload; returns `{id}` with `status: uploaded` |
 | `GET /api/books` · `GET /api/books/:id` | List; status, progress, method, cost, error |
 | `GET /api/books/:id/estimate` · `POST …/preview {pages}` · `POST …/index {methods?}` · `POST …/retry` · `DELETE` | Ingestion flow ([library-ingestion](./library-ingestion.md)) |
@@ -72,21 +72,24 @@ The server owns history, so the client sends only the new message plus the conte
 
 ## WebSocket `/ws`
 
-One socket per board (`/ws?boardId=<id>`), JSON messages. Origin is checked at the handshake.
+One socket per board (`/ws?boardId=<id>`), JSON messages. Both `Origin` and `Host` are verified at the handshake.
 
 | Message | Direction | Purpose |
 |---|---|---|
-| `join {boardId, fromSeq}` | C→S | Server replies with a snapshot (if `fromSeq` is too old) plus the op tail |
+| `join {boardId, fromSeq}` | C→S | Join a board channel. Server replies with `sync` |
+| `sync {boardId, headSeq, snapshot?, ops}` | S→C | State sync: includes `snapshot` (if `fromSeq` is too old or omitted) plus the op tail |
 | `ops {clientSeq, batch}` | C→S | Submit a batch already applied locally. `batch = {batchId, label, ops}` |
 | `ack {clientSeq, seq}` | S→C | Confirms the batch and its place in the order |
 | `ops {seq, batch, author, turnId?, bounds}` | S→C | Broadcast of every accepted batch, including tutor batches |
 | `reject {clientSeq, reason}` | S→C | Failed validation or edit-rights check; client rolls back |
-| `undo {turnId \| batchIds}` | C→S | Server builds inverse batches and applies them as new batches, replying with `ops` + `skipped` count |
-| `agent_status {turnId, state, text?}` | S→C | `thinking · reading · drawing · done · stopped` |
-| `agent_focus {turnId, batchId, bounds}` | S→C | Drives Follow AI, the edge indicator and the AI cursor |
-| `render_request {reqId, rect, width}` / `render_response {reqId, png}` | S→C / C→S | Snapshot fallback: ask the open tab to render ([whiteboard-engine](./whiteboard-engine.md)) |
+| `undo {turnId \| batchIds}` *(deferred M5/M6)* | C→S | Server builds inverse batches and applies them as new batches |
+| `agent_status {turnId, state, text?}` *(deferred M5)* | S→C | `thinking · reading · drawing · done · stopped` |
+| `agent_focus {turnId, batchId, bounds}` *(deferred M5)* | S→C | Drives Follow AI, the edge indicator and the AI cursor |
+| `render_request` / `render_response` *(deferred M5)* | S→C / C→S | Snapshot fallback: ask the open tab to render |
 
 Dropped from the doc: `presence` and live ink (single human). `author` is derived by the server from the channel, never trusted from a client ([auth-security](./auth-security.md)).
+
+**R6 deferral:** Human undo stays client-side in M1–M3 (M1's `UndoManager` submits inverses as new batches). The WebSocket `undo`, `agent_status`, `agent_focus`, and `render_request` / `render_response` messages arrive in M5/M6 with the AI tutor and follow-AI features.
 
 ## Versioning and stability
 

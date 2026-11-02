@@ -8,13 +8,13 @@ Everything runs natively. Locally it is Node + pnpm. On a VPS it is Node + syste
 
 | Process                | Port          | Binds     | Notes                                                                                      |
 | ---------------------- | ------------- | --------- | ------------------------------------------------------------------------------------------ |
-| `apps/server` (NestJS) | 4000 (`PORT`) | 127.0.0.1 | REST, WebSocket `/ws`, SSE `/api/chat`; owns the SQLite file; ingestion in a worker thread |
+| `apps/server` (Node.js) | 4000 (`PORT`) | 127.0.0.1 | REST, WebSocket `/ws`, SSE `/api/chat`; owns the SQLite file; ingestion in a worker thread |
 | `apps/web` (Next.js)   | 3000          | 127.0.0.1 | Client-only editor                                                                         |
 | Caddy (VPS only)       | 80 / 443      | public    | TLS, basic auth, routes `/ws*` and `/api/*` to :4000, everything else to :3000             |
 
 Dev: the browser at `http://localhost:3000` calls the server at `NEXT_PUBLIC_API_BASE=http://localhost:4000` (cross-origin; the server allows `PUBLIC_ORIGIN`). Production: one origin through Caddy, `NEXT_PUBLIC_API_BASE` empty.
 
-## Configuration (`deploy/.env.example`)
+## Configuration (`.env.example` at repo root)
 
 | Key                                                    | Default                                                                                                                               | Meaning                                                                                                   |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -40,7 +40,7 @@ Prerequisites: Node 22+, pnpm 12 (`corepack enable`), a Meta API key (`META_API_
 
 ```
 pnpm install
-cp deploy/.env.example .env      # set META_API_KEY and OPENROUTER_API_KEY
+cp .env.example .env             # set META_API_KEY and OPENROUTER_API_KEY
 pnpm dev                         # web :3000, server :4000, data in ./data
 ```
 
@@ -117,11 +117,11 @@ ssh <vps> 'cd /opt/whiteboard && git pull --ff-only \
   && sudo systemctl restart whiteboard-server whiteboard-web'
 ```
 
-On start the server runs pending migrations after copying the DB to `DATA_DIR/backups/pre-migrate-<version>.db`. Rollback = `git checkout <tag>`, rebuild, restart; if a migration ran, restore the pre-migrate copy (migrations are forward-only).
+On start the server runs pending migrations after performing an online backup of the DB via `VACUUM INTO 'DATA_DIR/backups/pre-migrate-<version>-<timestamp>.db'`. Rollback = `git checkout <tag>`, rebuild, restart; if a migration ran, restore the pre-migrate copy (migrations are forward-only).
 
 ## Backups
 
-- `whiteboard-backup.timer` (daily 03:00) runs `deploy/backup.sh`: an online SQLite backup via better-sqlite3's `backup()` to `DATA_DIR/backups/whiteboard-<date>.db` (keep 14), then `rclone sync` of `blobs/` and `backups/` to an off-box remote.
+- `whiteboard-backup.timer` (daily 03:00) runs `deploy/backup.sh`: an online SQLite backup via `VACUUM INTO` to `DATA_DIR/backups/whiteboard-<date>.db` (keep 14), then `rclone sync` of `blobs/` and `backups/` to an off-box remote (if `RCLONE_REMOTE` is set).
 - Restore drill (do once in M7): stop both units → replace `whiteboard.db` → restore `blobs/` → start → open an old board and a book.
 - Book originals are in `blobs/`, so extracted text, chunks and summaries can be rebuilt; boards and chats exist only in the DB. The DB backup is the one that matters.
 

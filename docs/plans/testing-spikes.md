@@ -76,6 +76,15 @@ CI (GitHub Actions or local script): `pnpm/action-setup`, `pnpm install --frozen
 
 **Engine acceptance script (M1 gate).** `e2e/gate.spec.ts`, run by `pnpm e2e` (locally; not in CI yet): with real pointer and keyboard input (the dev-only `window.__editor` is read for assertions only) it draws two shapes and a bound arrow, types Arabic and Latin text, moves a shape and checks the arrow's end follows, undoes twice and redoes once (toolbar and shortcut), waits for autosave by polling IndexedDB, reloads and checks the scene (count, text, binding ids) and that undo still works, opens a second tab and checks the read-only banner, and fails on any console error. A synthetic IME composition is covered in `e2e/text.spec.ts`; a real Arabic keyboard is the manual demo. The performance bench is `pnpm bench` (it builds the app, so stop any `next dev` first; headed Google Chrome on `:3100`; not part of CI) and writes its numbers to `apps/web/src/bench/RESULT.md`.
 
+**Server acceptance script (M3 gate).** `e2e-server/m3-gate.spec.ts`, run by `pnpm e2e:server` (using `playwright.server.config.ts`, running web on `:3100` and server on `:4100` with an isolated temporary `DATA_DIR`):
+1. **Two tabs in sync:** Tab A and Tab B join the same board. Tab A draws a rectangle, Tab B receives it; Tab B moves it, Tab A sees the updated coordinates; concurrent edits to the same element's color converge to identical scene state (ignoring internal version counter `v`).
+2. **Offline queue & restart recovery:** Server is stopped while tabs are open. Tab A draws an element; the in-app notice warns "Offline: changes are not saved". The server restarts with the same `DATA_DIR`; Tab A reconnects and replays the queued batch; Tab B receives the batch; both tabs reload and display the identical board.
+3. **Server restart with no clients:** The server is stopped and restarted with no active connections; subsequent reloads verify the board persists in SQLite.
+4. **Access gate, Origin and Host checks:** `POST /api/boards` with `Origin: http://evil.test` returns 403 `forbidden_origin`; a WebSocket handshake with that Origin is refused; HTTP requests and WebSocket handshakes with unrecognized `Host` headers are rejected with 400.
+5. **Image upload and sync:** Dropping a PNG into Tab A uploads bytes to `POST /api/blobs`, stores the blob by SHA-256 hash on disk, broadcasts the image element; Tab B fetches and renders the blob from `GET /api/blobs/:id`; page reload preserves the image.
+6. **Server PNG export matches browser:** A board containing rectangles, Arabic and Latin text, LaTeX math, and an image is exported via `GET /api/boards/<id>/export.png` and compared to a browser screenshot clip of the exact same bounding box at DPR 1 using `pixelmatch`: differing pixels are ≤ 1.5% at per-channel threshold 24.
+7. **Clean console:** No uncaught exceptions or unexpected console errors across all tabs.
+
 ## Definition of done per milestone
 
 Gate in [PLAN.md](../PLAN.md) §17 met, tests for the milestone's scripts green, the relevant plan file updated if reality changed, and any new decision recorded in PLAN.md §19.

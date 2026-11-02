@@ -1,0 +1,16 @@
+[Unit]
+Description=Whiteboard AI web client
+After=network.target
+
+[Service]
+User=whiteboard
+WorkingDirectory=/opt/whiteboard/apps/web
+EnvironmentFile=/etc/whiteboard/env
+ExecStart=/opt/whiteboard/node_modules/.bin/next start -H 127.0.0.1 -p 3000
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

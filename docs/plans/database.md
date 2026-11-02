@@ -156,7 +156,7 @@ Dropped from the design doc: `agent_tokens` (returns with MCP), `boards.owner_id
 
 ## Migrations
 
-Numbered SQL files in `apps/server/migrations/` (`0001_init.sql`, …) applied in order inside a transaction, tracked with `PRAGMA user_version`. Forward-only. Before applying any pending migration the server copies the DB to `DATA_DIR/backups/pre-migrate-<version>.db` ([deployment](./deployment.md)).
+Numbered SQL files in `apps/server/migrations/` (`0001_init.sql`, …) applied in order inside a transaction, tracked with `PRAGMA user_version`. Forward-only. Before applying any pending migration the server performs an online backup of the DB via `VACUUM INTO 'DATA_DIR/backups/pre-migrate-<version>-<timestamp>.db'` (ruling R3, ensuring WAL consistency without corrupting or locking the active database; see [deployment](./deployment.md)).
 
 ## Board persistence rules
 

@@ -28,7 +28,7 @@ Versions are the latest seen on npm on **2026-11-01**. Pin exact versions at ins
 | Concern            | Choice                                                              | Notes                                                                                                                                                                                            |
 | ------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Web                | Next.js 16.4 + React                                                | Client-only editor: nothing needs SSR. A static export or a Vite SPA served by Caddy would drop one process; decide in M0 **[my call: keep Next as in the doc]**                                 |
-| Server             | NestJS 12.3                                                         | WebSocket gateway (`ws` adapter), REST, SSE, services                                                                                                                                            |
+| Server             | Node.js (`node:http` + `ws`)                                        | Minimal HTTP router and WebSocket gateway; no NestJS (ruling R1); REST, SSE, services                                                                                                            |
 | Database           | SQLite via `better-sqlite3` 13.0 (WAL) + FTS5                       | [database](./database.md). `node:sqlite` (stdlib, FTS5 works on this Node 22.21) is a verified fallback if the native build ever bites; DB access lives in one module                            |
 | Vector search      | Float32 BLOB column + exact cosine in memory                        | `sqlite-vec` 0.1.9 is the upgrade path (still 0.x)                                                                                                                                               |
 | AI                 | `ai` 7.0 · `@ai-sdk/react` 4.0 · `@ai-sdk/openai-compatible` 2.0 *(+ `@openrouter/ai-sdk-provider` 3.1 in M0 spikes)* | Hidden behind one adapter module (`apps/server/src/tutor/llm.ts`); targets the **Meta Model API** (`https://api.llama.com/compat/v1`) for Meta Llama models (`Llama-4-Maverick`, `Llama-4-Scout`, `Llama-3.3-70B`, `Llama-3.2-Vision`) for the [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon) |
@@ -49,7 +49,7 @@ packages/core    zod schemas (elements, ops, tool inputs) · scene store · ops/
                  render() + platform adapter (math and image providers) · BlobStore interface · tool registry (definitions only)
 packages/math    MathJax 4 (TeX → SVG), renderMath()/peekMath(), security allowlist, Arabic guard, SVG helpers (the only package that imports @mathjax/*)
 apps/web         Next.js: editor, tools, chat dock, library, source panel
-apps/server      NestJS: ws gateway · board svc · context builder · tutor svc · library svc (+worker) · blobs · REST
+apps/server      Node.js: ws gateway · board svc · context builder · tutor svc · library svc (+worker) · blobs · REST
                  migrations/ (numbered .sql) · test/fixtures/ (stub tutor scripts)
 deploy/          Caddyfile · whiteboard-server.service · whiteboard-web.service · deploy.sh · backup.sh · .env.example
 eval/            per-book retrieval questions (jsonl) + runner
@@ -57,14 +57,19 @@ docs/            PLAN.md · plans/*.md · engine-design.md (optional export of t
 data/            (gitignored) whiteboard.db · blobs/ · backups/   ← DATA_DIR in dev
 ```
 
-## Scripts (planned)
+## Scripts
 
 | Command                         | Does                                                      |
 | ------------------------------- | --------------------------------------------------------- |
 | `pnpm dev`                      | Web on :3000 and server on :4000, with reload             |
-| `pnpm build` / `pnpm start`     | Production build; start both processes bound to 127.0.0.1 |
-| `pnpm test` / `pnpm e2e`        | Vitest / Playwright (`TUTOR_STUB=1`)                      |
+| `pnpm dev:web`                  | Web client only on :3000 (standalone local mode)          |
+| `pnpm dev:server`               | Server only on :4000 (tsx watch)                          |
+| `pnpm build`                    | Production build of web client                            |
+| `pnpm test`                     | Vitest across all workspace packages                      |
+| `pnpm e2e`                      | Playwright editor / local-mode tests                      |
+| `pnpm e2e:server`               | Playwright M3 server gate (two tabs, sync, Origin, PNG)   |
 | `pnpm lint`                     | Biome check                                               |
+| `pnpm typecheck`                | TypeScript check across core, math, web, and server       |
 | `pnpm ingest <file.pdf>`        | Ingestion CLI (same code path as the upload endpoint)     |
 | `pnpm eval:retrieval -- <book>` | Retrieval eval: recall@8 and MRR per embedding model      |
 

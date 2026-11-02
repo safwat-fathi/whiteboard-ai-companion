@@ -22,7 +22,7 @@
 | Alternatives | Tailscale-only access (no public port at all), or Cloudflare Access. Pick one in the VPS-plan input. |
 | Fallback if basic auth breaks WebSockets | Tailscale, or a signed cookie issued after the basic-auth page load (**spike S5**). |
 
-**Origin checks (required with cached credentials).** Browsers resend cached basic-auth credentials, so another website could try to drive your session. The server rejects WebSocket upgrades and every non-GET request whose `Origin` is not `PUBLIC_ORIGIN` (or the dev origin) with `forbidden_origin`. JSON endpoints also require `Content-Type: application/json`, which cross-site forms cannot send.
+**Origin and Host checks (required with cached credentials and against DNS rebinding).** Browsers resend cached basic-auth credentials, so another website could try to drive your session. The server rejects WebSocket upgrades and every non-GET request whose `Origin` is not `PUBLIC_ORIGIN` (or the dev origin) with `forbidden_origin`. JSON endpoints also require `Content-Type: application/json`, which cross-site forms cannot send. Furthermore, every incoming HTTP request and WebSocket handshake validates the `Host` header against loopback names, the public origin host, and optional bind address (`checkHost`), rejecting unknown hosts with 400 and blocking DNS rebinding attacks. URL-encoded host spoofing (e.g. `evil.test@localhost`) is refused before hostname extraction.
 
 ## Identity inside the app
 
@@ -57,11 +57,11 @@ Book passages and board text are delimited data in the prompt and are declared u
 |---|---|
 | Ops per batch | 500 |
 | JSON request payload | 1 MB (pictures and images upload separately) |
-| Image / picture upload | 10 MB each |
+| Image / picture upload | 10 MB each, ≤ 8,192 px per side, ≤ 40 megapixels total |
 | Book upload | 200 MB, 2,000 pages |
 | Elements per board | 50,000 |
-| Points per stroke | 5,000 |
-| Text length | 20,000 chars |
+| Points per stroke | 10,000 (aligned with M1/R10) |
+| Text length | 100,000 chars (aligned with M1/R10) |
 | LaTeX length | 4,000 chars |
 | Coordinates | ±1,000,000; NaN/Infinity rejected |
 | Tutor writes | per-turn caps replace the per-token rate limit |

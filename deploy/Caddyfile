@@ -1,0 +1,23 @@
+# Whiteboard AI - Production Caddyfile
+# Place at /etc/caddy/Caddyfile on the VPS. Replace <domain>, <user>, and <bcrypt-hash> (generate with `caddy hash-password`).
+
+{$DOMAIN:localhost} {
+	basic_auth {
+		{$BASIC_AUTH_USER:whiteboard} {$BASIC_AUTH_HASH}
+	}
+
+	handle /ws* {
+		reverse_proxy 127.0.0.1:4000
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:4000 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy 127.0.0.1:3000
+	}
+}

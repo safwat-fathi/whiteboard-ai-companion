@@ -1,0 +1,17 @@
+[Unit]
+Description=Whiteboard AI server
+After=network.target
+
+[Service]
+User=whiteboard
+WorkingDirectory=/opt/whiteboard/apps/server
+EnvironmentFile=/etc/whiteboard/env
+ExecStart=/usr/bin/node dist/main.js
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/whiteboard
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
