@@ -13,6 +13,14 @@ describe('loadConfig', () => {
     expect(c.keys).toEqual({ meta: false, openrouter: false })
   })
 
+  it('resolves a relative DATA_DIR against baseDir and keeps an absolute one', () => {
+    expect(loadConfig({}, '/repo').dataDir).toBe('/repo/data')
+    expect(loadConfig({ DATA_DIR: './var/db' }, '/repo').dataDir).toBe(
+      '/repo/var/db',
+    )
+    expect(loadConfig({ DATA_DIR: '/srv/wb' }, '/repo').dataDir).toBe('/srv/wb')
+  })
+
   it('normalises PUBLIC_ORIGIN to a bare origin', () => {
     expect(
       loadConfig({ PUBLIC_ORIGIN: 'http://localhost:3000/' }).publicOrigin,

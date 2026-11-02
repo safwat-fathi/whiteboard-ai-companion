@@ -28,3 +28,7 @@ export function openDatabase(o: {
     throw e
   }
 }
+
+/** The schema version (`PRAGMA user_version`), for health checks. */
+export const schemaVersion = (db: Database.Database): number =>
+  db.pragma('user_version', { simple: true }) as number

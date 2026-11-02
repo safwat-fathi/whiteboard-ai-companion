@@ -10,4 +10,4 @@ export {
   ScopeSchema,
 } from './boards'
 export { migrate } from './migrate'
-export { openDatabase } from './open'
+export { openDatabase, schemaVersion } from './open'
