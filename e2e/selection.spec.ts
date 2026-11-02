@@ -1,6 +1,11 @@
 import { expect, type Page, test } from '@playwright/test'
 
-type W = { __editor?: { selection: Set<string> } }
+type W = {
+  __editor?: {
+    selection: Set<string>
+    camera: { x: number; y: number; zoom: number }
+  }
+}
 
 const selected = (page: Page) =>
   page.evaluate(() => (window as unknown as W).__editor?.selection.size)
@@ -62,4 +67,45 @@ test('hovering an element shows the pointer cursor and a highlight; clicking sel
   await page.mouse.click(700, 500)
   expect(await selected(page)).toBe(0)
   await expect.poll(() => overlayInk(page, 195, 260)).toBe(0)
+})
+
+test('Hand shows the open hand and moves nothing by itself; holding Space shows the closed hand and a drag pans', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.waitForFunction(() => (window as unknown as W).__editor)
+  const board = page.locator('canvas').nth(1)
+  const camera = () =>
+    page.evaluate(() => ({ ...(window as unknown as W).__editor?.camera }))
+  const dragLeft = async () => {
+    await page.mouse.move(400, 300)
+    await page.mouse.down()
+    await page.mouse.move(300, 250, { steps: 5 })
+    await page.mouse.up()
+  }
+
+  // Another tool first, so the toolbar click is what selects Hand.
+  await page.keyboard.press('r')
+  await expect(board).toHaveCSS('cursor', 'auto')
+  await page.getByRole('button', { name: 'Hand' }).click()
+  await expect(board).toHaveCSS('cursor', 'grab')
+  const home = await camera()
+
+  // A plain drag moves nothing.
+  await dragLeft()
+  expect(await camera()).toEqual(home)
+  await expect(board).toHaveCSS('cursor', 'grab')
+
+  // Space: closed hand, and the drag pans the canvas (content follows the pointer).
+  await page.keyboard.down('Space')
+  await expect(board).toHaveCSS('cursor', 'grabbing')
+  await dragLeft()
+  expect(await camera()).toEqual({ ...home, x: home.x + 100, y: home.y + 50 })
+  await expect(board).toHaveCSS('cursor', 'grabbing')
+
+  // Release: back to the open hand, and the drag is inert again.
+  await page.keyboard.up('Space')
+  await expect(board).toHaveCSS('cursor', 'grab')
+  await dragLeft()
+  expect(await camera()).toEqual({ ...home, x: home.x + 100, y: home.y + 50 })
 })
