@@ -1,5 +1,4 @@
-export { migrate } from './migrate'
-export { openDatabase } from './open'
+export { type BlobRow, type BlobsDb, createBlobsDb } from './blobs'
 export {
   type BoardRow,
   type BoardsDb,
@@ -10,3 +9,5 @@ export {
   type Scope,
   ScopeSchema,
 } from './boards'
+export { migrate } from './migrate'
+export { openDatabase } from './open'
