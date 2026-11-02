@@ -44,7 +44,7 @@ Spikes S1, S3 and S5 need no books; S2 and S4 wait for the books ([PLAN.md](../P
 | End-to-end | Playwright, `TUTOR_STUB=1` | Scripts below; deterministic and free |
 | Live tutor | Manual, once per milestone | One real OpenRouter run of the M5 script; read the cost footer |
 
-CI (GitHub Actions or local script): `pnpm/action-setup`, `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm test`, `pnpm e2e`.
+CI (GitHub Actions or local script): `pnpm/action-setup`, `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`. `pnpm e2e` (the M1 gate included) runs locally, not in CI yet: it needs a dev server because `window.__editor` is dev-only.
 
 ## Acceptance scripts
 
@@ -66,7 +66,7 @@ CI (GitHub Actions or local script): `pnpm/action-setup`, `pnpm install --frozen
 
 **Engine.** The M0 benchmark; golden-image tests; Arabic and Latin text editing with an IME.
 
-**Engine acceptance script (M1 gate).** `e2e/gate.spec.ts`, run by `pnpm e2e`: with real pointer and keyboard input (the dev-only `window.__editor` is read for assertions only) it draws two shapes and a bound arrow, types Arabic and Latin text, moves a shape and checks the arrow's end follows, undoes twice and redoes once (toolbar and shortcut), waits for autosave by polling IndexedDB, reloads and checks the scene (count, text, binding ids) and that undo still works, opens a second tab and checks the read-only banner, and fails on any console error. A synthetic IME composition is covered in `e2e/text.spec.ts`; a real Arabic keyboard is the manual demo. The performance bench is `pnpm bench` (it builds the app, so stop any `next dev` first; headed Google Chrome on `:3100`; not part of CI) and writes its numbers to `apps/web/src/bench/RESULT.md`.
+**Engine acceptance script (M1 gate).** `e2e/gate.spec.ts`, run by `pnpm e2e` (locally; not in CI yet): with real pointer and keyboard input (the dev-only `window.__editor` is read for assertions only) it draws two shapes and a bound arrow, types Arabic and Latin text, moves a shape and checks the arrow's end follows, undoes twice and redoes once (toolbar and shortcut), waits for autosave by polling IndexedDB, reloads and checks the scene (count, text, binding ids) and that undo still works, opens a second tab and checks the read-only banner, and fails on any console error. A synthetic IME composition is covered in `e2e/text.spec.ts`; a real Arabic keyboard is the manual demo. The performance bench is `pnpm bench` (it builds the app, so stop any `next dev` first; headed Google Chrome on `:3100`; not part of CI) and writes its numbers to `apps/web/src/bench/RESULT.md`.
 
 ## Definition of done per milestone
 
