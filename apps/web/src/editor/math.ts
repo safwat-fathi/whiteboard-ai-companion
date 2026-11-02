@@ -6,7 +6,15 @@ import type {
 
 type MathMod = typeof import('@whiteboard/math')
 
-export function createWebMathProvider(onReady?: () => void): MathProvider {
+export function createWebMathProvider(
+  onReady?: () => void,
+  createPath2D: (d?: string) => Path2D = (d) =>
+    typeof Path2D !== 'undefined'
+      ? d === undefined
+        ? new Path2D()
+        : new Path2D(d)
+      : ({} as Path2D),
+): MathProvider {
   let modPromise: Promise<MathMod> | null = null
   const entries = new Map<string, MathEntry>()
   const inflight = new Map<string, Promise<void>>()
@@ -109,7 +117,9 @@ export function createWebMathProvider(onReady?: () => void): MathProvider {
                 '2d',
               ) as unknown as CanvasRenderingContext2D | null
               if (!ctx) return null
-              mod.drawMathPaths(ctx, parsed, 0, 0, pw, ph, (d) => new Path2D(d))
+              mod.drawMathPaths(ctx, parsed, 0, 0, pw, ph, (d) =>
+                createPath2D(d),
+              )
               if (typeof c.transferToImageBitmap === 'function') {
                 return c.transferToImageBitmap()
               }
@@ -126,7 +136,9 @@ export function createWebMathProvider(onReady?: () => void): MathProvider {
               c.height = ph
               const ctx = c.getContext('2d')
               if (!ctx) return null
-              mod.drawMathPaths(ctx, parsed, 0, 0, pw, ph, (d) => new Path2D(d))
+              mod.drawMathPaths(ctx, parsed, 0, 0, pw, ph, (d) =>
+                createPath2D(d),
+              )
               return Object.assign(c as unknown as CanvasImageSource, {
                 close() {
                   c.width = 0

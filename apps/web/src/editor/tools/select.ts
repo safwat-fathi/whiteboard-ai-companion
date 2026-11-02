@@ -162,9 +162,21 @@ export const selectTool = (ed: Editor): Tool => {
         g.moved = true
         g.d = { x: e.world.x - g.w0.x, y: e.world.y - g.w0.y }
       } else if (g.k === 'marquee') g.b = e.world
-      else if (g.k === 'resize')
-        g.patch = resizeBox(g.el, g.h, e.world, e.shift)
-      else if (g.k === 'rotate') {
+      else if (g.k === 'resize') {
+        const patch = resizeBox(g.el, g.h, e.world, e.shift)
+        if (
+          patch &&
+          g.el.type === 'math' &&
+          typeof patch.w === 'number' &&
+          g.el.w > 0
+        ) {
+          patch['data.size'] = Math.max(
+            8,
+            Math.min(1000, Math.round(g.el.data.size * (patch.w / g.el.w))),
+          )
+        }
+        g.patch = patch
+      } else if (g.k === 'rotate') {
         const c = { x: g.el.x + g.el.w / 2, y: g.el.y + g.el.h / 2 }
         const a = Math.atan2(e.world.y - c.y, e.world.x - c.x) + Math.PI / 2
         g.patch = rotateTo(g.el, a, e.shift)
@@ -228,16 +240,19 @@ export const selectTool = (ed: Editor): Tool => {
     onDoubleClick(e: ToolEvent) {
       const hit = ed.index.pick(e.world, z(), ed.scene)
       if (hit?.type === 'text') ed.editText(hit.id)
+      else if (hit?.type === 'math') ed.editMath(hit.id)
     },
     onKey(e: KeyboardEvent) {
       const one = single()
-      if (
-        e.key === 'Enter' &&
-        one?.type === 'text' &&
-        ed.selection.size === 1
-      ) {
-        ed.editText(one.id)
-        return true
+      if (e.key === 'Enter' && ed.selection.size === 1) {
+        if (one?.type === 'text') {
+          ed.editText(one.id)
+          return true
+        }
+        if (one?.type === 'math') {
+          ed.editMath(one.id)
+          return true
+        }
       }
       if ((e.ctrlKey || e.metaKey) && shortcutKey(e) === 'a') {
         set(

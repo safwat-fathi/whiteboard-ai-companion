@@ -10,6 +10,7 @@ const TOOLS = [
   ['line', 'Line'],
   ['arrow', 'Arrow'],
   ['text', 'Text'],
+  ['math', 'Math'],
   ['hand', 'Hand'],
 ] as const
 

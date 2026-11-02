@@ -2,6 +2,7 @@ import type { Point } from '@whiteboard/core'
 import type { Editor } from '../editor'
 import { handTool } from './hand'
 import { imageTool } from './image'
+import { mathTool } from './math'
 import { selectTool } from './select'
 import { shapeTool } from './shape'
 import { textTool } from './text'
@@ -44,5 +45,6 @@ export const tools: Record<string, (ed: Editor) => Tool> = {
   line: shapeTool('line'),
   arrow: shapeTool('arrow'),
   text: textTool,
+  math: mathTool,
   image: imageTool,
 }

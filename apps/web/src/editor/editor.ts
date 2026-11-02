@@ -32,6 +32,7 @@ import { shortcutKey } from './keys'
 import { createWebMathProvider } from './math'
 import { browserPlatform } from './platform'
 import { type Tool, type ToolEvent, tools as toolFactories } from './tools'
+import type { MathTool } from './tools/math'
 import type { TextTool } from './tools/text'
 
 export type Snapshot = { elements: Element[]; camera: Camera; undo: UndoJSON }
@@ -107,7 +108,12 @@ export class Editor {
     const basePlatform = opts.platform ?? browserPlatform()
     this.platform = {
       ...basePlatform,
-      math: basePlatform.math ?? createWebMathProvider(() => this.invalidate()),
+      math:
+        basePlatform.math ??
+        createWebMathProvider(
+          () => this.invalidate(),
+          basePlatform.createPath2D,
+        ),
       images:
         basePlatform.images ??
         createBitmapProvider(this.blobs, this.cache, () => this.invalidate()),
@@ -264,6 +270,14 @@ export class Editor {
     if (this.readOnly || el?.type !== 'text' || el.locked) return
     this.setTool('text')
     ;(this.tools.text as TextTool).edit(el)
+  }
+
+  /** Enters edit mode for a math element (double-click / Enter in the select or math tool). */
+  editMath(id: Id): void {
+    const el = this.scene.els.get(id)
+    if (this.readOnly || el?.type !== 'math' || el.locked) return
+    this.setTool('math')
+    ;(this.tools.math as MathTool).edit(el)
   }
 
   openImagePicker(at?: Point): void {
@@ -479,9 +493,11 @@ export class Editor {
     for (const fn of this.listeners) fn()
   }
 
-  /** The board as it should be saved: the scene plus the open text draft (replacing its element by id, or appended). */
+  /** The board as it should be saved: the scene plus the open text/math draft (replacing its element by id, or appended). */
   getSnapshot(): Snapshot {
-    const draft = (this.tools.text as TextTool | undefined)?.draft()
+    const draft =
+      (this.tools.text as TextTool | undefined)?.draft() ??
+      (this.tools.math as MathTool | undefined)?.draft()
     let els = ordered(this.scene)
     if (draft)
       els = els.some((e) => e.id === draft.id)
