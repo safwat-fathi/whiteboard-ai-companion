@@ -85,9 +85,9 @@ const tests: Record<string, () => Promise<void>> = {
   async arabic() {
     const ps = ['اشرح لي نظرية فيثاغورس بإيجاز مع مثال.', 'ما الفرق بين المشتقة والتكامل؟ اشرح بجملتين لكل منهما.', 'اكتب معادلة الدرجة الثانية وحلها بالصيغة العامة: س² - 5س + 6 = 0'];
     let out = '', total = 0;
-    for (const p of ps) { const r = await go({ prompt: p }); out += `## ${p}\n\n${r.text}\n\n`; total += r.cost; }
-    writeFileSync(`out/arabic-${modelId.replace('/', '_')}.md`, out);
-    line(out.length > 200, 'arabic', `saved out/arabic-${modelId.replace('/', '_')}.md (rate 1-5)`, total);
+    for (const p of ps) { const r = await go({ prompt: p, system: process.env.RULES ? 'Answer entirely in the language of the user (no English words in an Arabic answer). Write all math as LaTeX with $...$ for inline and $$...$$ for display; never use \\( \\) or \\[ \\].' : undefined }); out += `## ${p}\n\n${r.text}\n\n`; total += r.cost; }
+    writeFileSync(`out/arabic-${modelId.replace('/', '_')}${process.env.RULES ? '-rules' : ''}.md`, out);
+    line(out.length > 200, 'arabic', `saved out/arabic-${modelId.replace('/', '_')}${process.env.RULES ? '-rules' : ''}.md (rate 1-5)`, total);
   },
   async cheap() {
     const text = readFileSync('../../docs/plans/rag-context-engineering.md', 'utf8').slice(0, 6000);

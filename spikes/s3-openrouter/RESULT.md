@@ -12,7 +12,7 @@ Run 2026-11-02, `ai` 7.0.159, `@openrouter/ai-sdk-provider` 3.1.0, `run.ts`. Tot
 | cache, turn 2 (≈17k-token prefix) | PASS, 17,433 cached | PASS, automatic (also on turn 1) | PASS, 13,930 cached | PASS, 17,433 cached |
 | cache, 1 h TTL, hit after 6 min | PASS, 20,233 cached | n/a | n/a | n/a |
 | cheap summary (150-400 tok) | n/a | $0.0076 | $0.0004 | $0.0006 |
-| Arabic (3 prompts), your rating | **4.5** | **3.5** (mixed Arabic and English) | not rated | **3** (answered in English) |
+| Arabic (3 prompts), your rating | **4.5** | **3.5** (mixed Arabic and English) | **2.5** (used `\(..\)` and `\[..\]` math, not `$`) | **3** (answered in English) |
 
 ## Findings
 - **Cost arrives per step while streaming**: `providerMetadata.openrouter.usage.cost` in `onStepFinish` was present and > 0 for every step on every model. The design in ai-integration.md holds. The provider already defaults to `compatibility: 'strict'` in 3.1.0 (the doc said `compatible`); passing it explicitly is harmless.
@@ -30,3 +30,6 @@ Run 2026-11-02, `ai` 7.0.159, `@openrouter/ai-sdk-provider` 3.1.0, `run.ts`. Tot
 - `snapshotAdapter`: `tool-result-image` (works on all four; the follow-up user message stays as the fallback for a model that rejects it).
 - `costPerTurnUsd`: simple 2-step tool turn ≈ $0.0005 on Haiku, $0.005 on Gemini Flash, $0.012 on Sonnet. The real 6-step turn with a 60k scope pack is still to be measured in M5.
 - Open: GPT-6 Luna was not rated for Arabic; it is the cheapest (≈ $0.0002 per tool turn) and could replace Gemini if its Arabic is good. Gemini's mixed-language replies may be fixable with a system-prompt rule ("answer entirely in the user's language").
+
+## Re-test with a system rule (`RULES=1 ... --test arabic`)
+Rule: answer entirely in the user's language; math only as `$...$` / `$$...$$`. Luna now emits `$` math (0 `\(` or `\[` delimiters), so its 2.5 was a delimiter issue, fixable by prompt (and by normalising delimiters in the renderer). Outputs: `out/arabic-openai_gpt-6-luna-rules.md`, `out/arabic-google_gemini-3.8-flash-rules.md` (cost $0.0003 and $0.013). **Re-rating pending.** Either way the tutor system prompt should carry this rule.
