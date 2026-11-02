@@ -77,23 +77,36 @@ export const mathTool = (ed: Editor): MathTool => {
     cur.ui.sync(cur.el.x, cur.el.y)
   }
 
+  // Committing before the renderer has answered (fast typing, first MathJax load) sizes the box from the source text.
+  // Once the metrics arrive, refit it so the equation is not drawn small inside a box of the wrong shape.
+  const fitWhenReady = (el: MathEl) => {
+    const { latex, display, size } = el.data
+    const color = el.style.stroke
+    ed.platform.math?.request(latex, display, color, () => {
+      const cur = ed.scene.els.get(el.id)
+      const entry = ed.platform.math?.peek(latex, display, color)
+      if (cur?.type !== 'math' || !entry?.ok || ed.readOnly) return
+      // Only if nothing touched the element since: a later edit or resize owns its own size.
+      if (cur.v !== el.v || cur.w !== el.w || cur.h !== el.h) return
+      const { w, h } = fitMath(entry, size)
+      if (Math.abs(w - cur.w) < 0.5 && Math.abs(h - cur.h) < 0.5) return
+      ed.commit({
+        batchId: newId(),
+        label: 'Fit Math',
+        ops: [{ op: 'patch', id: el.id, set: { w, h } }],
+      })
+    })
+  }
+
   const commitEdit = () => {
     const s = cur
     if (!s) return
     const st = s.ui.state()
     const blank = !st.latex.trim()
     const id = s.el.id
-    if (
-      !blank &&
-      !ed.platform.math?.peek(st.latex, st.display, s.el.style.stroke)
-    ) {
-      ed.platform.math?.request(
-        st.latex,
-        st.display,
-        s.el.style.stroke,
-        () => {},
-      )
-    }
+    const before = ed.scene.els.get(id)
+    const late =
+      !blank && !ed.platform.math?.peek(st.latex, st.display, s.el.style.stroke)
     try {
       if (s.isNew) {
         if (!blank) {
@@ -139,6 +152,9 @@ export const mathTool = (ed: Editor): MathTool => {
       ed.hidden = null
       ed.invalidate()
     }
+    const landed = ed.scene.els.get(id)
+    if (late && landed?.type === 'math' && landed !== before)
+      fitWhenReady(landed)
     ed.selection.clear()
     if (ed.scene.els.has(id)) ed.selection.add(id)
     ed.setTool('select')

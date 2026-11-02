@@ -176,18 +176,21 @@ test('math and 2000px checker image stay crisp across zoom 0.05, 1, 4, and 20', 
     )[0] as HTMLCanvasElement
     const sctx = sceneCanvas.getContext('2d') as CanvasRenderingContext2D
 
-    // Helper: mean edge gradient magnitude across non-zero horizontal transitions
+    // Helper: mean edge gradient magnitude across non-zero transitions, horizontal and vertical (a fraction bar has
+    // no vertical edges inside a small crop, only horizontal ones)
     const edgeSharpness = (data: Uint8ClampedArray, w: number, h: number) => {
       let sum = 0
       let count = 0
       for (let y = 0; y < h; y++) {
-        for (let x = 1; x < w; x++) {
+        for (let x = 0; x < w; x++) {
           const i = (y * w + x) * 4
-          const prev = (y * w + (x - 1)) * 4
-          const g = Math.abs((data[i] ?? 0) - (data[prev] ?? 0))
-          if (g > 4) {
-            sum += g
-            count++
+          for (const prev of [x > 0 ? i - 4 : -1, y > 0 ? i - w * 4 : -1]) {
+            if (prev < 0) continue
+            const g = Math.abs((data[i] ?? 0) - (data[prev] ?? 0))
+            if (g > 4) {
+              sum += g
+              count++
+            }
           }
         }
       }
@@ -195,9 +198,13 @@ test('math and 2000px checker image stay crisp across zoom 0.05, 1, 4, and 20', 
     }
 
     // 3. Measure math edge sharpness at zoom 20 vs direct SVG Path2D reference
+    // Crop 20 x 20 world units around the equation's centre: its top-left corner is blank (the tall `b` is on the right),
+    // and a blank crop has no edges to measure.
     const m0 = mathEls[0]
     if (!m0) throw new Error('missing m0')
-    ed.camera = { x: m0.x, y: m0.y, zoom: 20 }
+    const cx = m0.w / 2 - 10
+    const cy = m0.h / 2 - 10
+    ed.camera = { x: m0.x + cx, y: m0.y + cy, zoom: 20 }
     ed.invalidate()
     await nextFrames()
 
@@ -217,6 +224,7 @@ test('math and 2000px checker image stay crisp across zoom 0.05, 1, 4, and 20', 
     if (!mp) throw new Error('missing mp')
     const [vx, vy, vw, vh] = mp.viewBox
     rctx.save()
+    rctx.translate(-cx * 20, -cy * 20)
     rctx.scale((m0.w * 20) / vw, (m0.h * 20) / vh)
     rctx.translate(-vx, -vy)
     for (const item of mp.items) {
@@ -298,7 +306,11 @@ test('math and 2000px checker image stay crisp across zoom 0.05, 1, 4, and 20', 
   for (const c of metrics.cacheChecks) {
     expect(c.bytes, `zoom ${c.zoom} cache <= cap`).toBeLessThanOrEqual(c.cap)
   }
-  expect(metrics.mathSharpnessRatio).toBeGreaterThanOrEqual(0.9)
+  expect(metrics.refMathSharpness, 'crop must contain edges').toBeGreaterThan(0)
+  expect(
+    metrics.mathSharpnessRatio,
+    JSON.stringify(metrics),
+  ).toBeGreaterThanOrEqual(0.9)
   expect(metrics.blurPxZoom1).toBeLessThanOrEqual(1)
   expect(metrics.blurPxZoomHalf).toBeLessThanOrEqual(1)
   expect(metrics.imgZoom20Ratio).toBeGreaterThanOrEqual(0.95)

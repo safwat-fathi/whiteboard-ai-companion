@@ -49,7 +49,17 @@ export function createWebMathProvider(
       }
 
       const task = (async () => {
-        const mod = await getMod()
+        let mod: MathMod
+        try {
+          mod = await getMod()
+        } catch (e) {
+          modPromise = null // a failed chunk load (offline, deploy) may succeed for the next formula
+          entries.set(k, {
+            ok: false,
+            error: `Could not load the math renderer${e instanceof Error ? `: ${e.message}` : ''}`,
+          })
+          return
+        }
         const res = await mod.renderMath(latex, { display, color })
         if (!res.ok) {
           entries.set(k, res)

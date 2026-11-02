@@ -256,6 +256,27 @@ describe('math tool', () => {
     expect(errEl()?.textContent).toBe('error-for:xyz')
   })
 
+  it('refits the box to the equation when the renderer answers after the commit', async () => {
+    start(10, 20)
+    type('\\frac{a}{b}')
+    cmdEnter() // before the 150 ms preview and before MathJax has loaded: sized from the source text
+    const first = els()[0]
+    if (first?.type !== 'math') throw new Error('expected math')
+
+    await vi.waitFor(() => {
+      const entry = ed.platform.math?.peek(
+        '\\frac{a}{b}',
+        true,
+        first.style.stroke,
+      )
+      expect(entry?.ok).toBe(true)
+      if (!entry?.ok) return
+      const fit = fitMath(entry, 28)
+      expect(els()[0]).toMatchObject({ w: fit.w, h: fit.h })
+    })
+    expect(els()[0]?.id).toBe(first.id)
+  })
+
   it('resize keeps the aspect and size patch is atomic with w/h', async () => {
     vi.useFakeTimers()
     start(10, 20)

@@ -306,4 +306,25 @@ describe('importImage & Editor.addImages', () => {
     expect(provider.peek(missingId)).toBe('missing')
     cache.dispose()
   })
+
+  it('keeps an original larger than the cache budget so it is decoded once, not on every frame', async () => {
+    const store = createIdbBlobStore()
+    const { blobId } = await importImage(
+      fileOf(makePngBytes(40, 30, 1), 'big.png'),
+      store,
+    )
+    const cache = new RenderCache(1000) // smaller than 40 * 30 * 4
+    const onReady = vi.fn()
+    const provider = createBitmapProvider(store, cache, onReady)
+    const getSpy = vi.spyOn(store, 'get')
+
+    await new Promise<void>((resolve) => provider.request(blobId, resolve))
+    expect(provider.peek(blobId)).toMatchObject({ w: 40, h: 30 })
+    expect(cache.bytes).toBe(0)
+
+    // A second request (what a render of an undefined peek would issue) must not decode again.
+    await new Promise<void>((resolve) => provider.request(blobId, resolve))
+    expect(getSpy).toHaveBeenCalledTimes(1)
+    cache.dispose()
+  })
 })

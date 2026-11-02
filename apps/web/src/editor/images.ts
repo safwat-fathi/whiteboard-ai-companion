@@ -355,21 +355,21 @@ export function createBitmapProvider(
   onReady?: () => void,
 ): ImageProvider {
   const missing = new Set<string>()
+  const oversize = new Map<string, CachedOrig>()
   const inflight = new Map<string, Promise<void>>()
+  const held = (blobId: string) =>
+    oversize.get(blobId) ?? cache.get<CachedOrig>(1, `orig:${blobId}`, 0)
 
   return {
     peek(blobId: string): ImageBitmapEntry | 'missing' | undefined {
       if (missing.has(blobId)) return 'missing'
-      const hit = cache.get<CachedOrig>(1, `orig:${blobId}`, 0)
+      const hit = held(blobId)
       if (!hit) return undefined
       return { bitmap: hit.bitmap, w: hit.w, h: hit.h }
     },
 
     request(blobId: string, cb: () => void): void {
-      if (
-        missing.has(blobId) ||
-        cache.get<CachedOrig>(1, `orig:${blobId}`, 0)
-      ) {
+      if (missing.has(blobId) || held(blobId)) {
         cb()
         onReady?.()
         return
@@ -434,7 +434,11 @@ export function createBitmapProvider(
             bitmap.close?.()
           },
         }
-        cache.set(1, `orig:${blobId}`, 0, entry, w * h * 4, 'original')
+        const bytes = w * h * 4
+        // RenderCache.set drops an entry bigger than its budget, so peek() would miss on every frame and re-decode
+        // forever. Hold such an original here instead (one per blob, at most 64 MB each after import's 4096 px cap).
+        if (bytes > cache.cap) oversize.set(blobId, entry)
+        else cache.set(1, `orig:${blobId}`, 0, entry, bytes, 'original')
       })().finally(() => {
         inflight.delete(blobId)
       })
