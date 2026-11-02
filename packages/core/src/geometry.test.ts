@@ -20,15 +20,15 @@ describe('hitTest', () => {
         x: 100,
         y: 100,
         rotation: R45,
-        style: { ...DEFAULT_STYLE, strokeWidth: 0 },
       })
       const c = { x: 150, y: 110 }
       const d = Math.SQRT1_2
       const tol = 6 / zoom
+      const off = tol + DEFAULT_STYLE.strokeWidth / 2 + 1 / zoom
       const tip = { x: c.x + 50 * d, y: c.y + 50 * d }
       const out = {
-        x: c.x + (50 + 7 / zoom) * d,
-        y: c.y + (50 + 7 / zoom) * d,
+        x: c.x + (50 + off) * d,
+        y: c.y + (50 + off) * d,
       }
       expect(hitTest(el, tip, tol)).toBe(true)
       expect(hitTest(el, out, tol)).toBe(false)
@@ -203,6 +203,25 @@ describe('routeArrow', () => {
     const z = routeArrow(arrow(), s)[0] as [number, number]
     expect(z[0]).toBeCloseTo(240) // centre (240,20), local (40,0) rotated 90 -> (0,40)
     expect(z[1]).toBeCloseTo(60)
+  })
+
+  it('linear target ignores its rotation in resolveEnd', () => {
+    const line = mk('t', {
+      x: 100,
+      y: 100,
+      w: 40,
+      h: 20,
+      rotation: Math.PI / 2,
+      data: {
+        kind: 'line',
+        points: [
+          [0, 0],
+          [40, 20],
+        ],
+      },
+    })
+    const s = createScene([line, arrow()])
+    expect(routeArrow(arrow(), s)[0]).toEqual([140, 110])
   })
 
   it('removed target keeps the stored point', () => {
