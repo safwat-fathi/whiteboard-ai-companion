@@ -81,6 +81,31 @@ describe('renderMath', () => {
     expect(peekMath(latex, opts)).toBe(r1)
   })
 
+  it('rejects colours that could break out of the SVG markup', async () => {
+    for (const color of ['red"/><script>', '#fff;x', 'url(#a)', '']) {
+      const res = await renderMath('x', { display: true, color })
+      expect(res.ok, `expected colour ${color} to fail`).toBe(false)
+    }
+    for (const color of ['#abc', '#aabbccdd', 'rgb(1, 2, 3)', 'tomato']) {
+      const res = await renderMath('x', { display: true, color })
+      expect(res.ok, `expected colour ${color} to pass`).toBe(true)
+    }
+  })
+
+  it('turns text the font cannot draw into an error instead of a blank box', async () => {
+    for (const latex of ['\\text{你好}', 'x + \\text{😀}']) {
+      const res = await renderMath(latex, opts)
+      expect(res.ok, latex).toBe(false)
+      if (!res.ok) expect(res.error).toContain('Unsupported characters')
+    }
+  })
+
+  it('rejects formulas far larger than any real equation', async () => {
+    const res = await renderMath('\\rule{500em}{500em}', opts)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toContain('too large')
+  })
+
   it('produces different SVGs with identical metrics for different colours', async () => {
     const latex = '\\sqrt{x + 1}'
     const black = await renderMath(latex, { display: true, color: '#000000' })

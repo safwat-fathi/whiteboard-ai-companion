@@ -101,6 +101,8 @@ export function fixViewBox(
 }
 
 const ALLOWED_TAGS = new Set(['svg', 'g', 'path', 'rect', 'line'])
+// MathJax's stylesheet gives array rules and frames a 70-unit stroke that is not an attribute in the markup.
+const DEFAULT_STROKE = 70
 
 export function svgToPaths(svg: string): MathPaths | null {
   const rootMatch = svg.match(/^<svg[^>]*>/)
@@ -160,22 +162,27 @@ export function svgToPaths(svg: string): MathPaths | null {
       const y = Number(attrs.y ?? 0)
       const rw = Number(attrs.width ?? 0)
       const rh = Number(attrs.height ?? 0)
-      if (
-        Number.isFinite(x) &&
-        Number.isFinite(y) &&
-        rw > 0 &&
-        rh > 0 &&
-        fill !== 'none'
-      ) {
-        const d = `M${x} ${y}h${rw}v${rh}h${-rw}Z`
-        items.push({ d, m, fill })
+      if (Number.isFinite(x) && Number.isFinite(y) && rw > 0 && rh > 0) {
+        if (fill !== 'none') {
+          items.push({ d: `M${x} ${y}h${rw}v${rh}h${-rw}Z`, m, fill })
+        } else if (stroke !== 'none') {
+          // \boxed, \fbox and array frames are unfilled rects whose width is the stroke: draw the border as a ring.
+          const sw = Number(attrs['stroke-width'] ?? DEFAULT_STROKE)
+          const h = sw / 2
+          if (sw > 0 && rw > sw && rh > sw) {
+            const d =
+              `M${x - h} ${y - h}h${rw + sw}v${rh + sw}h${-(rw + sw)}Z` +
+              `M${x + h} ${y + h}v${rh - sw}h${rw - sw}v${-(rh - sw)}Z`
+            items.push({ d, m, fill: stroke })
+          }
+        }
       }
     } else if (tag === 'line') {
       const x1 = Number(attrs.x1 ?? 0)
       const y1 = Number(attrs.y1 ?? 0)
       const x2 = Number(attrs.x2 ?? 0)
       const y2 = Number(attrs.y2 ?? 0)
-      const sw = Number(attrs['stroke-width'] ?? 1)
+      const sw = Number(attrs['stroke-width'] ?? DEFAULT_STROKE)
       const dx = x2 - x1
       const dy = y2 - y1
       const len = Math.hypot(dx, dy)

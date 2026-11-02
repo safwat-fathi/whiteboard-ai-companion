@@ -143,6 +143,35 @@ function getDocument(): Promise<DocHandle> {
       import('@mathjax/src/js/input/tex/mathtools/MathtoolsConfiguration.js'),
       import('@mathjax/src/js/input/tex/mhchem/MhchemConfiguration.js'),
     ])
+    const [{ MapHandler }, { Macro }, { default: BaseMethods }] =
+      await Promise.all([
+        import('@mathjax/src/js/input/tex/MapHandler.js'),
+        import('@mathjax/src/js/input/tex/Token.js'),
+        import('@mathjax/src/js/input/tex/base/BaseMethods.js'),
+      ])
+    // \mmlToken accepts arbitrary MathML attributes (href, src, style): a link and image hole. Drop it and redefine the
+    // macros built on it with plain TeX. \ref and \eqref emit <a href> elements, and there is nothing to refer to.
+    // (TokenMap's typings hide add/remove, which every parse map has.)
+    type EditableMap = {
+      add(name: string, macro: unknown): void
+      remove(name: string): void
+    }
+    const editable = (name: string) =>
+      MapHandler.getMap(name) as unknown as EditableMap | undefined
+    const macros = editable('macros')
+    macros?.remove('mmlToken')
+    macros?.remove('ref')
+    editable('AMSmath-macros')?.remove('eqref')
+    const expand = BaseMethods.Macro as ConstructorParameters<typeof Macro>[1]
+    const tex = (name: string, body: string, nargs = 0) =>
+      macros?.add(name, new Macro(name, expand, [body, nargs]))
+    tex('bmod', '\\mathbin{\\mathrm{mod}}')
+    tex('pmod', '\\pod{\\mathrm{mod}\\kern 6mu #1}', 1)
+    tex(
+      'mod',
+      '\\mathchoice{\\kern18mu}{\\kern12mu}{\\kern12mu}{\\kern12mu}\\mathrm{mod}\\,\\,#1',
+      1,
+    )
     loaded = true
     mathjax.asyncLoad = async (name: string) => {
       asyncLoadedModules.push(name)

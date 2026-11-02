@@ -36,6 +36,9 @@ export type MathResult =
   | { ok: false; error: string }
 
 const MAX_CACHE = 2000
+const MAX_WIDTH_EM = 400
+const MAX_HEIGHT_EM = 200
+const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]+|(rgb|hsl)a?\([\d\s.,%/-]+\))$/i
 const cache = new Map<string, MathResult>()
 const inflight = new Map<string, Promise<MathResult>>()
 
@@ -89,11 +92,29 @@ export function renderMath(latex: string, opts: MathOpts): Promise<MathResult> {
     if (containsArabic(latex)) {
       return store(key, { ok: false, error: ARABIC_ERROR })
     }
+    // The colour is spliced into SVG markup, so only plain CSS colours get through.
+    if (!SAFE_COLOR.test(opts.color)) {
+      return store(key, { ok: false, error: `Invalid colour: ${opts.color}` })
+    }
     try {
       const { svg, width, height, depth } = await convertToSvg(
         latex,
         opts.display,
       )
+      // MathJax falls back to SVG <text> for glyphs the font lacks (CJK, emoji); it cannot be drawn reliably.
+      if (/<text[\s>]/.test(svg)) {
+        return store(key, {
+          ok: false,
+          error:
+            'Unsupported characters in formula (only Latin, Greek and math symbols are supported)',
+        })
+      }
+      if (width > MAX_WIDTH_EM || height + depth > MAX_HEIGHT_EM) {
+        return store(key, {
+          ok: false,
+          error: 'Formula is too large to render',
+        })
+      }
       const colored = svg.replaceAll('currentColor', opts.color)
       return store(key, { ok: true, svg: colored, width, height, depth })
     } catch (e) {

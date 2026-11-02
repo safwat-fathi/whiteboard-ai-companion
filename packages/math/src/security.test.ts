@@ -15,6 +15,8 @@ const HOSTILE: [string, string][] = [
   ['\\let\\a=b', '\\let'],
   ['\\input{x}', '\\input'],
   ['\\write18{ls}', '\\write'],
+  ['\\ref{a}', '\\ref'],
+  ['\\eqref{a}', '\\eqref'],
 ]
 
 describe('Math security allowlist', () => {
@@ -35,6 +37,22 @@ describe('Math security allowlist', () => {
       ).toBe(true)
     }
     fetchSpy.mockRestore()
+  })
+
+  it('rejects \\mmlToken (link, image and style holes) but keeps \\bmod, \\pmod and \\mod', async () => {
+    for (const latex of [
+      '\\mmlToken{mi}[href="javascript:alert(1)"]{x}',
+      '\\mmlToken{mglyph}[src="http://evil"]{x}',
+      '\\mmlToken{mi}[style="position:fixed"]{x}',
+    ]) {
+      const res = await renderMath(latex, opts)
+      expect(res.ok, `expected ${latex} to fail`).toBe(false)
+    }
+    for (const latex of ['a \\bmod b', 'a \\equiv b \\pmod n', 'a \\mod b']) {
+      const res = await renderMath(latex, opts)
+      expect(res.ok, `${latex} should render`).toBe(true)
+      if (res.ok) expect(res.svg).not.toMatch(/<a |href|<image/i)
+    }
   })
 
   it('bounds macro bombs and 100-deep nested braces within 1s', async () => {

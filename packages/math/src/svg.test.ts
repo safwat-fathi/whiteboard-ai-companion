@@ -91,6 +91,40 @@ describe('SVG helpers', () => {
     }
   })
 
+  it('svgToPaths draws the frame of \\boxed and the rules of a ruled array', async () => {
+    const ink = async (latex: string) => {
+      const res = await renderMath(latex, { display: true, color: '#000000' })
+      expect(res.ok, latex).toBe(true)
+      if (!res.ok) return 0
+      const paths = svgToPaths(res.svg)
+      expect(paths, latex).not.toBeNull()
+      const { svg, w, h } = fixViewBox(res.svg, 40)
+      const raster = await rasterizeSvgNode(svg, w, h)
+      const c = createCanvas(raster.width, raster.height)
+      drawMathPaths(
+        c.getContext('2d') as unknown as CanvasRenderingContext2D,
+        paths as NonNullable<typeof paths>,
+        0,
+        0,
+        raster.width,
+        raster.height,
+        (d) => new Path2D(d) as unknown as globalThis.Path2D,
+      )
+      const rasterInk = inkArea(raster)
+      // The path rendering must carry the frame: within 5% of the browser-style raster, not ~half of it.
+      expect(Math.abs(inkArea(c) - rasterInk) / rasterInk, latex).toBeLessThan(
+        0.05,
+      )
+      return inkArea(c)
+    }
+    const plain = await ink('x')
+    expect(await ink('\\boxed{x}')).toBeGreaterThan(plain * 2)
+    await ink('\\fbox{x}')
+    await ink(
+      '\\begin{array}{|c|c|}\\hline a & b \\\\ \\hline c & d \\\\ \\hline\\end{array}',
+    )
+  })
+
   it('svgToPaths returns null for an SVG containing <text> or unsupported elements', () => {
     const withText =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -500 1000 1000"><g transform="scale(1,-1)"><text>hi</text></g></svg>'
