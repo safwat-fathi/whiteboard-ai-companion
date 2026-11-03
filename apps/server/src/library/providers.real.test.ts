@@ -282,6 +282,17 @@ describe('complete', () => {
     })
   })
 
+  it('asks again with twice the budget when the model spent it all reasoning and said nothing', async () => {
+    const meta = await fake((n) =>
+      n === 0 ? chat('', 'length') : chat('Now a summary.'),
+    )
+    const text = await make(meta.url, 'http://unused').complete('Summarise', {
+      maxTokens: 500,
+    })
+    expect(text).toBe('Now a summary.')
+    expect(meta.seen.map((s) => s.body.max_tokens)).toEqual([500, 1000])
+  })
+
   it('treats an empty completion as a failure', async () => {
     const meta = await fake(() => chat('', 'length'))
     await expect(

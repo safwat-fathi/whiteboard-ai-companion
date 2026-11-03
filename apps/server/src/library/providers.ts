@@ -330,13 +330,17 @@ export function createProviders(o: {
 
     async complete(prompt, opts) {
       const key = need(env.META_API_KEY, 'META_API_KEY')
-      const r = await metaChat(
-        key,
-        config.cheapModel,
-        'CHEAP_MODEL',
-        opts?.maxTokens ?? 6000,
-        prompt,
-      )
+      const max = opts?.maxTokens ?? 6000
+      let r = await metaChat(key, config.cheapModel, 'CHEAP_MODEL', max, prompt)
+      // a reasoning model can spend the whole budget thinking and answer with nothing: once more with twice the room
+      if (r.cutOff && !r.text.trim())
+        r = await metaChat(
+          key,
+          config.cheapModel,
+          'CHEAP_MODEL',
+          max * 2,
+          prompt,
+        )
       const text = cleanText(r.text).trim()
       if (!text)
         throw new ApiError(
