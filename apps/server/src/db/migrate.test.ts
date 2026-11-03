@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -35,21 +36,23 @@ const tables = (db: Database.Database) =>
     }[]
   ).map((r) => r.name)
 
-/** A migrations dir holding the real 0001 plus the given extra files. */
-function migrationsWith(extra: Record<string, string>) {
+/** A migrations dir holding the real migrations up to `upTo` plus the given extra files. */
+function migrationsWith(extra: Record<string, string>, upTo = 2) {
   const dir = join(tmp(), 'migrations')
   mkdirSync(dir)
-  cpSync(join(realMigrations, '0001_init.sql'), join(dir, '0001_init.sql'))
+  for (const name of readdirSync(realMigrations))
+    if (Number(name.slice(0, 4)) <= upTo)
+      cpSync(join(realMigrations, name), join(dir, name))
   for (const [name, sql] of Object.entries(extra))
     writeFileSync(join(dir, name), sql)
   return dir
 }
 
 describe('openDatabase and migrations', () => {
-  it('creates every table at user_version 1 with the pragmas set', () => {
+  it('creates every table at user_version 2 with the pragmas set', () => {
     const dataDir = join(tmp(), 'data')
     const db = openDatabase({ dataDir })
-    expect(version(db)).toBe(1)
+    expect(version(db)).toBe(2)
     expect(tables(db)).toEqual(
       expect.arrayContaining([
         'boards',
@@ -76,7 +79,7 @@ describe('openDatabase and migrations', () => {
     const dataDir = join(tmp(), 'data')
     openDatabase({ dataDir }).close()
     const db = openDatabase({ dataDir })
-    expect(version(db)).toBe(1)
+    expect(version(db)).toBe(2)
     expect(existsSync(join(dataDir, 'backups'))).toBe(false)
     db.close()
   })
@@ -109,9 +112,12 @@ describe('openDatabase and migrations', () => {
     db.close()
   })
 
-  it('migrates a copy of a populated v1 file, keeping the data and a pre-migrate backup', () => {
+  it('migrates a copy of a populated v1 file through 0002, keeping the data and a pre-migrate backup', () => {
     const src = join(tmp(), 'data')
-    const first = openDatabase({ dataDir: src })
+    const first = openDatabase({
+      dataDir: src,
+      migrationsDir: migrationsWith({}, 1),
+    })
     first
       .prepare(
         "INSERT INTO boards (id,title,created_at,updated_at) VALUES ('b','Algebra',1,1)",
@@ -123,12 +129,17 @@ describe('openDatabase and migrations', () => {
     mkdirSync(copy)
     cpSync(join(src, 'whiteboard.db'), join(copy, 'whiteboard.db'))
     const migrationsDir = migrationsWith({
-      '0002_note.sql':
+      '0003_note.sql':
         'CREATE TABLE extra (a INTEGER); ALTER TABLE boards ADD COLUMN note TEXT;',
     })
     const db = openDatabase({ dataDir: copy, migrationsDir })
-    expect(version(db)).toBe(2)
+    expect(version(db)).toBe(3)
     expect(tables(db)).toContain('extra')
+    expect(
+      (db.pragma('table_info(board_ops)') as { name: string }[]).map(
+        (c) => c.name,
+      ),
+    ).toContain('inverse')
     expect(db.prepare("SELECT title FROM boards WHERE id = 'b'").get()).toEqual(
       {
         title: 'Algebra',
@@ -151,12 +162,12 @@ describe('openDatabase and migrations', () => {
     const dataDir = join(tmp(), 'data')
     openDatabase({ dataDir }).close()
     const migrationsDir = migrationsWith({
-      '0002_bad.sql':
+      '0003_bad.sql':
         'CREATE TABLE ok (a INTEGER); INSERT INTO nope VALUES (1);',
     })
     expect(() => openDatabase({ dataDir, migrationsDir })).toThrow()
     const raw = new Database(join(dataDir, 'whiteboard.db'))
-    expect(version(raw)).toBe(1)
+    expect(version(raw)).toBe(2)
     expect(tables(raw)).not.toContain('ok')
     raw.close()
   })
@@ -167,7 +178,7 @@ describe('openDatabase and migrations', () => {
     const raw = new Database(join(dataDir, 'whiteboard.db'))
     raw.pragma('user_version = 5')
     raw.close()
-    expect(() => openDatabase({ dataDir })).toThrow(/5.*1|1.*5/)
+    expect(() => openDatabase({ dataDir })).toThrow(/5.*2|2.*5/)
   })
 
   it('cascades a board delete to its ops and snapshots with no dangling rows', () => {
@@ -176,7 +187,7 @@ describe('openDatabase and migrations', () => {
       "INSERT INTO boards (id,title,created_at,updated_at) VALUES ('b','T',1,1)",
     ).run()
     db.prepare(
-      "INSERT INTO board_ops VALUES ('b',1,'x','human','owner',NULL,'add',NULL,'[]','[]',1)",
+      "INSERT INTO board_ops VALUES ('b',1,'x','human','owner',NULL,'add',NULL,'[]','[]',1,NULL)",
     ).run()
     db.prepare("INSERT INTO board_snapshots VALUES ('b',1,x'00')").run()
     db.prepare("DELETE FROM boards WHERE id = 'b'").run()

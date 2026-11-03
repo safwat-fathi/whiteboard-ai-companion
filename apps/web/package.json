@@ -11,6 +11,7 @@
     "@fontsource/ibm-plex-sans-arabic": "5.3.0",
     "@whiteboard/core": "workspace:*",
     "@whiteboard/math": "workspace:*",
+    "ai": "7.0.159",
     "next": "16.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1"

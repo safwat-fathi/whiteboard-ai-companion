@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Element, Op } from '@whiteboard/core'
+import type { Batch, Element, Op } from '@whiteboard/core'
 import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createBoardsDb, type NewOp } from './boards'
@@ -89,6 +89,21 @@ describe('appendBatch and opsAfter', () => {
     expect(seqs).toEqual(Array.from({ length: 100 }, (_, i) => i + 1))
     expect(boards.getBoard('b')?.headSeq).toBe(100)
     expect(boards.getBoard('b')?.updatedAt).toBe(5)
+  })
+
+  it('stores the inverse of a batch and reads it back; absent when none was given', () => {
+    const { boards } = open()
+    boards.createBoard({ id: 'b', title: 'B' }, 1)
+    const inverse = {
+      batchId: 'inv-1',
+      label: 'Undo',
+      ops: [{ op: 'remove', id: 'e1' }],
+    } satisfies Batch
+    boards.appendBatch('b', op(1, { inverse }), 2)
+    boards.appendBatch('b', op(2), 3)
+    const [a, b] = boards.opsAfter('b', 0)
+    expect(a?.inverse).toEqual(inverse)
+    expect(b && 'inverse' in b).toBe(false)
   })
 
   it('is atomic: a failing insert leaves head_seq unchanged', () => {

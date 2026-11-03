@@ -11,9 +11,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.82",
     "@napi-rs/canvas": "1.1.0",
     "@whiteboard/core": "workspace:*",
     "@whiteboard/math": "workspace:*",
+    "ai": "7.0.159",
     "better-sqlite3": "13.0.3",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "5.7.284",

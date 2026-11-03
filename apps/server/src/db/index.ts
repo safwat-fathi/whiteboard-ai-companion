@@ -23,5 +23,12 @@ export {
   type SectionNode,
   type SectionRow,
 } from './books'
+export {
+  createMessagesDb,
+  type MessageRow,
+  type MessagesDb,
+  type NewMessage,
+} from './messages'
 export { migrate } from './migrate'
 export { openDatabase, schemaVersion } from './open'
+export { createSettingsDb, type SettingsDb } from './settings'

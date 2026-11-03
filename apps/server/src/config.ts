@@ -16,6 +16,37 @@ export type Config = {
   embedDims: number
   /** Daily cap in USD for paid OpenRouter calls (embeddings, opt-in R3). */
   dailyBudgetUsd: number
+  tutor: TutorConfig
+}
+
+export type TutorConfig = {
+  model: string
+  /** Used when the student's message is mostly Arabic. */
+  modelAr: string
+  /** One retry on a 5xx before any output. */
+  fallbackModel: string
+  maxSteps: number
+  /** Only bites when `price` is set: Meta publishes no price, so turns are unpriced by default. */
+  maxTurnCostUsd: number
+  turnTimeoutMs: number
+  chapterStuffMaxTokens: number
+  /** How a snapshot reaches the model; Meta rejects images inside tool results. */
+  snapshotAdapter: 'follow-up-user' | 'tool-result-image'
+  /** USD per million tokens; null = unpriced (tokens are still counted). */
+  price: { inPerM: number; outPerM: number } | null
+}
+
+function num(
+  env: Record<string, string | undefined>,
+  key: string,
+  dflt: number,
+  ok: (n: number) => boolean,
+  what: string,
+): number {
+  const v = Number(env[key] ?? dflt)
+  if (env[key] === '' || !Number.isFinite(v) || !ok(v))
+    throw new Error(`${key} must be ${what}, got "${env[key]}"`)
+  return v
 }
 
 /**
@@ -54,6 +85,53 @@ export function loadConfig(
     throw new Error(
       `DAILY_BUDGET_USD must be a number >= 0, got "${env.DAILY_BUDGET_USD}"`,
     )
+  const adapter = env.SNAPSHOT_ADAPTER || 'follow-up-user'
+  if (adapter !== 'follow-up-user' && adapter !== 'tool-result-image')
+    throw new Error(
+      `SNAPSHOT_ADAPTER must be follow-up-user or tool-result-image, got "${adapter}"`,
+    )
+  const nonNeg = (n: number) => n >= 0
+  const priced = env.TUTOR_PRICE_IN_PER_M || env.TUTOR_PRICE_OUT_PER_M
+  const tutor: TutorConfig = {
+    model: env.TUTOR_MODEL || 'muse-spark-1.3',
+    modelAr: env.TUTOR_MODEL_AR || env.TUTOR_MODEL || 'muse-spark-1.3',
+    fallbackModel: env.TUTOR_FALLBACK_MODEL || 'muse-spark-1.3',
+    maxSteps: num(
+      env,
+      'MAX_STEPS',
+      12,
+      (n) => Number.isInteger(n) && n >= 1,
+      'an integer >= 1',
+    ),
+    maxTurnCostUsd: num(env, 'MAX_TURN_COST_USD', 0.5, nonNeg, 'a number >= 0'),
+    turnTimeoutMs: num(
+      env,
+      'TURN_TIMEOUT_MS',
+      120_000,
+      (n) => Number.isInteger(n) && n >= 1,
+      'an integer >= 1',
+    ),
+    chapterStuffMaxTokens: num(
+      env,
+      'CHAPTER_STUFF_MAX_TOKENS',
+      60_000,
+      (n) => Number.isInteger(n) && n >= 1,
+      'an integer >= 1',
+    ),
+    snapshotAdapter: adapter,
+    price: priced
+      ? {
+          inPerM: num(env, 'TUTOR_PRICE_IN_PER_M', 0, nonNeg, 'a number >= 0'),
+          outPerM: num(
+            env,
+            'TUTOR_PRICE_OUT_PER_M',
+            0,
+            nonNeg,
+            'a number >= 0',
+          ),
+        }
+      : null,
+  }
   return {
     port,
     host: env.HOST || '127.0.0.1',
@@ -66,5 +144,6 @@ export function loadConfig(
     embedModel: env.EMBED_MODEL || 'baai/bge-m3',
     embedDims,
     dailyBudgetUsd,
+    tutor,
   }
 }

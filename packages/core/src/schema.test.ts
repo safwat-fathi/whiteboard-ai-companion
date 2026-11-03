@@ -57,6 +57,19 @@ describe('ElementSchema', () => {
       }).type,
     ).toBe('math')
   })
+  it('accepts an image source from a book page and rejects a malformed one', () => {
+    const source = { bookPage: { bookId: 'b'.repeat(64), page: 42 } }
+    const withSource = { ...image, data: { ...image.data, source } }
+    expect(ElementSchema.parse(withSource)).toMatchObject({ data: { source } })
+    for (const bad of [
+      { bookPage: { bookId: 'nope', page: 1 } },
+      { bookPage: { bookId: 'b'.repeat(64), page: 0 } },
+      { bookPage: { bookId: 'b'.repeat(64), page: 1.5 } },
+    ])
+      expect(() =>
+        ElementSchema.parse({ ...image, data: { ...image.data, source: bad } }),
+      ).toThrow()
+  })
   it('rejects bad values', () => {
     expect(ElementSchema.safeParse({ ...rect, w: -1 }).success).toBe(false)
     expect(

@@ -82,4 +82,53 @@ describe('loadConfig', () => {
       /META_API_BASE_URL/,
     )
   })
+  it('has tutor defaults from .env.example and no price', () => {
+    const t = loadConfig({}).tutor
+    expect(t).toEqual({
+      model: 'muse-spark-1.3',
+      modelAr: 'muse-spark-1.3',
+      fallbackModel: 'muse-spark-1.3',
+      maxSteps: 12,
+      maxTurnCostUsd: 0.5,
+      turnTimeoutMs: 120_000,
+      chapterStuffMaxTokens: 60_000,
+      snapshotAdapter: 'follow-up-user',
+      price: null,
+    })
+  })
+
+  it('reads tutor settings, a price only when one is set, and names the key when invalid', () => {
+    const t = loadConfig({
+      TUTOR_MODEL: 'a',
+      TUTOR_MODEL_AR: 'b',
+      TUTOR_FALLBACK_MODEL: 'c',
+      MAX_STEPS: '2',
+      MAX_TURN_COST_USD: '0.01',
+      TURN_TIMEOUT_MS: '5000',
+      CHAPTER_STUFF_MAX_TOKENS: '100',
+      SNAPSHOT_ADAPTER: 'tool-result-image',
+      TUTOR_PRICE_IN_PER_M: '0.1',
+    }).tutor
+    expect(t).toMatchObject({
+      model: 'a',
+      modelAr: 'b',
+      fallbackModel: 'c',
+      maxSteps: 2,
+      maxTurnCostUsd: 0.01,
+      turnTimeoutMs: 5000,
+      chapterStuffMaxTokens: 100,
+      snapshotAdapter: 'tool-result-image',
+      price: { inPerM: 0.1, outPerM: 0 },
+    })
+    for (const bad of [
+      'MAX_STEPS',
+      'MAX_TURN_COST_USD',
+      'TURN_TIMEOUT_MS',
+      'CHAPTER_STUFF_MAX_TOKENS',
+      'SNAPSHOT_ADAPTER',
+      'TUTOR_PRICE_OUT_PER_M',
+    ])
+      expect(() => loadConfig({ [bad]: '-x' })).toThrow(new RegExp(bad))
+    expect(() => loadConfig({ MAX_STEPS: '0' })).toThrow(/MAX_STEPS/)
+  })
 })

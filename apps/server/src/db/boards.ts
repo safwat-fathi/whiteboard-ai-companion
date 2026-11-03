@@ -1,5 +1,5 @@
 import { gunzipSync, gzipSync } from 'node:zlib'
-import type { Element, Op } from '@whiteboard/core'
+import type { Batch, Element, Op } from '@whiteboard/core'
 import type Database from 'better-sqlite3'
 import { z } from 'zod'
 import { ApiError } from '../errors'
@@ -38,6 +38,8 @@ export type NewOp = {
   bounds: Bounds | null
   touchedIds: string[]
   ops: Op[]
+  /** Agent batches only: the batch that undoes this one. */
+  inverse?: Batch
 }
 export type OpRow = NewOp & { boardId: string; seq: number; createdAt: number }
 
@@ -60,6 +62,7 @@ type RawOp = {
   bounds: string | null
   touched_ids: string
   ops: string
+  inverse: string | null
   created_at: number
 }
 
@@ -83,6 +86,7 @@ const toOp = (r: RawOp): OpRow => ({
   bounds: r.bounds === null ? null : (JSON.parse(r.bounds) as Bounds),
   touchedIds: JSON.parse(r.touched_ids) as string[],
   ops: JSON.parse(r.ops) as Op[],
+  ...(r.inverse === null ? {} : { inverse: JSON.parse(r.inverse) as Batch }),
   createdAt: r.created_at,
 })
 
@@ -102,8 +106,8 @@ export function createBoardsDb(db: Database.Database) {
   )
   const insertOp = db.prepare(
     `INSERT INTO board_ops
-       (board_id, seq, batch_id, author_kind, author_id, turn_id, label, bounds, touched_ids, ops, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (board_id, seq, batch_id, author_kind, author_id, turn_id, label, bounds, touched_ids, ops, inverse, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const selectOps = db.prepare(
     'SELECT * FROM board_ops WHERE board_id = ? AND seq > ? ORDER BY seq LIMIT ?',
@@ -137,6 +141,7 @@ export function createBoardsDb(db: Database.Database) {
         b.bounds === null ? null : JSON.stringify(b.bounds),
         JSON.stringify(b.touchedIds),
         JSON.stringify(b.ops),
+        b.inverse ? JSON.stringify(b.inverse) : null,
         now,
       )
       return head.head_seq

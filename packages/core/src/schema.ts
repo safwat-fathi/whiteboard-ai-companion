@@ -72,6 +72,20 @@ export const CropSchema = z.object({
 })
 export type Crop = z.infer<typeof CropSchema>
 
+/** Where an image came from; absent means the student uploaded it. `page` is the 1-based position in the book's PDF. */
+export const ImageSourceSchema = z.object({
+  bookPage: z.object({
+    bookId: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'must be a 64-char lowercase hex sha256'),
+    page: num
+      .int('must be an integer')
+      .min(1, 'must be 1..100000')
+      .max(100000, 'must be 1..100000'),
+  }),
+})
+export type ImageSource = z.infer<typeof ImageSourceSchema>
+
 export const ImageDataSchema = z
   .object({
     blobId: z
@@ -87,6 +101,7 @@ export const ImageDataSchema = z
       .max(8192, 'must be 1..8192'),
     crop: CropSchema.optional(),
     alt: z.string().max(500, 'must be at most 500 chars').optional(),
+    source: ImageSourceSchema.optional(),
   })
   .refine(
     (d) =>
