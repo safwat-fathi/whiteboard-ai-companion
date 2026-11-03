@@ -218,6 +218,12 @@ export class BoardService {
     return { seq, noop: false, broadcast }
   }
 
+  /** The stored batches of a turn / of one batch, oldest first (turn undo and the Activity tab read them). */
+  opsOfTurn = (boardId: string, turnId: string) =>
+    this.db.opsByTurn(boardId, turnId)
+  opsOfBatch = (boardId: string, batchId: string) =>
+    this.db.opsByBatch(boardId, batchId)
+
   join(boardId: string, fromSeq: number): JoinResult {
     if (!Number.isInteger(fromSeq) || fromSeq < 0)
       throw new ApiError(

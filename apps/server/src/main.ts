@@ -23,6 +23,7 @@ import { createLlm } from './tutor/llm'
 import { loadFixtures } from './tutor/stub'
 import { tutorToolSet } from './tutor/tools'
 import { createTutor } from './tutor/turn'
+import { createUndo } from './tutor/undo'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const config = loadConfig(process.env, repoRoot)
@@ -95,7 +96,13 @@ const server = createHttpServer({
   boards,
   blobs,
   schemaVersion: () => schemaVersion(db),
-  tutor: { tutor, boards, messages: messagesDb, stub: !!tutorStub },
+  tutor: {
+    tutor,
+    boards,
+    messages: messagesDb,
+    undo: createUndo({ boards, settings: createSettingsDb(db) }),
+    stub: !!tutorStub,
+  },
   library: {
     books: booksDb,
     blobs: blobsDb,

@@ -112,6 +112,12 @@ export function createBoardsDb(db: Database.Database) {
   const selectOps = db.prepare(
     'SELECT * FROM board_ops WHERE board_id = ? AND seq > ? ORDER BY seq LIMIT ?',
   )
+  const selectTurn = db.prepare(
+    'SELECT * FROM board_ops WHERE board_id = ? AND turn_id = ? ORDER BY seq',
+  )
+  const selectBatch = db.prepare(
+    'SELECT * FROM board_ops WHERE board_id = ? AND batch_id = ? ORDER BY seq',
+  )
   const putSnapshot = db.prepare(
     'INSERT OR REPLACE INTO board_snapshots (board_id, seq, scene) VALUES (?, ?, ?)',
   )
@@ -181,6 +187,11 @@ export function createBoardsDb(db: Database.Database) {
     /** One transaction: bump head_seq, insert the op row. Returns the new seq. */
     appendBatch: (boardId: string, b: NewOp, now: number): number =>
       append(boardId, b, now),
+    /** Every batch of one tutor turn, oldest first. */
+    opsByTurn: (boardId: string, turnId: string): OpRow[] =>
+      (selectTurn.all(boardId, turnId) as RawOp[]).map(toOp),
+    opsByBatch: (boardId: string, batchId: string): OpRow[] =>
+      (selectBatch.all(boardId, batchId) as RawOp[]).map(toOp),
     opsAfter: (boardId: string, seq: number, limit = -1): OpRow[] =>
       (selectOps.all(boardId, seq, limit) as RawOp[]).map(toOp),
 

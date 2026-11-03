@@ -6,11 +6,13 @@ import type { MessagesDb } from './db'
 import { apiError } from './errors'
 import { parse, readJson, send } from './http-util'
 import type { Tutor } from './tutor/turn'
+import type { TutorUndo } from './tutor/undo'
 
 export type TutorRoutesDeps = {
   tutor: Tutor
   boards: BoardService
   messages: MessagesDb
+  undo: TutorUndo
   /** TUTOR_STUB: also serve the recorded model requests to the specs. */
   stub: boolean
 }
@@ -71,6 +73,27 @@ export function createTutorRoutes(d: TutorRoutesDeps) {
         messages: page.messages.map(d.tutor.toDto),
         ...(page.next ? { next: page.next } : {}),
       })
+      return true
+    }
+    if (
+      seg[1] === 'boards' &&
+      (seg[3] === 'turns' || seg[3] === 'batches') &&
+      seg[5] === 'undo' &&
+      seg.length === 6 &&
+      method === 'POST'
+    ) {
+      const id = decode(seg[2] as string)
+      if (!d.boards.getBoard(id))
+        throw apiError('not_found', `unknown board ${id}`)
+      // undoing while the turn still draws would fight it: wait for it to finish (or press Stop)
+      if (d.tutor.isBusy(id))
+        throw apiError('turn_busy', 'The AI is still working on this board.')
+      const target = decode(seg[4] as string)
+      send(
+        res,
+        200,
+        seg[3] === 'turns' ? d.undo.turn(id, target) : d.undo.batch(id, target),
+      )
       return true
     }
     if (

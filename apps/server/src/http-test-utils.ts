@@ -27,6 +27,7 @@ import { createVectorCache } from './library/search'
 import type { StubFixture } from './tutor/stub'
 import { tutorToolSet } from './tutor/tools'
 import { createTutor, type TutorDeps } from './tutor/turn'
+import { createUndo } from './tutor/undo'
 
 // Shared by the HTTP test files: a real server on a random port over a temp database, and a raw client.
 export const ORIGIN = 'http://localhost:3000'
@@ -128,6 +129,7 @@ export async function boot(
       tutor,
       boards,
       messages: messagesDb,
+      undo: createUndo({ boards, settings: createSettingsDb(db) }),
       stub: !!o.tutor?.fixtures,
     },
     library: {
@@ -212,6 +214,7 @@ export async function boot(
     queue,
     dataDir,
     messagesDb,
+    tutor,
   }
 }
 
