@@ -62,10 +62,12 @@ export function AiTag({
       aria-label="Made by the AI"
       onPointerEnter={() => clearTimeout(hide.current)}
       onPointerLeave={() => setTag(null)}
-      className="fixed z-20 flex items-center gap-2 rounded-xl border border-blue-500/80 bg-blue-600 px-2.5 py-1 text-xs text-white shadow-md shadow-blue-900/20 backdrop-blur-md transition-opacity duration-150 before:absolute before:-inset-2.5 before:content-['']"
+      // The offset (12) must exceed the invisible hit margin (-inset-2 = 8): otherwise the tag spawns under the
+      // pointer and swallows the wheel and the clicks meant for the board (m5-jump: Follow stayed on after a wheel).
+      className="fixed z-20 flex items-center gap-2 rounded-xl border border-blue-500/80 bg-blue-600 px-2.5 py-1 text-xs text-white shadow-md shadow-blue-900/20 backdrop-blur-md transition-opacity duration-150 before:absolute before:-inset-2 before:content-['']"
       style={{
-        left: tag.x + 8,
-        top: tag.y + 8,
+        left: tag.x + 12,
+        top: tag.y + 12,
       }}
     >
       <span dir="auto" className="font-medium">

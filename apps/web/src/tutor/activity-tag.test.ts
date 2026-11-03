@@ -250,8 +250,9 @@ describe('AiTag', () => {
     expect(fieldset).not.toBeNull()
     const initialLeft = fieldset.style.left
     const initialTop = fieldset.style.top
-    expect(initialLeft).toBe('58px')
-    expect(initialTop).toBe('68px')
+    // the pointer is at (50, 60): the tag starts 12 px away, outside its 8 px invisible hit margin, so it never sits under the pointer
+    expect(initialLeft).toBe('62px')
+    expect(initialTop).toBe('72px')
 
     // Move pointer slightly toward the button (e.g. clientX: 70, clientY: 75)
     await act(
