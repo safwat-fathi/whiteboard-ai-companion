@@ -99,9 +99,8 @@ function BookView({ api, bookId }: { api: LibraryApi; bookId: string }) {
         scopeTitle(book.title, ticked, sections),
         buildScope(book.id, ticked),
       )
-      // the editor opens the board whose id is stored here
-      localStorage.setItem('whiteboard:boardId', board.id)
-      location.assign('/')
+      localStorage.setItem('whiteboard:boardId', board.id) // so '/' opens it next time too
+      location.assign(`/boards/${encodeURIComponent(board.id)}`)
     } catch (e) {
       setError(message(e))
     }

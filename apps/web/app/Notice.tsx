@@ -14,7 +14,7 @@ export function Notices({ notes }: { notes: Note[] }) {
       style={{
         position: 'fixed',
         top: 12,
-        left: '50%',
+        left: 'calc((100% - var(--dock-w, 0px)) / 2)',
         transform: 'translateX(-50%)',
         zIndex: 10,
         display: 'flex',

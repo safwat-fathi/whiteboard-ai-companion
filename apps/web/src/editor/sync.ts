@@ -4,7 +4,15 @@ import type { Editor } from './editor'
 export type SyncStatus = 'connecting' | 'live' | 'offline' | 'failed'
 
 /** The server's broadcast of one accepted batch (also the items of a `sync` tail). */
-type ServerBatch = { seq: number; batch: Batch }
+export type ServerBatch = {
+  seq: number
+  batch: Batch
+  author?: { kind: 'human' | 'agent'; id: string }
+  turnId?: string
+  bounds?: { x: number; y: number; w: number; h: number } | null
+}
+/** Called for every server batch applied here: the Activity tab, Follow AI and the off-screen indicator listen. */
+export type ServerBatchHook = (sb: ServerBatch) => void
 type Pending = { clientSeq: number; batch: Batch; inverse: Batch }
 
 type Socket = {
@@ -18,6 +26,7 @@ type Socket = {
 }
 
 const OPEN = 1
+const MAX_FRAME_BYTES = 1024 * 1024 // the server closes a socket that sends more (1009), and the resend would repeat it
 const FATAL_CLOSE_CODES = new Set([4400, 4404]) // protocol error, unknown board: reconnecting would only repeat it
 
 /**
@@ -34,6 +43,7 @@ export function createSyncClient(o: {
   boardId: string
   editor: Editor
   onStatus: (s: SyncStatus, detail?: string) => void
+  onServerBatch?: ServerBatchHook
   WebSocketImpl?: new (url: string) => Socket
   backoff?: { minMs: number; maxMs: number }
 }): { start(): void; stop(): void } {
@@ -57,13 +67,27 @@ export function createSyncClient(o: {
   const send = (m: unknown) => ws?.send(JSON.stringify(m))
   const notice = (text: string) => editor.onNotice?.(text)
 
+  /** Sends one pending edit; one that cannot fit in a frame is refused here, like a server reject. */
+  function sendOps(p: Pending) {
+    const frame = JSON.stringify({
+      type: 'ops',
+      clientSeq: p.clientSeq,
+      batch: p.batch,
+    })
+    if (new TextEncoder().encode(frame).length > MAX_FRAME_BYTES)
+      return onReject({
+        clientSeq: p.clientSeq,
+        reason: { message: 'it is too large to send (over 1 MiB)' },
+      })
+    ws?.send(frame)
+  }
+
   // Local edits: apply (the editor already did), queue, and send if the server's tail has been applied.
   editor.onBatch = (batch, inverse) => {
     if (stopped) return
     const p = { clientSeq: nextClientSeq++, batch, inverse }
     pending.push(p)
-    if (synced && ws?.readyState === OPEN)
-      send({ type: 'ops', clientSeq: p.clientSeq, batch })
+    if (synced && ws?.readyState === OPEN) sendOps(p)
   }
 
   /** Undoes every pending edit, newest first (an edit with an empty inverse changed nothing). */
@@ -93,8 +117,8 @@ export function createSyncClient(o: {
    * Applies server batches in order. `replaced` means the scene was just replaced by a snapshot, so the pending edits
    * are not in it and need no rollback.
    */
-  function applyServer(list: ServerBatch[], replaced = false) {
-    if (list.length === 0) return
+  function applyServer(list: ServerBatch[], replaced = false): boolean {
+    if (list.length === 0 && !replaced) return true
     if (!replaced) rollback()
     for (const sb of list) {
       const mine = pending.findIndex(
@@ -105,15 +129,20 @@ export function createSyncClient(o: {
         editor.applyExternal(sb.batch)
       } catch (e) {
         if (!(e instanceof OpError)) throw e
-        // The server's own batch does not apply to our state: we have drifted. Start over from a full snapshot.
+        // The server's own batch does not apply to our state: we have drifted. Start over from the whole log: an empty
+        // scene (the rejoin from 0 replays everything onto it) and no stale inverses for the pending edits.
         notice('Resynchronising with the server')
+        editor.setScene([], undefined, editor.undo.toJSON())
+        for (const p of pending) p.inverse = { ...p.inverse, ops: [] }
         lastSeq = 0
         ws?.close(4000)
-        return
+        return false
       }
       lastSeq = sb.seq
+      o.onServerBatch?.(sb)
     }
     replay([...pending])
+    return true
   }
 
   function onSync(m: {
@@ -124,13 +153,12 @@ export function createSyncClient(o: {
     if (m.snapshot)
       editor.setScene(m.snapshot.scene, undefined, editor.undo.toJSON())
     if (m.snapshot) lastSeq = m.snapshot.seq
-    applyServer(m.ops, !!m.snapshot)
+    if (!applyServer(m.ops, !!m.snapshot)) return // drifted: the socket is closing and the rejoin starts from 0
     lastSeq = Math.max(lastSeq, m.headSeq)
     synced = true
     delay = minMs
     o.onStatus('live')
-    for (const p of pending)
-      send({ type: 'ops', clientSeq: p.clientSeq, batch: p.batch })
+    for (const p of [...pending]) sendOps(p)
   }
 
   function onReject(m: { clientSeq: number; reason: { message?: string } }) {

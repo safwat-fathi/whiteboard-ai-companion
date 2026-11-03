@@ -79,7 +79,11 @@ export type PageText = {
   text: string
   method: Rung
 }
-export type Board = { id: string; title: string }
+export type Board = {
+  id: string
+  title: string
+  scope?: Scope | Record<string, never>
+}
 export type SearchBody = {
   query: string
   bookId?: string
@@ -184,6 +188,12 @@ export function createLibraryApi(
       request<PageText>('GET', `/api/books/${enc(id)}/pages/${page}`),
     createBoard: (title: string, scope: Scope) =>
       post<Board>('/api/boards', { title, scope }),
+    getBoard: (id: string) => request<Board>('GET', `/api/boards/${enc(id)}`),
+    setBoardScope: (id: string, scope: Scope) =>
+      request<Board>('PATCH', `/api/boards/${enc(id)}`, {
+        body: JSON.stringify({ scope }),
+        type: 'application/json',
+      }),
     search: (body: SearchBody) =>
       post<{ mode: 'hybrid' | 'keyword'; hits: Hit[] }>('/api/search', body),
     fileUrl: (id: string) => `${root}/api/books/${enc(id)}/file`,

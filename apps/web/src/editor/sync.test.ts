@@ -7,7 +7,7 @@ import {
 } from '@whiteboard/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from './editor'
-import { createSyncClient, type SyncStatus } from './sync'
+import { createSyncClient, type ServerBatchHook, type SyncStatus } from './sync'
 import { setup } from './test-utils'
 
 // A WebSocket stand-in the test drives by hand.
@@ -118,7 +118,12 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function start(opts: { backoff?: { minMs: number; maxMs: number } } = {}) {
+function start(
+  opts: {
+    backoff?: { minMs: number; maxMs: number }
+    onServerBatch?: ServerBatchHook
+  } = {},
+) {
   const c = createSyncClient({
     url: 'ws://127.0.0.1:4000/ws?boardId=b1',
     boardId: 'b1',
@@ -443,6 +448,99 @@ describe('offline, reconnect and resend', () => {
     c2.stop()
     expect(sock().readyState).toBe(3)
     expect(() => ed.commit(add('after'))).not.toThrow()
+    expect(sock().ofType('ops')).toEqual([])
+  })
+})
+
+describe('what the server batch carries (T4: author, turn and bounds reach the UI)', () => {
+  it('reports every applied server batch with its author, turnId and bounds, but not our own acked edit', () => {
+    const seen: unknown[] = []
+    start({ onServerBatch: (sb) => seen.push(sb) })
+    live()
+    const AI = { kind: 'agent' as const, id: 'tutor:t1' }
+    const bounds = { x: 1, y: 2, w: 3, h: 4 }
+    sock().deliver({
+      type: 'ops',
+      seq: 1,
+      batch: add('ai1'),
+      author: AI,
+      turnId: 't1',
+      bounds,
+    })
+    expect(seen).toEqual([
+      expect.objectContaining({ seq: 1, author: AI, turnId: 't1', bounds }),
+    ])
+    expect((seen[0] as { batch: Batch }).batch.ops[0]).toMatchObject({
+      op: 'add',
+    })
+    // a batch we sent ourselves and the server echoes back is applied once and still reported (the Activity tab lists it)
+    ed.commit(add('mine'))
+    const mine = sock().ofType('ops')[0]
+    sock().deliver({ type: 'ack', clientSeq: mine?.clientSeq, seq: 2 })
+    expect(seen).toHaveLength(1)
+  })
+
+  it('reports the tail of a sync too', () => {
+    const seen: number[] = []
+    start({ onServerBatch: (sb) => seen.push(sb.seq) })
+    live(sync(2, [bc(1, add('a')), bc(2, add('b'))]))
+    expect(seen).toEqual([1, 2])
+  })
+})
+
+describe('HANDOFF fixes found while wiring the dock', () => {
+  it('a pending offline edit survives a snapshot sync that has no ops after it (it is resent, so it must be on screen)', () => {
+    start()
+    live()
+    sock().drop()
+    ed.commit(add('offline'))
+    vi.advanceTimersByTime(500)
+    sock().open()
+    sock().deliver(sync(5, [], { seq: 5, scene: [shape('server')] }))
+    expect([...ed.scene.els.keys()].sort()).toEqual(['offline', 'server'])
+    expect(sock().ofType('ops')).toHaveLength(1)
+  })
+
+  it('drift clears the scene and rejoins from 0 instead of replaying the log over the old scene', () => {
+    start()
+    live(sync(1, [bc(1, add('a'))]))
+    // the server sends a batch that cannot apply to our state: patching an element we do not have, as an add of an existing id
+    sock().deliver(bc(2, add('a')))
+    expect(sock().readyState).toBe(3) // closed with 4000 to resync
+    expect(ed.scene.els.size).toBe(0)
+    vi.advanceTimersByTime(500)
+    sock().open()
+    expect(sock().sent[0]).toEqual({ type: 'join', boardId: 'b1', fromSeq: 0 })
+    sock().deliver(sync(2, [bc(1, add('a')), bc(2, fill('a', 'red'))]))
+    expect([...ed.scene.els.keys()]).toEqual(['a'])
+    expect(fillOf(ed, 'a')).toBe('red')
+    expect(sock().sent.filter((m) => m.type === 'join')).toHaveLength(1)
+  })
+
+  it('a batch over 1 MiB is refused locally with a notice, never sent, and not resent after a reconnect', () => {
+    start()
+    live()
+    const big = batch(
+      'Big',
+      ...Array.from(
+        { length: 60 },
+        (_, i) =>
+          ({
+            op: 'add',
+            el: shape(`big${i}`, {
+              data: { kind: 'rect', pad: 'x'.repeat(20_000) } as never,
+            }),
+          }) as Op,
+      ),
+    )
+    ed.commit(big)
+    expect(sock().ofType('ops')).toEqual([])
+    expect(notices.join(' ')).toMatch(/too large/i)
+    expect(ed.scene.els.size).toBe(0) // rolled back like a reject
+    sock().drop()
+    vi.advanceTimersByTime(500)
+    sock().open()
+    sock().deliver(sync(0))
     expect(sock().ofType('ops')).toEqual([])
   })
 })

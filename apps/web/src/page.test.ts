@@ -5,6 +5,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Notices } from '../app/Notice'
 
+const nav = vi.hoisted(() => ({ replace: vi.fn() }))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: nav.replace }),
+  useParams: () => ({}),
+}))
+
 const order: string[] = []
 // What the mocked persistence does; reset before every test.
 const ctl = { load: (): unknown => ({ status: 'empty' }), stop: () => {} }
@@ -202,13 +208,13 @@ describe('Page', () => {
       vi.unstubAllGlobals()
     })
 
-    const mountServer = async () => {
-      const { default: Page } = await import('../app/page')
+    const mountServer = async (boardId = 'board-123') => {
+      const { Workspace } = await import('./workspace/Workspace')
       const host = document.createElement('div')
       document.body.append(host)
       const root = createRoot(host)
       await act(async () => {
-        root.render(createElement(Page))
+        root.render(createElement(Workspace, { boardId }))
       })
       await vi.waitFor(() => expect(order).toContain('sync-start'))
       return {
@@ -225,14 +231,14 @@ describe('Page', () => {
 
     it('starts without acquiring board lock, sets owner author and http blob store, and connects sync client', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
-        if (url.endsWith('/api/boards')) {
+        if (url.endsWith('/api/boards/board-123'))
           return new Response(
-            JSON.stringify({
-              boards: [{ id: 'board-123', title: 'Main' }],
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
+            JSON.stringify({ id: 'board-123', title: 'Algebra' }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            },
           )
-        }
         return new Response('Not found', { status: 404 })
       })
       vi.stubGlobal('fetch', mockFetch)
@@ -250,7 +256,12 @@ describe('Page', () => {
       })
       expect(syncCtl.opts.boardId).toBe('board-123')
       expect(syncCtl.opts.url).toBe('ws://localhost:4000/ws?boardId=board-123')
-      expect(localStorage.getItem('whiteboard:boardId')).toBe('board-123')
+      expect(page.host.querySelector('header')?.textContent).toContain(
+        'Algebra',
+      )
+      expect(
+        page.host.querySelector('aside[aria-label="Tutor"]'),
+      ).not.toBeNull()
 
       // Editor is read-only initially until sync goes live
       expect(instances.editor?.readOnly).toBe(true)
@@ -277,31 +288,83 @@ describe('Page', () => {
       expect(order).toEqual(['sync-stop', 'dispose'])
       expect(order).not.toContain('release')
     })
+  })
+})
 
-    it('creates a new board via POST /api/boards when boards list is empty', async () => {
-      const mockFetch = vi
-        .fn()
-        .mockImplementation(async (url: string, init?: RequestInit) => {
-          if (url.endsWith('/api/boards')) {
-            if (init?.method === 'POST') {
-              return new Response(JSON.stringify({ id: 'new-board-456' }), {
-                status: 201,
-                headers: { 'Content-Type': 'application/json' },
-              })
-            }
-            return new Response(JSON.stringify({ boards: [] }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            })
-          }
-          return new Response('Not found', { status: 404 })
-        })
-      vi.stubGlobal('fetch', mockFetch)
-
-      const page = await mountServer()
-      expect(syncCtl.opts.boardId).toBe('new-board-456')
-      expect(localStorage.getItem('whiteboard:boardId')).toBe('new-board-456')
-      await page.unmount()
+describe('Home (the "/" route)', () => {
+  ;(
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true
+  const replace = nav.replace
+  const original = process.env.NEXT_PUBLIC_API_BASE
+  afterEach(() => {
+    if (original === undefined) delete process.env.NEXT_PUBLIC_API_BASE
+    else process.env.NEXT_PUBLIC_API_BASE = original
+    vi.unstubAllGlobals()
+    replace.mockReset()
+    localStorage.clear()
+  })
+  const mountHome = async () => {
+    const { default: Home } = await import('../app/page')
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    await act(async () => {
+      root.render(createElement(Home))
     })
+    return {
+      host,
+      unmount: async () => {
+        await act(async () => root.unmount())
+        host.remove()
+      },
+    }
+  }
+  const boardsFetch = (existing: { id: string }[]) =>
+    vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith('/api/boards'))
+        return new Response('nope', { status: 404 })
+      const json = (b: unknown, status = 200) =>
+        new Response(JSON.stringify(b), {
+          status,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      return init?.method === 'POST'
+        ? json({ id: 'new-board-456' }, 201)
+        : json({ boards: existing })
+    })
+
+  it('server mode opens the remembered board at its own URL', async () => {
+    process.env.NEXT_PUBLIC_API_BASE = 'http://localhost:4000'
+    localStorage.setItem('whiteboard:boardId', 'b2')
+    vi.stubGlobal('fetch', boardsFetch([{ id: 'b1' }, { id: 'b2' }]))
+    const page = await mountHome()
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/boards/b2'))
+    await page.unmount()
+  })
+
+  it('server mode creates a Main board when there is none, and an empty base still means server mode', async () => {
+    process.env.NEXT_PUBLIC_API_BASE = ''
+    vi.stubGlobal('fetch', boardsFetch([]))
+    const page = await mountHome()
+    await vi.waitFor(() =>
+      expect(replace).toHaveBeenCalledWith('/boards/new-board-456'),
+    )
+    expect(localStorage.getItem('whiteboard:boardId')).toBe('new-board-456')
+    await page.unmount()
+  })
+
+  it('shows an alert with Reload when the server cannot be reached', async () => {
+    process.env.NEXT_PUBLIC_API_BASE = 'http://localhost:4000'
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const page = await mountHome()
+    await vi.waitFor(() =>
+      expect(page.host.querySelector('[role="alert"]')?.textContent).toMatch(
+        /Reload/,
+      ),
+    )
+    expect(replace).not.toHaveBeenCalled()
+    await page.unmount()
   })
 })

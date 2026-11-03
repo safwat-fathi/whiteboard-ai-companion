@@ -23,6 +23,23 @@ const json = (body: unknown, status = 200) =>
   })
 
 describe('createLibraryApi', () => {
+  it('reads a board with its scope and patches the scope; an empty base is the same origin', async () => {
+    const board = {
+      id: 'b 1',
+      title: 'T',
+      scope: { kind: 'book', bookId: 'x' },
+    }
+    const { fetch, calls } = fakeFetch([json(board), json(board)])
+    const api = createLibraryApi('', fetch)
+    expect(await api.getBoard('b 1')).toEqual(board)
+    expect(calls[0]?.url).toBe('/api/boards/b%201')
+    await api.setBoardScope('b 1', { kind: 'book', bookId: 'x' })
+    expect(calls[1]).toMatchObject({
+      url: '/api/boards/b%201',
+      init: { method: 'PATCH', body: '{"scope":{"kind":"book","bookId":"x"}}' },
+    })
+  })
+
   it('lists books and trims slashes from the base URL', async () => {
     const { fetch, calls } = fakeFetch([json({ books: [{ id: 'a' }] })])
     const api = createLibraryApi('http://localhost:4000//', fetch)
