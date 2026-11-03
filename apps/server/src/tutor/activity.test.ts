@@ -97,6 +97,7 @@ async function setup() {
     )
   const activity = async (qs = '') =>
     (await t.call('GET', `/api/boards/${board.id}/activity${qs}`)).json as {
+      // biome-ignore lint/suspicious/noExplicitAny: the response is inspected loosely
       turns: any[]
       next?: string
     }

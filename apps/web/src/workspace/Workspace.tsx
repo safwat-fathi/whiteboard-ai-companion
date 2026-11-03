@@ -415,6 +415,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
             <input
               type="checkbox"
               role="switch"
+              aria-checked={follow}
               checked={follow}
               onChange={(e) => setFollow(e.target.checked)}
             />

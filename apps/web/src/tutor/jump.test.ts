@@ -72,33 +72,42 @@ afterEach(async () => {
   await unmount?.()
   unmount = undefined
 })
+type Probed = {
+  jump?: Jump
+  followOff: number
+  notices: string[]
+  follow: boolean
+}
+// the component under test reads its inputs from here, so it can live at module level
+const probe: { ed: unknown; out: Probed; now?: () => number } = {
+  ed: null,
+  out: { followOff: 0, notices: [], follow: false },
+}
+function Probe() {
+  const { out } = probe
+  out.jump = useJump(probe.ed as never, {
+    follow: out.follow,
+    onFollowOff: () => {
+      out.followOff++
+      out.follow = false
+    },
+    notify: (t) => out.notices.push(t),
+    now: probe.now,
+  })
+  return null
+}
 async function mount(
   ed: ReturnType<typeof fakeEditor>['ed'],
   o: { follow?: boolean; now?: () => number } = {},
 ) {
-  const out: {
-    jump?: Jump
-    followOff: number
-    notices: string[]
-    follow: boolean
-  } = { followOff: 0, notices: [], follow: o.follow ?? false }
-  function Probe() {
-    out.jump = useJump(ed as never, {
-      follow: out.follow,
-      onFollowOff: () => {
-        out.followOff++
-        out.follow = false
-      },
-      notify: (t) => out.notices.push(t),
-      now: o.now,
-    })
-    return null
-  }
+  probe.ed = ed
+  probe.now = o.now
+  probe.out = { followOff: 0, notices: [], follow: o.follow ?? false }
   const el = document.createElement('div')
   const root = createRoot(el)
   await act(async () => root.render(createElement(Probe)))
   unmount = async () => act(async () => root.unmount())
-  return out
+  return probe.out
 }
 const agentBatch = (id: string, bounds = { x: 5000, y: 0, w: 100, h: 50 }) => ({
   seq: 1,
@@ -154,11 +163,9 @@ describe('locate', () => {
     const { ed } = fakeEditor([box('a', 2000, 1000)])
     const j = await mount(ed)
     let found = true
-    await act(
-      async () =>
-        void (found =
-          (await j.jump?.locate([{ ids: ['zz'], bounds: null }])) ?? true),
-    )
+    await act(async () => {
+      found = (await j.jump?.locate([{ ids: ['zz'], bounds: null }])) ?? true
+    })
     expect(found).toBe(false)
     expect(ed.flyTo).not.toHaveBeenCalled()
     ed.camera = { x: 30, y: 40, zoom: 0.5 }
