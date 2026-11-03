@@ -52,4 +52,37 @@ describe('context chips', () => {
       wantsPicture('off'),
     ]).toEqual([true, true, false, false, false])
   })
+
+  describe('handwriting in the selection (R10)', () => {
+    const structure = { ...defaultChips(), selection: 'structure' as const }
+    it('forces the picture on structure, so the model can read the handwriting', () => {
+      expect(attachOf(structure, 3, true).selection).toBe('both')
+    })
+    it('leaves a text-only selection and every other mode as the student set them', () => {
+      expect(attachOf(structure, 3, false).selection).toBe('structure')
+      expect(attachOf(structure, 3).selection).toBe('structure')
+      expect(attachOf(defaultChips(), 3, true).selection).toBe('both')
+      expect(
+        attachOf({ ...defaultChips(), selection: 'picture' }, 3, true)
+          .selection,
+      ).toBe('picture')
+    })
+    it('does not resurrect a selection the student removed or one that is empty', () => {
+      expect(
+        attachOf({ ...structure, selectionOff: true }, 3, true).selection,
+      ).toBe('none')
+      expect(attachOf(structure, 0, true).selection).toBe('none')
+    })
+    it('says "(auto)" only when the rule changed the student\'s choice', () => {
+      expect(selectionChip(structure, 3, true)).toBe(
+        'Selection (3) · structure + picture (auto)',
+      )
+      expect(selectionChip(defaultChips(), 3, true)).toBe(
+        'Selection (3) · structure + picture',
+      )
+      expect(selectionChip(structure, 3, false)).toBe(
+        'Selection (3) · structure',
+      )
+    })
+  })
 })

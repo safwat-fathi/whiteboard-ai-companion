@@ -68,5 +68,13 @@
         "text": "I see your board."
       }
     ]
+  },
+  {
+    "match": "read my handwriting",
+    "steps": [
+      {
+        "text": "It says hello."
+      }
+    ]
   }
 ]

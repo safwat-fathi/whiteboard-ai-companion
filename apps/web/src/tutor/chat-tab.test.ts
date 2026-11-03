@@ -492,12 +492,13 @@ describe('ChatTab', () => {
 
   describe('board context', () => {
     const rect = { x: 0, y: 0, w: 10, h: 10 }
-    function fakeBridge(initial: string[]) {
+    function fakeBridge(initial: string[], inkIds: string[] = []) {
       let selection = initial
       const listeners = new Set<() => void>()
       const pictured: string[] = []
       const bridge = {
         selection: () => selection,
+        selectionHasInk: () => selection.some((id) => inkIds.includes(id)),
         subscribe: (fn: () => void) => {
           listeners.add(fn)
           return () => listeners.delete(fn)
@@ -588,6 +589,40 @@ describe('ChatTab', () => {
 
       await b.select(['a', 'c'])
       expect(chipRow().textContent).toContain('Selection (2)')
+    })
+
+    it('handwriting in the selection keeps the picture on: the chip says "(auto)" and one picture goes along even when structure was chosen', async () => {
+      uploads.length = 0
+      URL.createObjectURL = () => 'blob:local'
+      const b = fakeBridge(['a', 's'], ['s'])
+      const w = world(ok)
+      await mount(w, { bridge: b.bridge, upload })
+      const mode = q<HTMLSelectElement>(
+        'select[aria-label="How the selection is sent"]',
+      )
+      await act(async () => {
+        mode.value = 'structure'
+        mode.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      expect(chipRow().textContent).toContain('(auto)')
+      expect(mode.value).toBe('both')
+      await type('what does this say')
+      await press('Enter')
+      await settle()
+      expect(uploads).toHaveLength(1)
+      expect(w.posted[0]?.body.context).toMatchObject({
+        selection: ['a', 's'],
+        attach: { selection: 'both' },
+        pictures: [{ of: 'selection' }],
+      })
+
+      // Only handwriting forces it: a text-only selection shows the chosen mode, with no "(auto)".
+      await b.select(['a'])
+      expect(chipRow().textContent).not.toContain('(auto)')
+      expect(
+        q<HTMLSelectElement>('select[aria-label="How the selection is sent"]')
+          .value,
+      ).toBe('structure')
     })
 
     it('the viewport and whole-board chips add their pictures; Check my work needs a selection', async () => {
