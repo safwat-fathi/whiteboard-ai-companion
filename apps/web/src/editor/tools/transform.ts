@@ -1,9 +1,11 @@
 import {
   type Batch,
   type Binding,
+  deleteWithGroups,
   type Element,
   hitTest,
   type Id,
+  moveGroupsWith,
   newId,
   type Patch,
   type Point,
@@ -146,11 +148,15 @@ export function moveBatch(
       }
     patches.set(el.id, set)
   }
+  // a group's box goes with its members
+  for (const [id, set] of moveGroupsWith(scene, moving, dx, dy))
+    patches.set(id, set)
   return buildBatch(scene, 'Move', patches)
 }
 
 export function deleteBatch(scene: Scene, ids: Iterable<Id>): Batch | null {
   const del = [...ids].filter((i) => scene.els.get(i)?.locked === false)
+  del.push(...deleteWithGroups(scene, del)) // a group with no member left goes too
   return buildBatch(scene, 'Delete', new Map(), del)
 }
 

@@ -1,17 +1,25 @@
 import {
+  type Batch,
   bounds,
   type Element,
+  expandToUnits,
+  groupBatch,
   type Handle,
   type Id,
+  newId,
   type Patch,
   type Point,
   resizeBox,
+  resizeGroup,
   resolveEnd,
   rotateTo,
   toLocal,
+  topGroup,
+  ungroupBatch,
 } from '@whiteboard/core'
 import type { Editor } from '../editor'
 import { shortcutKey } from '../keys'
+import { type Guide, snapBox } from '../snap'
 import { COLORS, drawGroupBox, drawHighlight, LOOK } from './highlight'
 import type { Tool, ToolEvent } from './index'
 import {
@@ -49,7 +57,16 @@ const NUDGE: Record<string, Point> = {
 }
 
 type Gesture =
-  | { k: 'move'; s0: Point; w0: Point; d: Point; moved: boolean; hit: Id }
+  | {
+      k: 'move'
+      s0: Point
+      w0: Point
+      d: Point
+      moved: boolean
+      hit: Id
+      guides: Guide[]
+    }
+  | { k: 'gresize'; h: Handle; els: Element[]; patches: Map<Id, Patch> | null }
   | { k: 'marquee'; a: Point; b: Point; base: Id[] }
   | { k: 'resize'; el: Element; h: Handle; patch: Patch | null }
   | { k: 'rotate'; el: Element; patch: Patch | null }
@@ -67,6 +84,20 @@ export const selectTool = (ed: Editor): Tool => {
   const single = () => {
     const e = els()
     return e.length === 1 && !e[0]?.locked ? (e[0] as Element) : null
+  }
+  /** The box of a selection of several unlocked elements: the one the group handles sit on. */
+  const multiBox = (list: Element[]) => {
+    if (list.length < 2 || list.some((e) => e.locked || e.type === 'group'))
+      return null
+    const bs = list.map(bounds)
+    return {
+      x: Math.min(...bs.map((b) => b.minX)),
+      y: Math.min(...bs.map((b) => b.minY)),
+      w:
+        Math.max(...bs.map((b) => b.maxX)) - Math.min(...bs.map((b) => b.minX)),
+      h:
+        Math.max(...bs.map((b) => b.maxY)) - Math.min(...bs.map((b) => b.minY)),
+    }
   }
   const pick = (el: Element, w: Point): Handle | 'rot' | null => {
     const q = toLocal(el, w)
@@ -87,6 +118,8 @@ export const selectTool = (ed: Editor): Tool => {
     for (const i of ids) ed.selection.add(i)
     ed.invalidateOverlay()
   }
+  // picking a member stands for its whole group
+  const setUnits = (ids: Iterable<Id>) => set(expandToUnits(ed.scene, ids))
   // A hover is drawn unless the element is selected (drawOverlay). Only a change of what is drawn repaints, and only the overlay.
   const drawn = (id: Id | null) => !!id && !ed.selection.has(id)
   const setHover = (id: Id | null) => {
@@ -126,14 +159,35 @@ export const selectTool = (ed: Editor): Tool => {
         else if (h) g = { k: 'resize', el: sel, h, patch: null }
         if (g) return
       }
+      if (!sel) {
+        const list = els()
+        const mb = multiBox(list)
+        if (mb) {
+          const r = HIT / z()
+          const h = HANDLES.find(
+            ([, fx, fy]) =>
+              Math.hypot(
+                e.world.x - (mb.x + fx * mb.w),
+                e.world.y - (mb.y + fy * mb.h),
+              ) <= r,
+          )?.[0]
+          if (h) {
+            g = { k: 'gresize', h, els: list, patches: null }
+            return
+          }
+        }
+      }
       const hit = ed.index.pick(e.world, z(), ed.scene)
       if (hit) {
         if (e.shift) {
-          if (!ed.selection.delete(hit.id)) ed.selection.add(hit.id)
+          const unit = [...expandToUnits(ed.scene, [hit.id])]
+          if (unit.every((i) => ed.selection.has(i)))
+            for (const i of unit) ed.selection.delete(i)
+          else for (const i of unit) ed.selection.add(i)
           ed.invalidateOverlay()
           return
         }
-        if (!ed.selection.has(hit.id)) set([hit.id])
+        if (!ed.selection.has(hit.id)) setUnits([hit.id])
         g = {
           k: 'move',
           s0: e.screen,
@@ -141,6 +195,7 @@ export const selectTool = (ed: Editor): Tool => {
           d: { x: 0, y: 0 },
           moved: false,
           hit: hit.id,
+          guides: [],
         }
       } else {
         const base = e.shift ? [...ed.selection] : []
@@ -160,8 +215,32 @@ export const selectTool = (ed: Editor): Tool => {
         )
           return
         g.moved = true
-        g.d = { x: e.world.x - g.w0.x, y: e.world.y - g.w0.y }
-      } else if (g.k === 'marquee') g.b = e.world
+        const d = { x: e.world.x - g.w0.x, y: e.world.y - g.w0.y }
+        g.guides = []
+        if (!e.alt) {
+          // Alt bypasses. The box that moves is the whole selection; every other element is a candidate.
+          const mine = els().filter((el) => !el.locked)
+          if (mine.length) {
+            const bs = mine.map(bounds)
+            const box = {
+              minX: Math.min(...bs.map((b) => b.minX)) + d.x,
+              minY: Math.min(...bs.map((b) => b.minY)) + d.y,
+              maxX: Math.max(...bs.map((b) => b.maxX)) + d.x,
+              maxY: Math.max(...bs.map((b) => b.maxY)) + d.y,
+            }
+            const others = [...ed.scene.els.values()]
+              .filter((o) => !ed.selection.has(o.id) && o.type !== 'group')
+              .map(bounds)
+            const s = snapBox(box, others, z())
+            d.x += s.dx
+            d.y += s.dy
+            g.guides = s.guides
+          }
+        }
+        g.d = d
+      } else if (g.k === 'gresize')
+        g.patches = resizeGroup(g.els, g.h, e.world, e.shift, ed.platform)
+      else if (g.k === 'marquee') g.b = e.world
       else if (g.k === 'resize') {
         const patch = resizeBox(g.el, g.h, e.world, e.shift)
         if (
@@ -195,7 +274,7 @@ export const selectTool = (ed: Editor): Tool => {
         if (cur.moved) {
           const b = moveBatch(ed.scene, ed.selection, cur.d.x, cur.d.y)
           if (b) ed.commit(b)
-        } else if (ed.selection.size > 1) set([cur.hit])
+        } else if (ed.selection.size > 1) setUnits([cur.hit])
       } else if (cur.k === 'marquee') {
         const x = [cur.a.x, cur.b.x]
         const y = [cur.a.y, cur.b.y]
@@ -209,7 +288,7 @@ export const selectTool = (ed: Editor): Tool => {
           .search(r)
           .map((f) => ed.scene.els.get(f.id))
           .filter((el): el is Element => {
-            if (!el) return false
+            if (!el || el.type === 'group') return false
             const b = bounds(el)
             return (
               b.minX >= r.minX &&
@@ -218,7 +297,10 @@ export const selectTool = (ed: Editor): Tool => {
               b.maxY <= r.maxY
             )
           })
-        set([...cur.base, ...inside.map((el) => el.id)])
+        setUnits([...cur.base, ...inside.map((el) => el.id)])
+      } else if (cur.k === 'gresize') {
+        const b = cur.patches && buildBatch(ed.scene, 'Resize', cur.patches)
+        if (b) ed.commit(b)
       } else if (cur.k === 'resize') commitPatch('Resize', cur.el, cur.patch)
       else if (cur.k === 'rotate') commitPatch('Rotate', cur.el, cur.patch)
       else if (
@@ -260,10 +342,27 @@ export const selectTool = (ed: Editor): Tool => {
           return true
         }
       }
+      if ((e.ctrlKey || e.metaKey) && shortcutKey(e) === 'g') {
+        let b: Batch | null = null
+        if (e.shiftKey) {
+          // ungroup the outermost group of each selected element, one level
+          const tops = new Set<Id>()
+          for (const el of els()) {
+            const t = topGroup(ed.scene, el)
+            if (t) tops.add(t.id)
+          }
+          const ops = [...tops].flatMap(
+            (id) => ungroupBatch(ed.scene, id)?.ops ?? [],
+          )
+          if (ops.length) b = { batchId: newId(), label: 'Ungroup', ops }
+        } else b = groupBatch(ed.scene, ed.selection, ed.author)
+        if (b) ed.commit(b)
+        return true
+      }
       if ((e.ctrlKey || e.metaKey) && shortcutKey(e) === 'a') {
         set(
           [...ed.scene.els.values()]
-            .filter((el) => !el.locked)
+            .filter((el) => !el.locked && el.type !== 'group')
             .map((el) => el.id),
         )
         return true
@@ -319,8 +418,10 @@ export const selectTool = (ed: Editor): Tool => {
       ctx.lineWidth = 1 / k
       const sel = single()
       const shown = els().map((el) => {
-        const live =
-          g && 'el' in g && g.el.id === el.id && 'patch' in g && g.patch
+        const gp = g?.k === 'gresize' ? g.patches?.get(el.id) : undefined
+        const live = gp
+          ? applyPatch(el, gp)
+          : g && 'el' in g && g.el.id === el.id && 'patch' in g && g.patch
             ? applyPatch(el, g.patch)
             : el
         const d = el.locked ? { x: 0, y: 0 } : m
@@ -328,6 +429,28 @@ export const selectTool = (ed: Editor): Tool => {
       })
       for (const el of shown) drawHighlight(ctx, el, k, LOOK.select)
       if (shown.length > 1) drawGroupBox(ctx, shown, k)
+      const mb = g?.k === 'move' ? null : multiBox(shown)
+      if (mb) {
+        const s = HANDLE / k
+        for (const [, fx, fy] of HANDLES) {
+          const qx = mb.x + fx * mb.w
+          const qy = mb.y + fy * mb.h
+          ctx.fillRect(qx - s / 2, qy - s / 2, s, s)
+          ctx.strokeRect(qx - s / 2, qy - s / 2, s, s)
+        }
+      }
+      if (g?.k === 'move')
+        for (const gd of g.guides) {
+          ctx.beginPath()
+          if (gd.axis === 'x') {
+            ctx.moveTo(gd.at, gd.from)
+            ctx.lineTo(gd.at, gd.to)
+          } else {
+            ctx.moveTo(gd.from, gd.at)
+            ctx.lineTo(gd.to, gd.at)
+          }
+          ctx.stroke()
+        }
       if (sel && g?.k !== 'move') {
         const el =
           'el' in (g ?? {}) && g && 'patch' in g && g.patch

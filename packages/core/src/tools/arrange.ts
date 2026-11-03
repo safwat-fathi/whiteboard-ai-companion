@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { alignBatch, distributeBatch, stackBatch } from '../arrange'
+import { groupBatch, groupMembers, topGroup, ungroupBatch } from '../group'
 import { applyBatch } from '../scene'
-import type { Batch, Element } from '../schema'
+import type { Batch, Element, Op } from '../schema'
 import { write } from './board'
 import { agentMayEdit, defineTool, type ToolCtx, ToolError } from './registry'
 
@@ -16,9 +17,10 @@ export const arrange = defineTool({
     'action "align" lines them up: to left, centre, right (shared vertical line) or top, middle, bottom (shared horizontal line). ' +
     'action "distribute" (3 or more) spaces them evenly along an axis, horizontal or vertical, keeping the two outermost in place. ' +
     'action "stack" puts them one after another in a row or a column, `gap` apart (default 24), aligned at the start, centre or end. ' +
+    'action "group" makes one group of them (`name` optional) and returns its id; "ungroup" takes group ids and dissolves one level. A group moves, deletes and selects as one for the student. ' +
     'Arrows attached to what moves follow it. You may arrange only what you drew and what the student had selected.',
   input: z.object({
-    action: z.enum(['align', 'distribute', 'stack']),
+    action: z.enum(['align', 'distribute', 'stack', 'group', 'ungroup']),
     ids: z.array(id).max(100),
     to: z
       .enum(['left', 'centre', 'right', 'top', 'middle', 'bottom'])
@@ -35,6 +37,11 @@ export const arrange = defineTool({
       .max(500)
       .optional()
       .describe('For stack, default 24.'),
+    name: z
+      .string()
+      .max(100)
+      .optional()
+      .describe('For group: an optional name.'),
     align: z
       .enum(['start', 'centre', 'end'])
       .optional()
@@ -42,16 +49,58 @@ export const arrange = defineTool({
   }),
   execute: (i, ctx: ToolCtx) => {
     const ids = [...new Set(i.ids)]
-    if (ids.length < 2)
-      throw new ToolError('ids: give at least 2 elements to arrange', 'ids')
-    const els = ids.map((elId) => {
+    const mayAll = (els: Element[]) => {
+      for (const el of els) {
+        const why = agentMayEdit(el, ctx.grantedIds)
+        if (why) throw new ToolError(`ids: ${why}`, 'ids')
+      }
+    }
+    const lookup = (elId: string) => {
       const el = ctx.scene.els.get(elId)
       if (!el)
         throw new ToolError(`ids: no element ${elId} on the board`, 'ids')
-      const why = agentMayEdit(el, ctx.grantedIds)
-      if (why) throw new ToolError(`ids: ${why}`, 'ids')
       return el
-    })
+    }
+    if (i.action === 'ungroup') {
+      if (ids.length < 1)
+        throw new ToolError('ids: give at least 1 group to ungroup', 'ids')
+      const ops: Op[] = []
+      const freed: Element[] = []
+      for (const gid of ids) {
+        const g = lookup(gid)
+        if (g.type !== 'group')
+          throw new ToolError(`ids: ${gid} is not a group`, 'ids')
+        const members = groupMembers(ctx.scene, gid)
+        mayAll(members) // the rights are the members': a student's group needs all of them selected
+        ops.push(...(ungroupBatch(ctx.scene, gid)?.ops ?? []))
+        freed.push(...members)
+      }
+      return write('Ungroup', ops, freed, ctx, false)
+    }
+    if (i.action === 'group') {
+      if (ids.length < 2)
+        throw new ToolError('ids: give at least 2 elements to group', 'ids')
+      const els = ids.map(lookup)
+      // grouping takes in the whole group of anything already in one: every leaf must be the tutor's to edit
+      mayAll(
+        els.flatMap((el) => {
+          const unit = topGroup(ctx.scene, el) ?? el
+          return unit.type === 'group' ? groupMembers(ctx.scene, unit.id) : [el]
+        }),
+      )
+      const batch = groupBatch(ctx.scene, ids, ctx.author, i.name)
+      if (!batch)
+        throw new ToolError(
+          'ids: could not group these: it needs two separate elements and none locked',
+          'ids',
+        )
+      const made = (batch.ops[0] as { el: Element }).el
+      return write(batch.label, batch.ops, [made], ctx, true)
+    }
+    if (ids.length < 2)
+      throw new ToolError('ids: give at least 2 elements to arrange', 'ids')
+    const els = ids.map(lookup)
+    mayAll(els)
     const need = <T>(v: T | undefined, field: string, hint: string): T => {
       if (v === undefined)
         throw new ToolError(
