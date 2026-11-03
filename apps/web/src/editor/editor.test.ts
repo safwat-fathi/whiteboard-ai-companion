@@ -377,8 +377,10 @@ describe('Editor', () => {
     })
 
     it('the layout letter wins while it is Latin (Dvorak, AZERTY); named keys never map', () => {
-      key('p', { code: 'KeyR' }) // Dvorak: the key at QWERTY R types p
+      key('k', { code: 'KeyR' }) // a layout with k at QWERTY R: k is no tool, and R must not stand in
       expect(ed.tool.id).toBe('hand')
+      key('p', { code: 'KeyR' }) // Dvorak: the key at QWERTY R types p, the pen
+      expect(ed.tool.id).toBe('pen')
       key('a', { code: 'KeyQ' }) // AZERTY: a is at QWERTY Q
       expect(ed.tool.id).toBe('arrow')
       key('Process', { code: 'KeyR' }) // an IME is handling the key

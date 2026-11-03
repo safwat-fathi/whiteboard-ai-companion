@@ -5,9 +5,11 @@ import {
   DiamondIcon,
   EllipseIcon,
   HandIcon,
+  HighlighterIcon,
   ImageIcon,
   LineIcon,
   MathIcon,
+  PenIcon,
   RectIcon,
   RedoIcon,
   SelectIcon,
@@ -20,7 +22,7 @@ type ToolItem = {
   id: string
   label: string
   icon: (size?: number) => ReactNode
-  group: 'nav' | 'shapes' | 'create'
+  group: 'nav' | 'shapes' | 'ink' | 'create'
 }
 
 const TOOL_ITEMS: ToolItem[] = [
@@ -74,6 +76,19 @@ const TOOL_ITEMS: ToolItem[] = [
     icon: () => <ArrowIcon size={17} />,
     group: 'shapes',
   },
+  // Ink
+  {
+    id: 'pen',
+    label: 'Pen',
+    icon: () => <PenIcon size={17} />,
+    group: 'ink',
+  },
+  {
+    id: 'highlighter',
+    label: 'Highlighter',
+    icon: () => <HighlighterIcon size={17} />,
+    group: 'ink',
+  },
   // Creation
   {
     id: 'text',
@@ -109,7 +124,8 @@ export function Toolbar({
   const off = !editor || readOnly
 
   const renderToolButton = (tool: ToolItem) => {
-    const key = editor?.tools[tool.id]?.key.toUpperCase()
+    const t = editor?.tools[tool.id]
+    const key = t?.key && `${t.shift ? 'Shift+' : ''}${t.key.toUpperCase()}`
     const name = key ? `${tool.label} (${key})` : tool.label
     const isPressed = active === tool.id
     const tooltip =
@@ -162,6 +178,13 @@ export function Toolbar({
       {/* Shapes Group */}
       <div className="flex items-center gap-1">
         {TOOL_ITEMS.filter((t) => t.group === 'shapes').map(renderToolButton)}
+      </div>
+
+      <div className="mx-1 h-5 w-px bg-slate-200" />
+
+      {/* Ink Group: Pen, Highlighter */}
+      <div className="flex items-center gap-1">
+        {TOOL_ITEMS.filter((t) => t.group === 'ink').map(renderToolButton)}
       </div>
 
       <div className="mx-1 h-5 w-px bg-slate-200" />

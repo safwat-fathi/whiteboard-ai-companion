@@ -36,7 +36,12 @@ import { createBitmapProvider, importImage } from './images'
 import { shortcutKey } from './keys'
 import { createWebMathProvider } from './math'
 import { browserPlatform } from './platform'
-import { type Tool, type ToolEvent, tools as toolFactories } from './tools'
+import {
+  type Sample,
+  type Tool,
+  type ToolEvent,
+  tools as toolFactories,
+} from './tools'
 import type { CropTool } from './tools/crop'
 import type { MathTool } from './tools/math'
 import type { TextTool } from './tools/text'
@@ -50,6 +55,9 @@ const typing = (t: EventTarget | null) =>
 // An allowlist: a mouse (or a test's bare MouseEvent) has Space, touch and pen have no keyboard.
 const touchOrPen = (e: PointerEvent) =>
   e.pointerType === 'touch' || e.pointerType === 'pen'
+
+/** Drawing tools ignore a touch that lands this soon (ms) after a pen event: the palm resting beside the pen. */
+export const PALM_MS = 600
 
 const canvas = (z: number) => {
   const c = document.createElement('canvas')
@@ -143,6 +151,8 @@ export class Editor {
   private hoverCursor = ''
   /** The pointer dragging the canvas and where it was last seen; one pointer at a time. */
   private panning: { id: number; at: Point } | null = null
+  /** `timeStamp` of the last pen pointer event (hovering counts), for palm rejection. */
+  private lastPenAt = Number.NEGATIVE_INFINITY
   private off: (() => void)[] = []
   private unDpr?: () => void
   private flight: {
@@ -229,7 +239,7 @@ export class Editor {
     on(this.overlay, 'pointercancel', (e: PointerEvent) => {
       if (this.panning && e.pointerId !== this.panning.id) return // another finger's gesture, never the tool's
       this.setPanning(null)
-      this.tool.onCancel?.()
+      this.tool.onCancel?.(e.pointerId)
     })
     // The window-level key listeners assume one Editor per page.
     on(window, 'keydown', (e: KeyboardEvent) => this.onKeyDown(e))
@@ -909,6 +919,7 @@ export class Editor {
 
   private onPointer(kind: 'down' | 'move' | 'up', e: PointerEvent) {
     if (kind === 'down') this.cancelFlight()
+    if (e.pointerType === 'pen') this.lastPenAt = e.timeStamp
     const screen = this.toScreen(e.clientX, e.clientY)
     const pan = this.panning
     if (
@@ -932,13 +943,36 @@ export class Editor {
       return
     }
     if (this.readOnly && !this.tool.navigates) return
+    if (
+      kind === 'down' &&
+      this.tool.draws &&
+      e.pointerType === 'touch' &&
+      e.timeStamp - this.lastPenAt < PALM_MS
+    )
+      return
+    const pen = e.pointerType === 'pen' // a mouse reports a pressure of 0.5 or 0, which is no pressure
+    const sample = (p: PointerEvent): Sample => {
+      const at = this.toScreen(p.clientX, p.clientY)
+      return {
+        screen: at,
+        world: screenToWorld(at, this.camera, this.viewport),
+        ...(pen ? { pressure: p.pressure } : {}),
+      }
+    }
+    const coalesced = e.getCoalescedEvents?.() ?? []
     const ev: ToolEvent = {
-      screen,
-      world: screenToWorld(screen, this.camera, this.viewport),
+      ...sample(e),
       shift: e.shiftKey,
       alt: e.altKey,
       button: e.button,
       pointerType: e.pointerType,
+      pointerId: e.pointerId,
+      ...(this.tool.draws && kind === 'move'
+        ? {
+            samples: (coalesced.length ? coalesced : [e]).map(sample),
+            predicted: (e.getPredictedEvents?.() ?? []).map(sample),
+          }
+        : {}),
     }
     if (kind === 'down') this.overlay.setPointerCapture?.(e.pointerId)
     if (kind === 'down') this.tool.onPointerDown(ev)
@@ -981,7 +1015,10 @@ export class Editor {
     ) {
       e.preventDefault()
     } else if (!mod && !e.altKey) {
-      const t = Object.values(this.tools).find((t) => t.key === k)
+      const same = Object.values(this.tools).filter((t) => t.key === k)
+      // Shift+P is the highlighter; a key whose tools carry no Shift flag ignores Shift (Shift+R is the rectangle).
+      const t =
+        same.find((t) => !!t.shift === e.shiftKey) ?? same.find((t) => !t.shift)
       if (t && (!this.readOnly || t.navigates)) this.setTool(t.id)
     }
   }
