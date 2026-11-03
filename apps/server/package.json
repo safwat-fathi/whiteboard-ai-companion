@@ -7,6 +7,7 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "start": "tsx --env-file-if-exists=../../.env src/main.ts",
     "ingest": "tsx --env-file-if-exists=../../.env src/library/cli.ts",
+    "eval:retrieval": "tsx --env-file-if-exists=../../.env src/library/eval.ts",
     "test": "vitest run"
   },
   "dependencies": {
