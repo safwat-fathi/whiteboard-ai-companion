@@ -54,8 +54,8 @@ test('a book goes from upload to a cited page, and can be studied', async ({
   await expect(dialog.getByText(/3 pages/)).toBeVisible()
   // look before anything is started: both readings of a page, for free
   await dialog.getByRole('button', { name: 'Compare readings' }).click()
-  await expect(dialog.getByText('Local text')).toBeVisible()
-  await expect(dialog.getByText('Vision model')).toBeVisible()
+  await expect(dialog.getByText('Local text', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('Vision model', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Index', exact: true }).click()
   await expect(dialog).toBeHidden()
 
