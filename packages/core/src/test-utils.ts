@@ -1,3 +1,4 @@
+import { quantiseStroke } from './ink'
 import {
   DEFAULT_STYLE,
   type Element,
@@ -49,3 +50,23 @@ export const stroke = (
     },
     ...p,
   }) as Element
+
+/** A freehand stroke from absolute samples, normalised the way the pen tool commits one (R1: tight box, 0.1 grid). */
+export const scribble = (
+  id: string,
+  abs: [number, number][],
+  pressure?: number[],
+  p: Partial<Element> = {},
+  data: Partial<FreehandData> = {},
+): Element => {
+  const q = quantiseStroke(abs, pressure)
+  return stroke(
+    id,
+    { x: q.x, y: q.y, w: q.w, h: q.h, ...p },
+    {
+      points: q.points,
+      ...(q.pressure && { pressure: q.pressure }),
+      ...data,
+    },
+  )
+}

@@ -1,3 +1,4 @@
+import { inkReach } from './ink'
 import type { Scene } from './scene'
 import type { Binding, Element } from './schema'
 
@@ -46,8 +47,12 @@ export function bounds(el: Element): Rect {
         { x: el.x + el.w, y: el.y + el.h },
         { x: el.x, y: el.y + el.h },
       ].map((p) => rot(p, centre(el), el.rotation))
-  const pad =
-    isLinear(el) || el.type === 'freehand' ? el.style.strokeWidth / 2 : 0
+  // A pen at full pressure draws wider than its stored width, so a stroke's pad is its ink reach, not half the width.
+  const pad = isLinear(el)
+    ? el.style.strokeWidth / 2
+    : el.type === 'freehand'
+      ? inkReach(el)
+      : 0
   const xs = pts.map((p) => p.x)
   const ys = pts.map((p) => p.y)
   return {
@@ -161,7 +166,7 @@ export function hitTest(el: Element, p: Point, tolWorld: number): boolean {
         el.data.points.map(([px, py]) => ({ x: el.x + px, y: el.y + py })),
         false,
       ) <=
-      tolWorld + el.style.strokeWidth / 2
+      tolWorld + inkReach(el)
     )
   if (el.type === 'text' || el.type === 'math' || el.type === 'image')
     return (
