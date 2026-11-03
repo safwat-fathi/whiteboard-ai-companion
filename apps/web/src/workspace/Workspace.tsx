@@ -20,6 +20,7 @@ import {
 import { browserPlatform } from '../editor/platform'
 import { createSyncClient } from '../editor/sync'
 import { createLibraryApi } from '../library/api'
+import { ChatTab } from '../tutor/ChatTab'
 import { Dock, TopBar, useDockLayout } from './Dock'
 
 const BOARD = 'local'
@@ -54,6 +55,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
   const serverMode = apiBase !== undefined
   const dock = useDockLayout(serverMode)
   const [title, setTitle] = useState('Board')
+  const [live, setLive] = useState(false) // the board's socket is up: the chat needs it to send
   useEffect(() => {
     if (apiBase === undefined || boardId === undefined) return
     let live = true
@@ -123,6 +125,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
           editor: ed,
           onStatus: (status, detail) => {
             if (stop) return
+            setLive(status === 'live')
             if (status === 'live') {
               ed.readOnly = false
               setBoard({ editor: ed, readOnly: false })
@@ -286,7 +289,10 @@ export function Workspace({ boardId }: { boardId?: string }) {
         <Dock
           layout={dock}
           panes={{
-            chat: <Empty>The tutor will appear here.</Empty>,
+            chat:
+              apiBase !== undefined && boardId !== undefined ? (
+                <ChatTab apiBase={apiBase} boardId={boardId} connected={live} />
+              ) : null,
             activity: (
               <Empty>The tutor's work on this board will be listed here.</Empty>
             ),
