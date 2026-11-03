@@ -147,3 +147,16 @@ export function undoNote(r: { undone: number; skipped: number }): string {
       : ''
   return `Undid ${n(r.undone)}.${kept}`
 }
+
+/** The top bar's spend chip: dollars when anything priced was spent today, otherwise the tokens (Meta publishes no price). */
+export function spendLabel(today: {
+  costUsd: number
+  inputTokens: number
+  outputTokens: number
+}): string {
+  if (today.costUsd > 0)
+    return `$${today.costUsd.toFixed(today.costUsd < 0.1 ? 4 : 2)} today`
+  const tokens = today.inputTokens + today.outputTokens
+  if (tokens === 0) return 'Usage'
+  return `${tokens >= 10_000 ? `${Math.round(tokens / 1000)}k` : n(tokens)} tokens today`
+}

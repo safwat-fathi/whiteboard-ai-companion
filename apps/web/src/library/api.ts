@@ -1,4 +1,4 @@
-import type { ActivityTurn } from '@whiteboard/core'
+import type { ActivityTurn, Settings } from '@whiteboard/core'
 import type { Scope } from './scope'
 
 // A client for the server's library routes (docs/plans/api.md). Browser only talks to our own server, never to a provider.
@@ -79,6 +79,21 @@ export type PageText = {
   label: string | null
   text: string
   method: Rung
+}
+export type UsageDay = {
+  day: string
+  costUsd: number
+  byKind: Record<string, number>
+  turns: number
+  inputTokens: number
+  cachedTokens: number
+  outputTokens: number
+}
+export type UsageSummary = {
+  days: UsageDay[]
+  today: UsageDay
+  dailyCapUsd: number
+  totalUsd: number
 }
 export type Board = {
   id: string
@@ -225,6 +240,14 @@ export function createLibraryApi(
         `/api/boards/${enc(boardId)}/activity${p.size ? `?${p}` : ''}`,
       )
     },
+    getSettings: () => request<Settings>('GET', '/api/settings'),
+    putSettings: (s: Settings) =>
+      request<Settings>('PUT', '/api/settings', {
+        body: JSON.stringify(s),
+        type: 'application/json',
+      }),
+    /** Money (the ledger) and tokens per day, newest first, plus today's totals and the daily cap. */
+    usage: () => request<UsageSummary>('GET', '/api/usage'),
     getBoard: (id: string) => request<Board>('GET', `/api/boards/${enc(id)}`),
     /** `{}` clears the scope (no book). */
     setBoardScope: (id: string, scope: Scope | Record<string, never>) =>

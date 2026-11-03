@@ -36,6 +36,7 @@ import {
 import { ScopeChip } from '../tutor/ScopeChip'
 import { SelectionToolbar } from '../tutor/SelectionToolbar'
 import { type SourceRef, SourceTab } from '../tutor/SourceTab'
+import { SpendChip } from '../tutor/SpendChip'
 import { useActivity } from '../tutor/useActivity'
 import { Dock, TopBar, useDockLayout } from './Dock'
 
@@ -433,6 +434,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
             />
             Follow AI
           </label>
+          {api && <SpendChip api={api} refreshKey={activityKey} />}
           {turn.running && (
             <button type="button" onClick={() => void jump.locateLatest()}>
               Jump to AI

@@ -7,6 +7,7 @@ import {
   isVerifiedCite,
   parseChatError,
   sourcesOf,
+  spendLabel,
   type TutorMessage,
   textOf,
   toMessage,
@@ -175,5 +176,20 @@ describe('undo wording', () => {
     } as TutorMessage
     expect(turnIdOf(m)).toBe('t9')
     expect(turnIdOf({ id: 'u', role: 'user', parts: [] })).toBeUndefined()
+  })
+})
+
+describe('spend chip', () => {
+  const day = (costUsd: number, inputTokens = 0, outputTokens = 0) => ({
+    costUsd,
+    inputTokens,
+    outputTokens,
+  })
+  it('shows dollars when something priced was spent, tokens when not, and "Usage" before any use', () => {
+    expect(spendLabel(day(0.4237, 1000, 10))).toBe('$0.42 today')
+    expect(spendLabel(day(0.0123))).toBe('$0.0123 today')
+    expect(spendLabel(day(0, 1200, 300))).toBe('1,500 tokens today')
+    expect(spendLabel(day(0, 40_000, 2_000))).toBe('42k tokens today')
+    expect(spendLabel(day(0))).toBe('Usage')
   })
 })
