@@ -46,3 +46,44 @@ export function scopeTitle(
   const title = names.length ? `${bookTitle}: ${names.join(', ')}` : bookTitle
   return title.length > MAX_TITLE ? `${title.slice(0, MAX_TITLE - 1)}…` : title
 }
+
+/** The book scope a board came back with, or null for no scope, a topic scope or anything malformed. */
+export function boardBookScope(raw: unknown): Scope | null {
+  const s = raw as {
+    kind?: unknown
+    bookId?: unknown
+    sectionIds?: unknown
+  } | null
+  if (!s || typeof s !== 'object' || typeof s.bookId !== 'string' || !s.bookId)
+    return null
+  if (s.kind === 'book') return { kind: 'book', bookId: s.bookId }
+  if (
+    s.kind === 'chapter' &&
+    Array.isArray(s.sectionIds) &&
+    s.sectionIds.every((n) => Number.isInteger(n))
+  )
+    return {
+      kind: 'chapter',
+      bookId: s.bookId,
+      sectionIds: s.sectionIds as number[],
+    }
+  return null
+}
+
+export const tickedOf = (scope: Scope | null): Set<number> =>
+  new Set(scope?.kind === 'chapter' ? scope.sectionIds : [])
+
+const MAX_CHIP = 48
+/** The scope chip's text. */
+export function scopeLabel(
+  scope: Scope | null,
+  bookTitle: string | undefined,
+  sections: Section[],
+): string {
+  if (!scope) return 'No book'
+  const book = bookTitle ?? 'Book'
+  const ticked = tickedOf(scope)
+  const names = sections.filter((s) => ticked.has(s.id)).map((s) => s.title)
+  const label = names.length ? `${book}: ${names.join(', ')}` : book
+  return label.length > MAX_CHIP ? `${label.slice(0, MAX_CHIP - 1)}…` : label
+}

@@ -4,6 +4,7 @@ import {
   type CSSProperties,
   type ReactNode,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -20,7 +21,10 @@ import {
 import { browserPlatform } from '../editor/platform'
 import { createSyncClient } from '../editor/sync'
 import { createLibraryApi } from '../library/api'
+import { boardBookScope, type Scope } from '../library/scope'
 import { ChatTab } from '../tutor/ChatTab'
+import { ScopeChip } from '../tutor/ScopeChip'
+import { type SourceRef, SourceTab } from '../tutor/SourceTab'
 import { Dock, TopBar, useDockLayout } from './Dock'
 
 const BOARD = 'local'
@@ -55,20 +59,34 @@ export function Workspace({ boardId }: { boardId?: string }) {
   const serverMode = apiBase !== undefined
   const dock = useDockLayout(serverMode)
   const [title, setTitle] = useState('Board')
+  const [scope, setScope] = useState<Scope | null>(null)
+  const [source, setSource] = useState<SourceRef | null>(null)
+  const api = useMemo(
+    () => (apiBase === undefined ? null : createLibraryApi(apiBase)),
+    [apiBase],
+  )
   const [live, setLive] = useState(false) // the board's socket is up: the chat needs it to send
   useEffect(() => {
-    if (apiBase === undefined || boardId === undefined) return
-    let live = true
-    createLibraryApi(apiBase)
-      .getBoard(boardId)
-      .then(
-        (b) => live && setTitle(b.title),
-        () => {}, // the title is decoration; the sync client reports a real connection problem
-      )
+    if (!api || boardId === undefined) return
+    let on = true
+    api.getBoard(boardId).then(
+      (b) => {
+        if (!on) return
+        setTitle(b.title)
+        setScope(boardBookScope(b.scope))
+      },
+      () => {}, // decoration only; the sync client reports a real connection problem
+    )
     return () => {
-      live = false
+      on = false
     }
-  }, [apiBase, boardId])
+  }, [api, boardId])
+  // A verified citation opens the page it names in the Source tab.
+  const openSource = (c: SourceRef) => {
+    setSource(c)
+    dock.setCollapsed(false)
+    dock.setTab('source')
+  }
   // Set once the stored board is loaded; null while loading.
   const [board, setBoard] = useState<{
     editor: Editor
@@ -284,19 +302,41 @@ export function Workspace({ boardId }: { boardId?: string }) {
         editor={board?.editor ?? null}
         readOnly={board?.readOnly ?? true}
       />
-      {serverMode && <TopBar title={title} />}
+      {serverMode && (
+        <TopBar title={title}>
+          {api && boardId !== undefined && (
+            <ScopeChip
+              api={api}
+              boardId={boardId}
+              scope={scope}
+              onChange={setScope}
+            />
+          )}
+        </TopBar>
+      )}
       {serverMode && (
         <Dock
           layout={dock}
           panes={{
             chat:
               apiBase !== undefined && boardId !== undefined ? (
-                <ChatTab apiBase={apiBase} boardId={boardId} connected={live} />
+                <ChatTab
+                  apiBase={apiBase}
+                  boardId={boardId}
+                  connected={live}
+                  actions={{ onCite: openSource }}
+                />
               ) : null,
             activity: (
               <Empty>The tutor's work on this board will be listed here.</Empty>
             ),
-            source: <Empty>Open a citation to see the book page here.</Empty>,
+            source: api ? (
+              <SourceTab
+                api={api}
+                source={source}
+                onPage={(page) => source && setSource({ ...source, page })}
+              />
+            ) : null,
           }}
         />
       )}

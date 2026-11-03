@@ -189,7 +189,8 @@ export function createLibraryApi(
     createBoard: (title: string, scope: Scope) =>
       post<Board>('/api/boards', { title, scope }),
     getBoard: (id: string) => request<Board>('GET', `/api/boards/${enc(id)}`),
-    setBoardScope: (id: string, scope: Scope) =>
+    /** `{}` clears the scope (no book). */
+    setBoardScope: (id: string, scope: Scope | Record<string, never>) =>
       request<Board>('PATCH', `/api/boards/${enc(id)}`, {
         body: JSON.stringify({ scope }),
         type: 'application/json',

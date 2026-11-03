@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { Section } from './api'
-import { buildScope, buildTree, scopeTitle, toggle } from './scope'
+import {
+  boardBookScope,
+  buildScope,
+  buildTree,
+  scopeLabel,
+  scopeTitle,
+  tickedOf,
+  toggle,
+} from './scope'
 
 const sec = (
   id: number,
@@ -79,5 +87,58 @@ describe('scopeTitle', () => {
     const t = scopeTitle('Algebra', new Set(many.map((s) => s.id)), many)
     expect(t.length).toBeLessThanOrEqual(200)
     expect(t.endsWith('…')).toBe(true)
+  })
+})
+
+describe('what a board remembers of its scope', () => {
+  it('reads a book or chapter scope and treats everything else as no book', () => {
+    expect(boardBookScope({ kind: 'book', bookId: 'b1' })).toEqual({
+      kind: 'book',
+      bookId: 'b1',
+    })
+    expect(
+      boardBookScope({ kind: 'chapter', bookId: 'b1', sectionIds: [2, 3] }),
+    ).toEqual({ kind: 'chapter', bookId: 'b1', sectionIds: [2, 3] })
+    for (const none of [
+      undefined,
+      null,
+      {},
+      { kind: 'topic', topic: 'x' },
+      { kind: 'book' },
+      { kind: 'chapter', bookId: 'b' },
+      'book',
+      7,
+    ])
+      expect(boardBookScope(none)).toBeNull()
+  })
+  it('ticks the sections of a chapter scope and none for a book scope', () => {
+    expect([
+      ...tickedOf({ kind: 'chapter', bookId: 'b', sectionIds: [2, 3] }),
+    ]).toEqual([2, 3])
+    expect(tickedOf({ kind: 'book', bookId: 'b' }).size).toBe(0)
+    expect(tickedOf(null).size).toBe(0)
+  })
+  it('words the chip: no book, the book, or the book with its chosen sections', () => {
+    expect(scopeLabel(null, undefined, [])).toBe('No book')
+    expect(scopeLabel({ kind: 'book', bookId: 'b' }, 'Biology', sections)).toBe(
+      'Biology',
+    )
+    expect(scopeLabel({ kind: 'book', bookId: 'b' }, undefined, sections)).toBe(
+      'Book',
+    )
+    expect(
+      scopeLabel(
+        { kind: 'chapter', bookId: 'b', sectionIds: [2, 3] },
+        'Biology',
+        sections,
+      ),
+    ).toBe('Biology: 1.1, 1.2')
+    expect(
+      scopeLabel(
+        { kind: 'chapter', bookId: 'b', sectionIds: [1] },
+        'A very long book title indeed',
+        [sec(1, 'An equally long chapter name here', null, 0)],
+      ),
+    ).toMatch(/…$/)
   })
 })
