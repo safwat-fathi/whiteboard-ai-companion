@@ -62,7 +62,7 @@ export function figureTool(
     execute: async (i, ctx) => {
       const id = i.bookId ?? scopeBook()
       const book = id ? deps.books.getBook(id) : undefined
-      if (!book || book.status !== 'ready')
+      if (book?.status !== 'ready')
         throw new ToolError(
           `bookId: ${id ? `no book ${id} is ready` : 'give a bookId'}`,
           'bookId',

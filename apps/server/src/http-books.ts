@@ -1,14 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import {
   createReadStream,
-  existsSync,
-  mkdirSync,
   readFileSync,
-  renameSync,
   rmdirSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, join } from 'node:path'
