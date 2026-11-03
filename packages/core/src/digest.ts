@@ -10,7 +10,7 @@ const DIGEST_TOKENS = 3000
 const DETAIL_TOKENS = 4000
 const DETAIL_TEXT = 500
 const FOOTER_RESERVE = 80
-const TYPES = ['text', 'shape', 'math', 'image'] as const
+const TYPES = ['text', 'shape', 'math', 'image', 'freehand'] as const
 
 type View = { x: number; y: number; w: number; h: number; zoom?: number }
 const r = Math.round
@@ -113,6 +113,8 @@ export function buildSelectionDetail(
       if (typeof data[k] === 'string')
         data[k] = clip(data[k] as string, DETAIL_TEXT)
     if (Array.isArray(data.points)) data.points = `${data.points.length} points`
+    if (Array.isArray(data.pressure))
+      data.pressure = `${data.pressure.length} values`
     const { id, type, x, y, w, h, rotation, style, locked } = e
     const line = JSON.stringify({
       id,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { buildDigest, buildSelectionDetail } from './digest'
 import { DEFAULT_STYLE, type Element } from './schema'
+import { stroke } from './test-utils'
+import { describeElement } from './tools/describe'
 
 const OWNER = { kind: 'human' as const, id: 'owner' }
 let zn = 0
@@ -186,5 +188,50 @@ describe('buildSelectionDetail', () => {
     )
     expect(big.length / 3).toBeLessThan(4200)
     expect(big).toMatch(/\(\+\d+ more selected elements not shown\)/)
+  })
+})
+
+describe('freehand in the digest', () => {
+  const pen = stroke('pen1', { x: 10, y: 20 }, { pressure: [0.1, 0.2, 0.3] })
+  const marker = stroke('hl1', { x: 200, y: 20 }, { highlighter: true })
+
+  it('describes a stroke by its point count, and a highlighter as such', () => {
+    expect(describeElement(pen)).toMatchObject({
+      id: 'pen1',
+      type: 'freehand',
+      detail: 'stroke, 3 pts',
+    })
+    expect(describeElement(marker).detail).toBe('stroke, 3 pts, highlighter')
+  })
+
+  it('counts strokes in the header and lists them as rows', () => {
+    const d = buildDigest({
+      title: 'Ink',
+      seq: 1,
+      elements: [pen, marker, shape('s1', 0, 0)],
+      selection: [],
+    })
+    expect(d.split('\n')[0]).toContain('(shape 1, freehand 2)')
+    expect(d).toContain('pen1 | freehand | 10,20,100,50 | you | stroke, 3 pts')
+  })
+
+  it('collapses points and pressure in the selection detail', () => {
+    const big = stroke(
+      'big',
+      {},
+      {
+        points: Array.from(
+          { length: 5000 },
+          (_, i) => [i, i] as [number, number],
+        ),
+        pressure: Array.from({ length: 5000 }, () => 0.5),
+      },
+    )
+    const out = buildSelectionDetail([big], ['big'])
+    expect(out.length).toBeLessThan(600)
+    expect(JSON.parse(out)).toMatchObject({
+      type: 'freehand',
+      data: { points: '5000 points', pressure: '5000 values' },
+    })
   })
 })

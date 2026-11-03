@@ -2,6 +2,7 @@ import type { z } from 'zod'
 import {
   type Batch,
   BatchSchema,
+  FreehandElementSchema,
   ImageElementSchema,
   MathElementSchema,
   ShapeElementSchema,
@@ -43,7 +44,8 @@ function checkPatch(set: Record<string, unknown>) {
       : (leaf(ShapeElementSchema, path) ??
         leaf(TextElementSchema, path) ??
         leaf(MathElementSchema, path) ??
-        leaf(ImageElementSchema, path))
+        leaf(ImageElementSchema, path) ??
+        leaf(FreehandElementSchema, path))
     if (!schema) throw new OpError(key, 'is not a patchable field')
     // Convention: null on an optional field means "unset it"; required fields reject null.
     if (value === null && schema.def.type === 'optional') continue

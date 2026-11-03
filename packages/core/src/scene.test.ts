@@ -229,3 +229,76 @@ describe('scene', () => {
     expect(ordered(scene)[1001]?.id).toBe('last')
   })
 })
+
+describe('freehand ops', () => {
+  const pen = (): Element => ({
+    ...shape('p', 'a0'),
+    type: 'freehand',
+    data: {
+      points: [
+        [0, 0],
+        [4, 4],
+      ],
+      pressure: [0.3, 0.6],
+      smoothing: 0.5,
+      highlighter: false,
+    },
+  })
+  const patch = (set: Record<string, unknown>): Batch => ({
+    batchId: 'b',
+    label: 'T',
+    ops: [{ op: 'patch', id: 'p', set }],
+  })
+
+  it('patches a point list, a leaf and pressure, and undoes them', () => {
+    const scene = createScene([pen()])
+    const { inverse } = applyBatch(
+      scene,
+      patch({
+        'data.points': [
+          [0, 0],
+          [8, 8],
+        ],
+        'data.highlighter': true,
+        'style.strokeWidth': 18,
+      }),
+    )
+    expect(scene.els.get('p')).toMatchObject({
+      style: { strokeWidth: 18 },
+      data: {
+        highlighter: true,
+        points: [
+          [0, 0],
+          [8, 8],
+        ],
+      },
+    })
+    applyBatch(scene, inverse)
+    expect(scene.els.get('p')).toEqual({ ...pen(), v: 2 })
+    applyBatch(scene, patch({ 'data.pressure': null }))
+    expect(scene.els.get('p')?.data).not.toHaveProperty('pressure')
+  })
+
+  it('refuses points without matching pressure, naming the field, and leaves the stroke alone', () => {
+    const scene = createScene([pen()])
+    expect(() =>
+      applyBatch(
+        scene,
+        patch({
+          'data.points': [
+            [0, 0],
+            [1, 1],
+            [2, 2],
+          ],
+        }),
+      ),
+    ).toThrow(OpError)
+    expect(() => applyBatch(scene, patch({ 'data.smoothing': 2 }))).toThrow(
+      'data.smoothing must be 0..1',
+    )
+    expect(() =>
+      applyBatch(scene, patch({ 'data.pressure': [0.1, Number.NaN] })),
+    ).toThrow('data.pressure')
+    expect(scene.els.get('p')).toEqual(pen())
+  })
+})

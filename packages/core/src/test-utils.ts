@@ -1,4 +1,9 @@
-import { DEFAULT_STYLE, type Element, type ShapeData } from './schema'
+import {
+  DEFAULT_STYLE,
+  type Element,
+  type FreehandData,
+  type ShapeData,
+} from './schema'
 
 export const mk = (
   id: string,
@@ -22,3 +27,25 @@ export const mk = (
     ...rest,
   } as Element
 }
+
+/** A freehand stroke: three points across a 100 x 50 box unless `data` says otherwise. */
+export const stroke = (
+  id: string,
+  p: Partial<Element> = {},
+  data: Partial<FreehandData> = {},
+): Element =>
+  ({
+    ...mk(id, { w: 100, h: 50 }),
+    type: 'freehand',
+    data: {
+      points: [
+        [0, 0],
+        [50, 25],
+        [100, 50],
+      ],
+      smoothing: 0.5,
+      highlighter: false,
+      ...data,
+    },
+    ...p,
+  }) as Element
