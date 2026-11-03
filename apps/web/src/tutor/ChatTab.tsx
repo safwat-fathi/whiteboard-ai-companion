@@ -376,20 +376,21 @@ export function ChatTab(o: {
         </p>
       )}
       {chat.error && (
-        <p
+        <div
           role="alert"
-          style={{
-            margin: 0,
-            padding: '6px 10px',
-            background: '#fdecec',
-            fontSize: 13,
-          }}
+          className="flex items-center justify-between gap-2 border-b border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800"
         >
-          {errorNotice(chat.error)}{' '}
-          <button type="button" onClick={chat.clearError}>
-            Dismiss
+          <span>{errorNotice(chat.error)}</span>
+          <button
+            type="button"
+            onClick={chat.clearError}
+            aria-label="Dismiss error"
+            title="Dismiss"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-red-600 hover:bg-red-100 hover:text-red-900 transition-colors cursor-pointer"
+          >
+            <CloseIcon size={14} />
           </button>
-        </p>
+        </div>
       )}
       <div className="border-t border-slate-200/80 bg-slate-50/50 flex flex-col gap-2 p-2">
         <div className="flex flex-wrap gap-1.5 px-1">

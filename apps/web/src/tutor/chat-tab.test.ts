@@ -354,6 +354,13 @@ describe('ChatTab', () => {
     expect(q('[role="alert"]').textContent).toContain(
       'The AI provider failed to answer',
     )
+    const dismissBtn = q<HTMLButtonElement>(
+      '[role="alert"] button[aria-label="Dismiss error"]',
+    )
+    expect(dismissBtn).toBeTruthy()
+    await act(async () => dismissBtn.click())
+    await settle()
+    expect(host.querySelector('[role="alert"]')).toBeNull()
   })
 
   it('while the board is disconnected it says so and will not send', async () => {

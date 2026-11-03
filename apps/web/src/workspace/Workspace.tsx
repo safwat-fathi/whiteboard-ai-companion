@@ -158,6 +158,9 @@ export function Workspace({ boardId }: { boardId?: string }) {
       4000,
     )
   }, [])
+  const dismissNote = useCallback((key: string) => {
+    setNotes((all) => all.filter((x) => x.key !== key))
+  }, [])
   const jump = useJump(board?.editor ?? null, {
     follow,
     onFollowOff: stopFollowing,
@@ -408,7 +411,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
           bottom: dock.inset.bottom,
         }}
       />
-      <Notices notes={notes} />
+      <Notices notes={notes} onDismiss={dismissNote} />
       <Toolbar
         editor={board?.editor ?? null}
         readOnly={board?.readOnly ?? true}
