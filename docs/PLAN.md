@@ -1,4 +1,4 @@
-# Whiteboard AI — Study Companion: Validation and Full Plan
+# Whiteboard AI Companion — Study Companion: Validation and Full Plan
 
 > **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** and **Cerebral Valley**.
 > **Status:** revision 1 approved 2026-11-01 · **revision 2** (same day, approved at Kickoff: ROADMAP K ✔): no Docker, in-app chat, whiteboard as AI context, plan split into one file per aspect, README added.
@@ -44,7 +44,7 @@
 
 ## 0. Context and TL;DR
 
-**Hackathon alignment.** Built specifically for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley). Whiteboard AI tackles visual, multimodal AI education: an interactive whiteboard where Meta models via the **Meta Model API** (`https://api.meta.ai/v1`: `muse-spark-1.3`, `muse-wonder-1.0`; or open-weights `meta-llama/llama-4-maverick` via OpenRouter) act as a personal tutor explaining complex textbooks with formulas, diagrams, and verifiable page citations.
+**Hackathon alignment.** Built specifically for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley). Whiteboard AI Companion tackles visual, multimodal AI education: an interactive whiteboard where Meta models via the **Meta Model API** (`https://api.meta.ai/v1`: `muse-spark-1.3`, `muse-wonder-1.0`; or open-weights `meta-llama/llama-4-maverick` via OpenRouter) act as a personal tutor explaining complex textbooks with formulas, diagrams, and verifiable page citations.
 
 **Context.** The design doc specifies a from-scratch infinite canvas plus 16 MCP tools, and assumes an *external* AI client does the thinking. The product is now a **study companion**: a student uploads books, picks a topic / chapter / whole book, and chats with an AI tutor that explains on a shared whiteboard with page citations. This plan (1) validates the doc against that product and your answers, and (2) adds what is missing.
 

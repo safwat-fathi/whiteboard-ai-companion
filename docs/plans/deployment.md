@@ -64,7 +64,7 @@ Size: 1 vCPU / 2 GB is enough for one student; 2 vCPU / 4 GB is comfortable for 
 
 ```
 [Unit]
-Description=Whiteboard AI server
+Description=Whiteboard AI Companion server
 After=network.target
 
 [Service]

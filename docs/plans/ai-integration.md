@@ -14,7 +14,7 @@ Everything between the chat dock and the AI providers: the **Meta Model API** pr
 
 ## Models (Meta Model API active defaults + M0 S3 benchmarked baseline)
 
-Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley), Whiteboard AI uses **Meta models** via the Meta Model API (`https://api.meta.ai/v1`) as active defaults across all generative and vision roles, while preserving `baai/bge-m3` via OpenRouter strictly for dense vector embeddings:
+Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley), Whiteboard AI Companion uses **Meta models** via the Meta Model API (`https://api.meta.ai/v1`) as active defaults across all generative and vision roles, while preserving `baai/bge-m3` via OpenRouter strictly for dense vector embeddings:
 
 | Role                | Env                    | Active Default (Meta Model API)            | Alternative / OpenRouter IDs                                               | Use                                                                                 |
 | ------------------- | ---------------------- | ------------------------------------------ | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
