@@ -236,6 +236,39 @@ describe('AiTag', () => {
     expect(host.textContent).toMatch(/^AIShow in chat$/)
   })
 
+  it('keeps position stationary when pointer moves within the same turn element', async () => {
+    const ed = fakeEditor({ author: { kind: 'agent', id: 'tutor:t7' } })
+    await mount(
+      createElement(AiTag, {
+        editor: ed as never,
+        labelOf: () => 'Chloroplast',
+        onShow: () => {},
+      }),
+    )
+    await move(ed.host)
+    const fieldset = host.querySelector('fieldset') as HTMLElement
+    expect(fieldset).not.toBeNull()
+    const initialLeft = fieldset.style.left
+    const initialTop = fieldset.style.top
+    expect(initialLeft).toBe('58px')
+    expect(initialTop).toBe('68px')
+
+    // Move pointer slightly toward the button (e.g. clientX: 70, clientY: 75)
+    await act(
+      async () =>
+        void ed.host.dispatchEvent(
+          new MouseEvent('pointermove', {
+            clientX: 70,
+            clientY: 75,
+            bubbles: true,
+          }),
+        ),
+    )
+    // Position must stay frozen so the user can easily click "Show in chat"
+    expect(fieldset.style.left).toBe(initialLeft)
+    expect(fieldset.style.top).toBe(initialTop)
+  })
+
   it('goes away shortly after the pointer leaves the element', async () => {
     vi.useFakeTimers()
     const ed = fakeEditor({ author: { kind: 'agent', id: 'tutor:t7' } })

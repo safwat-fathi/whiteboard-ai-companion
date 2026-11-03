@@ -19,7 +19,10 @@ export function AiTag({
   onShow: (turnId: string) => void
 }) {
   const [tag, setTag] = useState<Tag | null>(null)
+  const tagRef = useRef<Tag | null>(null)
+  tagRef.current = tag
   const hide = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
   useEffect(() => {
     const host = editor.host
     const move = (e: PointerEvent) => {
@@ -27,8 +30,17 @@ export function AiTag({
       const el = editor.index.pick(p, editor.camera.zoom, editor.scene)
       if (el && el.author.kind === 'agent') {
         clearTimeout(hide.current)
+        const turnId = el.author.id.replace(/^tutor:/, '')
+        // If already showing a tag for this turn nearby, freeze position so it doesn't run away from the pointer
+        if (tagRef.current && tagRef.current.turnId === turnId) {
+          const dist = Math.hypot(
+            e.clientX - tagRef.current.x,
+            e.clientY - tagRef.current.y,
+          )
+          if (dist < 180) return
+        }
         setTag({
-          turnId: el.author.id.replace(/^tutor:/, ''),
+          turnId,
           x: e.clientX,
           y: e.clientY,
         })
@@ -50,10 +62,10 @@ export function AiTag({
       aria-label="Made by the AI"
       onPointerEnter={() => clearTimeout(hide.current)}
       onPointerLeave={() => setTag(null)}
-      className="fixed z-20 flex items-center gap-2 rounded-xl border border-blue-500/80 bg-blue-600 px-2.5 py-1 text-xs text-white shadow-md shadow-blue-900/20 backdrop-blur-md"
+      className="fixed z-20 flex items-center gap-2 rounded-xl border border-blue-500/80 bg-blue-600 px-2.5 py-1 text-xs text-white shadow-md shadow-blue-900/20 backdrop-blur-md transition-opacity duration-150 before:absolute before:-inset-2.5 before:content-['']"
       style={{
-        left: tag.x + 12,
-        top: tag.y + 12,
+        left: tag.x + 8,
+        top: tag.y + 8,
       }}
     >
       <span dir="auto" className="font-medium">
