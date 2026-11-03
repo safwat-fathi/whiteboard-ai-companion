@@ -78,6 +78,8 @@ export function ChatTab(o: {
   ) => Promise<Preview>
   /** Bumped by the selection toolbar's Ask AI: focus the composer. */
   focusSignal?: number
+  /** Told whenever a turn starts, changes what it is doing, or ends. */
+  onTurn?: (t: { running: boolean; state?: string }) => void
   getContext?: () => Partial<ContextDescriptor>
   actions?: MessageActions
   /** Undoes the board changes of a whole turn or of one batch; absent = no undo buttons. */
@@ -193,6 +195,11 @@ export function ChatTab(o: {
   }, [chat.messages.length, last])
 
   // Screen readers hear one line when a turn starts and one when it ends, not every streamed word.
+  const turnState = last ? turnStateOf(last) : undefined
+  const { onTurn } = o
+  useEffect(() => {
+    onTurn?.({ running: streaming, state: streaming ? turnState : undefined })
+  }, [streaming, turnState, onTurn])
   const wasStreaming = useRef(false)
   useEffect(() => {
     if (streaming && !wasStreaming.current) setHeard('The tutor is answering.')

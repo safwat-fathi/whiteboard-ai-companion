@@ -9,6 +9,7 @@ export type BatchChip = {
   label: string
   bounds: { x: number; y: number; w: number; h: number } | null
   count: number
+  touchedIds?: string[]
 }
 export type SourceRange = {
   bookId: string

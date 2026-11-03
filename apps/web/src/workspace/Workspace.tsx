@@ -3,6 +3,7 @@
 import {
   type CSSProperties,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -24,6 +25,13 @@ import { createLibraryApi } from '../library/api'
 import { boardBookScope, type Scope } from '../library/scope'
 import { createEditorBridge } from '../tutor/board-context'
 import { ChatTab } from '../tutor/ChatTab'
+import {
+  AiPresence,
+  BackChip,
+  EdgeIndicator,
+  GhostFrame,
+  useJump,
+} from '../tutor/jump'
 import { ScopeChip } from '../tutor/ScopeChip'
 import { SelectionToolbar } from '../tutor/SelectionToolbar'
 import { type SourceRef, SourceTab } from '../tutor/SourceTab'
@@ -94,6 +102,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
         png.type || 'image/png',
       )
   }, [apiBase])
+
   // A verified citation opens the page it names in the Source tab.
   const openSource = (c: SourceRef) => {
     setSource(c)
@@ -116,6 +125,60 @@ export function Workspace({ boardId }: { boardId?: string }) {
         : undefined,
     [board],
   )
+
+  // Follow AI is off until the student turns it on, and it turns itself off when they take the canvas.
+  const [follow, setFollow] = useState(false)
+  const [turn, setTurn] = useState<{ running: boolean; state?: string }>({
+    running: false,
+  })
+  const stopFollowing = useCallback(() => setFollow(false), [])
+  const toast = useCallback((text: string) => {
+    setNotes((all) => [
+      ...all.filter((x) => x.key !== 'toast'),
+      { key: 'toast', text, role: 'status' as const },
+    ])
+    setTimeout(
+      () => setNotes((all) => all.filter((x) => x.key !== 'toast')),
+      4000,
+    )
+  }, [])
+  const jump = useJump(board?.editor ?? null, {
+    follow,
+    onFollowOff: stopFollowing,
+    notify: toast,
+  })
+  const jumpRef = useRef(jump)
+  jumpRef.current = jump
+  const onTurn = useCallback((t: { running: boolean; state?: string }) => {
+    setTurn(t)
+    if (!t.running) jumpRef.current.turnEnded()
+  }, [])
+  // deep links: ?el=, ?turn= and ?batch= land on the work once the board has loaded
+  const deepLinked = useRef(false)
+  useEffect(() => {
+    if (deepLinked.current || !board || !live || !api || boardId === undefined)
+      return
+    deepLinked.current = true
+    const q = new URLSearchParams(window.location.search)
+    const el = q.get('el')
+    const turnId = q.get('turn')
+    const batchId = q.get('batch')
+    if (el) void jumpRef.current.locate([{ ids: [el], bounds: null }])
+    else if (turnId || batchId)
+      api.activity(boardId, { turn: turnId, batch: batchId }).then(
+        (r) => {
+          const t = r.turns[0]
+          if (!t) return
+          const batches = batchId
+            ? t.batches.filter((b) => b.batchId === batchId)
+            : t.batches
+          void jumpRef.current.locate(
+            batches.map((b) => ({ ids: b.touchedIds ?? [], bounds: b.bounds })),
+          )
+        },
+        () => {},
+      )
+  }, [board, live, api, boardId])
 
   useEffect(() => {
     const note = (key: string, n: Omit<Note, 'key'> | null) =>
@@ -165,6 +228,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
           url: wsUrl,
           boardId,
           editor: ed,
+          onServerBatch: (sb) => jumpRef.current.onAgentBatch(sb),
           onStatus: (status, detail) => {
             if (stop) return
             setLive(status === 'live')
@@ -347,7 +411,46 @@ export function Workspace({ boardId }: { boardId?: string }) {
               onChange={setScope}
             />
           )}
+          <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={follow}
+              onChange={(e) => setFollow(e.target.checked)}
+            />
+            Follow AI
+          </label>
+          {turn.running && (
+            <button type="button" onClick={() => void jump.locateLatest()}>
+              Jump to AI
+            </button>
+          )}
         </TopBar>
+      )}
+      {serverMode && board && jump.canBack && (
+        <BackChip onBack={() => void jump.back()} />
+      )}
+      {serverMode && board && jump.indicator && (
+        <EdgeIndicator
+          at={jump.indicator}
+          onJump={() => void jump.locateLatest()}
+        />
+      )}
+      {serverMode && board && jump.ghost && (
+        <GhostFrame editor={board.editor} rect={jump.ghost} />
+      )}
+      {serverMode && board && turn.running && jump.latestRect && (
+        <AiPresence
+          editor={board.editor}
+          rect={jump.latestRect}
+          label={
+            turn.state === 'reading'
+              ? 'reading…'
+              : turn.state === 'drawing'
+                ? 'drawing…'
+                : 'thinking…'
+          }
+        />
       )}
       {serverMode && (
         <Dock
@@ -359,7 +462,16 @@ export function Workspace({ boardId }: { boardId?: string }) {
                   apiBase={apiBase}
                   boardId={boardId}
                   connected={live}
-                  actions={{ onCite: openSource }}
+                  actions={{
+                    onCite: openSource,
+                    onLocate: (id) =>
+                      void jump.locate([{ ids: [id], bounds: null }]),
+                    onLocateBatch: (b) =>
+                      void jump.locate([
+                        { ids: b.touchedIds ?? [], bounds: b.bounds },
+                      ]),
+                  }}
+                  onTurn={onTurn}
                   bridge={bridge}
                   upload={upload}
                   focusSignal={askSignal}

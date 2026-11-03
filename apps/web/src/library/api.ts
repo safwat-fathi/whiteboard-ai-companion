@@ -1,3 +1,4 @@
+import type { ActivityTurn } from '@whiteboard/core'
 import type { Scope } from './scope'
 
 // A client for the server's library routes (docs/plans/api.md). Browser only talks to our own server, never to a provider.
@@ -206,6 +207,24 @@ export function createLibraryApi(
         pictures: { blobId: string; of: string }[]
         tokens: number
       }>(`/api/boards/${enc(boardId)}/context-preview`, { context, images }),
+    /** Turns that changed the board, newest first; `turn` / `batch` fetch the one that matters (deep links). */
+    activity: (
+      boardId: string,
+      q: {
+        before?: string
+        limit?: number
+        turn?: string | null
+        batch?: string | null
+      } = {},
+    ) => {
+      const p = new URLSearchParams()
+      for (const [k, v] of Object.entries(q))
+        if (v !== undefined && v !== null) p.set(k, String(v))
+      return request<{ turns: ActivityTurn[]; next?: string }>(
+        'GET',
+        `/api/boards/${enc(boardId)}/activity${p.size ? `?${p}` : ''}`,
+      )
+    },
     getBoard: (id: string) => request<Board>('GET', `/api/boards/${enc(id)}`),
     /** `{}` clears the scope (no book). */
     setBoardScope: (id: string, scope: Scope | Record<string, never>) =>
