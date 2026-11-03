@@ -96,6 +96,24 @@ describe('POST /api/chat', () => {
     expect(r.text).not.toContain('sk-secret-meta-value')
   })
 
+  it('POST /api/boards/:id/chat/reset starts a new chat: history is hidden, the board stays', async () => {
+    const t = await setup()
+    await t.chat('first')
+    const r = await t.json(
+      'POST',
+      `/api/boards/${t.board.id}/chat/reset`,
+      {},
+      ORIGIN,
+    )
+    expect(r.status).toBe(200)
+    expect((await t.history()).messages).toEqual([])
+    await t.chat('second')
+    const h = await t.history()
+    expect(h.messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(h.messages[0]?.parts[0]?.text).toBe('second')
+    expect(h.next).toBeUndefined()
+  })
+
   it('answers turn_busy (409) while a turn runs, and runs the next one after it ends', async () => {
     const t = await setup()
     const first = t.chat('slow please')

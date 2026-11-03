@@ -49,7 +49,7 @@ export function createMessagesDb(db: Database.Database) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const window = db.prepare(
-    'SELECT * FROM messages WHERE board_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT ?',
+    'SELECT * FROM messages WHERE board_id = ? AND rowid < ? AND rowid > ? ORDER BY rowid DESC LIMIT ?',
   )
   const cursor = db.prepare(
     'SELECT rowid AS r FROM messages WHERE id = ? AND board_id = ?',
@@ -75,7 +75,7 @@ export function createMessagesDb(db: Database.Database) {
     /** The `limit` messages before `before` (default: the newest), oldest first; `next` is the cursor for the page before this one. */
     page(
       boardId: string,
-      o: { before?: string; limit?: number },
+      o: { before?: string; after?: string; limit?: number },
     ): { messages: MessageRow[]; next?: string } {
       const limit = Math.min(Math.max(o.limit ?? 50, 1), 200)
       let beforeRow = Number.MAX_SAFE_INTEGER
@@ -84,9 +84,15 @@ export function createMessagesDb(db: Database.Database) {
         if (!c) return { messages: [] }
         beforeRow = c.r
       }
-      const rows = (window.all(boardId, beforeRow, limit + 1) as Raw[]).map(
-        toRow,
-      )
+      // `after`: a new chat starts here; messages up to and including it stay in the database but are not shown
+      const afterRow =
+        o.after === undefined
+          ? 0
+          : ((cursor.get(o.after, boardId) as { r: number } | undefined)?.r ??
+            0)
+      const rows = (
+        window.all(boardId, beforeRow, afterRow, limit + 1) as Raw[]
+      ).map(toRow)
       const more = rows.length > limit
       const page = rows.slice(0, limit).reverse()
       return {

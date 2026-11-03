@@ -404,6 +404,15 @@ export function createTutor(deps: TutorDeps) {
     start,
     toDto,
     isBusy: (boardId: string) => active.has(boardId),
+    chatStart: memory.chatStart,
+    newChat(boardId: string): void {
+      if (active.has(boardId))
+        throw new ApiError(
+          'turn_busy',
+          'The AI is still working on this board.',
+        )
+      memory.reset(boardId)
+    },
     activeTurn: (boardId: string) => active.get(boardId),
     /** "What the AI sees": the exact context a turn with this descriptor would send. */
     previewContext: (

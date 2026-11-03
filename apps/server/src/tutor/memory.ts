@@ -36,6 +36,10 @@ export function createMemory(deps: {
 }) {
   const { messages, settings } = deps
   const key = (boardId: string) => `memory:${boardId}`
+  const startKey = (boardId: string) => `chatstart:${boardId}`
+  /** The newest message of the chat before the current one (set by "New chat"), or undefined. */
+  const after = (boardId: string) =>
+    settings.get(startKey(boardId)) ?? undefined
   const saved = (boardId: string): Saved | undefined => {
     try {
       return JSON.parse(settings.get(key(boardId)) ?? 'null') ?? undefined
@@ -45,24 +49,42 @@ export function createMemory(deps: {
   }
 
   return {
+    /** The id after which the current chat starts (for the history route). */
+    chatStart: after,
+
+    /** "New chat": hide everything said so far and drop the summary. The board is untouched, and the next turn reads it fresh. */
+    reset(boardId: string): void {
+      const last = messages.page(boardId, { limit: 1 }).messages[0]
+      if (last) settings.set(startKey(boardId), last.id)
+      settings.delete(key(boardId))
+    },
+
     /** What goes into the next prompt: the summary (if any) and the verbatim window. */
     load(boardId: string): { summary?: string; window: MessageRow[] } {
       return {
         summary: saved(boardId)?.text,
-        window: messages.page(boardId, { limit: WINDOW }).messages,
+        window: messages.page(boardId, { limit: WINDOW, after: after(boardId) })
+          .messages,
       }
     },
 
     /** After a turn: if the part before the window has grown past ~8k tokens, fold it (and the old summary) into a new summary. */
     async maybeSummarise(boardId: string): Promise<boolean> {
       if (!deps.summarise) return false
-      const first = messages.page(boardId, { limit: WINDOW })
+      const first = messages.page(boardId, {
+        limit: WINDOW,
+        after: after(boardId),
+      })
       if (!first.next) return false // the whole conversation fits in the window
       const older: MessageRow[] = []
       // `next` is the oldest message of the window: everything before it is older
       let cursor: string | undefined = first.next
       while (cursor && older.length < MAX_OLDER) {
-        const page = messages.page(boardId, { before: cursor, limit: 200 })
+        const page = messages.page(boardId, {
+          before: cursor,
+          limit: 200,
+          after: after(boardId),
+        })
         older.unshift(...page.messages)
         cursor = page.next
       }

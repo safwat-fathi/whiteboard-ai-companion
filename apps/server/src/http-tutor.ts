@@ -132,6 +132,7 @@ export function createTutorRoutes(d: TutorRoutesDeps) {
           { field: 'limit' },
         )
       const page = d.messages.page(id, {
+        after: d.tutor.chatStart(id),
         before: q.get('before') ?? undefined,
         limit,
       })
@@ -139,6 +140,20 @@ export function createTutorRoutes(d: TutorRoutesDeps) {
         messages: page.messages.map(d.tutor.toDto),
         ...(page.next ? { next: page.next } : {}),
       })
+      return true
+    }
+    if (
+      seg[1] === 'boards' &&
+      seg[3] === 'chat' &&
+      seg[4] === 'reset' &&
+      seg.length === 5 &&
+      method === 'POST'
+    ) {
+      const id = decode(seg[2] as string)
+      if (!d.boards.getBoard(id))
+        throw apiError('not_found', `unknown board ${id}`)
+      d.tutor.newChat(id)
+      send(res, 200, { ok: true })
       return true
     }
     if (
