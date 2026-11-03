@@ -1,0 +1,72 @@
+[
+  {
+    "match": "make these red",
+    "steps": [
+      {
+        "toolCalls": [
+          {
+            "name": "update_elements",
+            "input": {
+              "updates": [
+                {
+                  "id": "sel-a",
+                  "set": {
+                    "style.stroke": "#ff0000"
+                  }
+                },
+                {
+                  "id": "sel-b",
+                  "set": {
+                    "style.stroke": "#ff0000"
+                  }
+                },
+                {
+                  "id": "sel-c",
+                  "set": {
+                    "style.stroke": "#ff0000"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "They are red now."
+      }
+    ]
+  },
+  {
+    "match": "edit the other",
+    "steps": [
+      {
+        "toolCalls": [
+          {
+            "name": "update_elements",
+            "input": {
+              "updates": [
+                {
+                  "id": "other",
+                  "set": {
+                    "style.stroke": "#ff0000"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "text": "I can only change what you select."
+      }
+    ]
+  },
+  {
+    "match": "what do you see",
+    "steps": [
+      {
+        "text": "I see your board."
+      }
+    ]
+  }
+]

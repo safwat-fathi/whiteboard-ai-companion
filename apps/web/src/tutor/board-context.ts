@@ -40,12 +40,12 @@ export async function prepareContext(
   const attach = attachOf(chips, selected.length)
   const pictures: ContextDescriptor['pictures'] = []
   const thumbs: Prepared['thumbs'] = []
-  for (const of of ['selection', 'viewport', 'board'] as const) {
-    if (!wantsPicture(attach[of])) continue
-    const pic = await bridge.picture(of)
+  for (const kind of ['selection', 'viewport', 'board'] as const) {
+    if (!wantsPicture(attach[kind])) continue
+    const pic = await bridge.picture(kind)
     if (!pic) continue
-    pictures.push({ blobId: await upload(pic.png), of, rect: pic.rect })
-    thumbs.push({ of, url: URL.createObjectURL(pic.png) })
+    pictures.push({ blobId: await upload(pic.png), of: kind, rect: pic.rect })
+    thumbs.push({ of: kind, url: URL.createObjectURL(pic.png) })
   }
   const v = bridge.viewport()
   return {
@@ -106,16 +106,16 @@ export function createEditorBridge(
     subscribe: (fn) => editor.onSelectionChange(fn),
     viewport: view,
     settle,
-    async picture(of) {
+    async picture(kind) {
       const all = [...editor.scene.els.values()]
       const v = view()
       const rect =
-        of === 'selection'
+        kind === 'selection'
           ? rectOfElements(
               all.filter((e) => editor.selection.has(e.id)),
               PICTURE_PAD,
             )
-          : of === 'viewport'
+          : kind === 'viewport'
             ? { minX: v.x, minY: v.y, maxX: v.x + v.w, maxY: v.y + v.h }
             : rectOfElements(all, PICTURE_PAD)
       if (!rect) return null
