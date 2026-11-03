@@ -15,6 +15,7 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
   | `not_found` | 404 | Unknown board/book/blob |
   | `forbidden_origin` | 403 | Origin check failed |
   | `turn_busy` | 409 | A tutor turn is already running on this board |
+  | `conflict` | 409 | The book is queued or being indexed (index, retry, delete), or its state does not allow the call |
   | `budget_exceeded` | 429 | Daily or per-turn cap hit; `details.cap` says which |
   | `payload_too_large` | 413 | Over the size limit ([auth-security](./auth-security.md)) |
   | `upstream_error` | 502 | Meta Model API / OpenRouter provider failure after retries |
@@ -34,14 +35,17 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
 | `POST /api/boards/:id/context-preview` | Exact digest text, thumbnails and token estimate for a context descriptor ([board-context](./board-context.md)) |
 | `GET /api/boards/:id/export.png?x=&y=&w=&h=&width=` | Server render of a region (used by tests and the snapshot fallback) |
 | `POST /api/blobs` (raw body, ≤ 10 MB) · `GET /api/blobs/:id` | Image/picture upload and fetch (raw stream with `Content-Type: image/png\|jpeg\|webp\|gif`, header-verified size/dimensions; returns `{id, byteLength, mediaType, width, height}`; `nosniff`) |
-| `POST /api/books` (multipart PDF) | Upload; returns `{id}` with `status: uploaded` |
-| `GET /api/books` · `GET /api/books/:id` | List; status, progress, method, cost, error |
-| `GET /api/books/:id/estimate` · `POST …/preview {pages}` · `POST …/index {methods?}` · `POST …/retry` · `DELETE` | Ingestion flow ([library-ingestion](./library-ingestion.md)) |
-| `GET /api/books/:id/outline` | Section tree with page ranges and summaries |
-| `GET /api/books/:id/file` | Original PDF with range requests (Source tab viewer) |
-| `GET /api/books/:id/pages/:n` · `…/pages/:n/image?w=` | Page text with label; cached raster |
+| `POST /api/books?title=` (raw body, `Content-Type: application/pdf`, ≤ 200 MB, ≤ 2,000 pages) | Upload (streamed to disk while hashed); `201` with the book (`id`, `title`, `pages`, `status: uploaded`, …). A body that is not a PDF is `400`, one that cannot be read or has too many pages `422 ingest_failed`, over the limit `413`; a refused file is not kept |
+| `GET /api/books` · `GET /api/books/:id` | `{books}` / one book: `status`, `progress`, `error`, `methods` (pages read per rung), `chunks`, `ingestMethod` (`ranges`, `warnings`: pages the model cut off, `notes`) |
+| `GET /api/books/:id/estimate` | `{pages, r1, r4, scanned, mathDense, embedUsd, r3Usd, dailyRemainingUsd}`: what default routing will do and cost. Free |
+| `POST /api/books/:id/preview {pages}` | 1 to 3 pages: `[{page, label, imageUrl, r1: {text}, r4: {text, truncated} \| {error}}]`. Free (Meta is not priced here); changes nothing |
+| `POST /api/books/:id/index {methods?}` | `202`. `methods: [{from, to, rung: 'R1'\|'R3'\|'R4'}]` overrides routing; R3 ranges are checked against today's remaining budget first (`429 budget_exceeded`). `409 conflict` while running |
+| `POST /api/books/:id/retry` · `DELETE /api/books/:id` | Retry a failed (or ready, to fill missing summaries) book; delete a book that is not running, with its file, page images and vectors |
+| `GET /api/books/:id/outline` | `{sections}`: a flat list in document order, each with `id`, `parentId`, `level`, `title`, `pageStart`, `pageEnd`, `summary` |
+| `GET /api/books/:id/file` | Original PDF, `Range` requests (`206`, `416`), `nosniff` |
+| `GET /api/books/:id/pages/:n` · `…/pages/:n/image?w=` | `{page, label, text, method}`; PNG raster of the page (`w` clamped to 256–2048, default 1000; cached under `DATA_DIR/cache/pages/<book>/<n>@<w>.png`) |
 | `GET /api/books/:id/chunks/:chunkId` | Chunk for a citation (text, page range, heading path) |
-| `POST /api/search {query, bookId?, sectionIds?, k?}` | Hybrid search (library UI search and the eval runner) |
+| `POST /api/search {query, bookId?, sectionIds?, k?, neighbors?}` | Hybrid search: `{mode: 'hybrid'\|'keyword', hits: [{chunkId, bookId, sectionId, ord, pageStart, pageEnd, citeLabel, headingPath, text, score, neighbor}]}`. `k` 1–50 (default 8); no `bookId` = every ready book; `sectionIds` also include their sub-sections; `mode: 'keyword'` when the embedding call is unavailable |
 | `GET /api/settings` · `PUT /api/settings` | Student profile, budget overrides |
 | `GET /api/usage?from=&to=` | Spend by day and kind from the `spend` ledger |
 | `GET /api/models` | Configured model names for the UI footer |

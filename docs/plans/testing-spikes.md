@@ -24,6 +24,18 @@ Spikes S1, S3 and S5 need no books; S2 and S4 wait for the books ([PLAN.md](../P
 - **S4 Embeddings and search** (`spikes/s4-search/RESULT.md`): **S4a** exact 1024-d cosine scan p95 `0.51` ms at `N=600`, `8.33` ms at `N=10k`, `83.6` ms and `390.6` MiB at `N=100k` (cold-start load from SQLite `236–351` ms). **S4b** across 3 books (`ck12` 718 chunks, `alg1` 751 chunks, `arabic` 40 R3-OCR chunks, 30 questions in `eval/*.jsonl`): `baai/bge-m3` (`1024-d`, `$0.0058` via `OPENROUTER_API_KEY`, kept strictly for embeddings) hits `100%` vector@8 (`MRR 0.947`), `93.3%` hybrid@8 (`MRR 0.747`; `100%` `ck12`, `100%` `alg1`, `80%` `arabic`), and `96.7%` (`MRR 0.838`; `90%` `arabic`) with `±1` chunk neighbours. Decisions: `vectorSearch: exact`, `embedModel: baai/bge-m3`, `EMBED_DIMS: 1024`, `k: 8`, retry `429`/`5xx` with backoff.
 - **S5 Deploy dry-run**: deferred (VPS is optional; local app is the priority).
 
+## M4 results
+
+Measured 2026-11-03 on the three real books, ingested with `pnpm ingest` (Muse for R4, `baai/bge-m3` for vectors) and scored with `pnpm eval:retrieval` over `eval/*.jsonl` (10 questions each; the gate is hybrid recall@8 ≥ 80%):
+
+| Book | Pages | Read as | Chunks | keyword | vector | hybrid | hybrid + neighbours |
+|---|---|---|---|---|---|---|---|
+| CK-12 Algebra 1 | 652 | R1 638, R4 14 | 510 | 100% (MRR 0.912) | 100% (0.914) | **100%** (0.914) | 100% (0.914) |
+| Algebra 1 Volume 1 | 700 | R1 659, R4 41 | 461 | 100% (0.925) | 100% (0.900) | **100%** (0.933) | 100% (0.933) |
+| الجبر الخطي (scan) | 383 | R4 383 | 189 | 60% (MRR 0.253) | 80% (0.550) | **90%** (0.437) | 100% (0.470) |
+
+S4b measured 93.3% hybrid@8 over the same questions on R1/R3 text (Arabic: 80%, 90% with neighbours, but over 40 pages); the figures above are on what the shipped pipeline stores, and the Arabic row searches all 383 pages. Its one miss asks for the basis of a subspace of cubic polynomials (page 78): the hybrid top 8 lands on pages 72 to 74, and the neighbours reach it. Page 78 is the page whose Muse transcription was cut off at 4,000 tokens in S2; with the 12,000-token budget it comes through whole (1,220 characters, LaTeX included). Embedding the three books cost $0.0086 on OpenRouter in total; Muse calls are not priced. A book is not "done" because it reached `ready`: the first Arabic run did exactly that with 367 empty pages (JBIG2 images rendered blank; PLAN §19 #44), so `runIngest` now refuses a book whose R4 pages are mostly empty.
+
 ## Risks
 
 | Risk | Mitigation |
@@ -67,6 +79,8 @@ CI (GitHub Actions or local script): `pnpm/action-setup`, `pnpm install --frozen
 **Caching and cost.** Turn 2 shows `cached_tokens > 0` when supported by the provider; `MAX_STEPS=2` or `MAX_TURN_COST_USD=0.01` stops a runaway loop with a clear message; the `spend` ledger matches token-based model pricing (or OpenRouter activity for embeddings) within rounding.
 
 **Library.** Ingest one real book per type; `pnpm eval:retrieval` meets the target (expected page in the top 8 for ≥ 80% **[my call]**); the preview/estimate flow is cancelable before any paid rung.
+
+**Library acceptance script (M4 gate).** `e2e-server/m4-gate.spec.ts`, run by `pnpm e2e:server` with the server started under `INGEST_STUB=1` (offline providers, so it is deterministic and free): (1) upload a small PDF on `/library`, the dialog shows the estimate and, on "Compare readings", the local text beside the vision text with nothing started; **Index**; the card reaches "Ready"; open the book, the outline lists both chapters; search, click the hit, the page image loads and the caption gives the printed label next to the file page; tick a chapter, **Study this** creates a board with a `chapter` scope and opens the editor on it. (2) A 250-page book is killed mid-job (the server is stopped while it is `extracting`), the restarted server marks it failed ("interrupted by a restart"), the card shows **Retry**, and it finishes. (3) An upload with a foreign `Origin` is `403 forbidden_origin` and stores nothing. The unit layer covers the rest: kill-and-resume per stage, truncated and empty vision pages, the daily cap, hostile uploads, range requests, 5,000 chunks written by a worker while board batches land.
 
 **Security.** Origin rejection for a foreign Origin on WebSocket and POST; LaTeX payloads inert; injection seed text ignored ([auth-security](./auth-security.md)); no key in the web bundle, logs or DB.
 

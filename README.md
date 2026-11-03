@@ -4,7 +4,7 @@
 
 A personal **study companion**. Upload a book, choose what to study (a topic, a chapter, the whole book) and **chat with an AI tutor inside the app**. The tutor explains on a shared infinite whiteboard with text, LaTeX equations, diagrams, charts and figures from your book, and cites the pages. You can draw and write on the same board, select anything and ask about it, and jump to wherever the AI worked.
 
-> **Status: M1 (core canvas editor) and M2 (math and images) done; M3 (server sync, SQLite op log, blobs, access gate, deploy scripts) built and gate-verified.** The server runs locally and syncs multiple tabs over WebSocket; server PNG snapshot matches browser render; Caddy and systemd deployment configs are ready. The library and the AI tutor are planned (M4 to M5): the Meta Model API pieces below describe the plan and are **[spike]** until they are measured against that API (the M0 spikes ran on OpenRouter). Plan: [`docs/PLAN.md`](docs/PLAN.md); scope, gates and status per phase: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status: M1 (core canvas editor) and M2 (math and images) done; M3 (server sync, SQLite op log, blobs, access gate, deploy scripts) built and gate-verified.** The server runs locally and syncs multiple tabs over WebSocket; server PNG snapshot matches browser render; Caddy and systemd deployment configs are ready. The AI tutor is planned (M5): the Meta Model API pieces below describe the plan and are **[spike]** until they are measured against that API (the M0 spikes ran on OpenRouter). Plan: [`docs/PLAN.md`](docs/PLAN.md); scope, gates and status per phase: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## What it does (v1)
 
@@ -90,7 +90,9 @@ pnpm lint                        # Biome check
 pnpm typecheck                   # TypeScript check across all packages and apps
 pnpm test                        # Vitest unit tests (core, math, web, server)
 pnpm e2e                         # Playwright browser editor tests
-pnpm e2e:server                  # Playwright M3 server gate (two tabs sync, server restart, Origin, PNG)
+pnpm e2e:server                  # Playwright server gates (M3: two tabs, restart, Origin, PNG; M4: library upload to cited page)
+pnpm ingest <file.pdf>           # add a PDF to the library from the terminal (--title, --r3 1-9,20, --resume <id>)
+pnpm eval:retrieval --book <id|title> --eval eval/<book>.jsonl   # recall@8 and MRR on a real book
 ```
 
 Deploying to a VPS (Node + systemd + Caddy, no Docker): [`docs/plans/deployment.md`](docs/plans/deployment.md).

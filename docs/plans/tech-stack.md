@@ -70,8 +70,8 @@ data/            (gitignored) whiteboard.db · blobs/ · backups/   ← DATA_DIR
 | `pnpm e2e:server`               | Playwright M3 server gate (two tabs, sync, Origin, PNG)   |
 | `pnpm lint`                     | Biome check                                               |
 | `pnpm typecheck`                | TypeScript check across core, math, web, and server       |
-| `pnpm ingest <file.pdf>`        | Ingestion CLI (same code path as the upload endpoint)     |
-| `pnpm eval:retrieval -- <book>` | Retrieval eval: recall@8 and MRR per embedding model      |
+| `pnpm ingest <file.pdf>`        | Ingestion CLI: `--title`, `--r3 1-9,20` (opt-in paid OCR), `--resume <id>`, `--stub` |
+| `pnpm eval:retrieval --book <id\|title> --eval eval/<book>.jsonl` | Retrieval eval: recall@8 and MRR for keyword, vector, hybrid and hybrid + neighbours; exits 1 under 80% |
 
 ## Version and compatibility risks
 
