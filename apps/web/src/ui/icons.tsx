@@ -132,6 +132,15 @@ export function HighlighterIcon({ size = 18, ...props }: IconProps) {
   )
 }
 
+export function EraserIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...defaultProps(size)} {...props}>
+      <path d="M20 20H9L3.6 14.6a2 2 0 0 1 0-2.8L12.8 2.6a2 2 0 0 1 2.8 0l5.8 5.8a2 2 0 0 1 0 2.8L12 20.6" />
+      <path d="M7 11l6 6" />
+    </svg>
+  )
+}
+
 export function UndoIcon({ size = 18, ...props }: IconProps) {
   return (
     <svg {...defaultProps(size)} {...props}>

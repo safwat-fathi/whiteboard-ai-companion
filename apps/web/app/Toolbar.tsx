@@ -4,6 +4,7 @@ import {
   ArrowIcon,
   DiamondIcon,
   EllipseIcon,
+  EraserIcon,
   HandIcon,
   HighlighterIcon,
   ImageIcon,
@@ -87,6 +88,12 @@ const TOOL_ITEMS: ToolItem[] = [
     id: 'highlighter',
     label: 'Highlighter',
     icon: () => <HighlighterIcon size={17} />,
+    group: 'ink',
+  },
+  {
+    id: 'eraser',
+    label: 'Eraser',
+    icon: () => <EraserIcon size={17} />,
     group: 'ink',
   },
   // Creation
@@ -182,7 +189,7 @@ export function Toolbar({
 
       <div className="mx-1 h-5 w-px bg-slate-200" />
 
-      {/* Ink Group: Pen, Highlighter */}
+      {/* Ink Group: Pen, Highlighter, Eraser */}
       <div className="flex items-center gap-1">
         {TOOL_ITEMS.filter((t) => t.group === 'ink').map(renderToolButton)}
       </div>

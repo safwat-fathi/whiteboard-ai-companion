@@ -153,6 +153,8 @@ export class Editor {
   private panning: { id: number; at: Point } | null = null
   /** `timeStamp` of the last pen pointer event (hovering counts), for palm rejection. */
   private lastPenAt = Number.NEGATIVE_INFINITY
+  /** The pen pressed down with its eraser button (`buttons & 32`): that pointer's whole gesture goes to the eraser, `tool` unchanged. */
+  private barrel: number | null = null
   private off: (() => void)[] = []
   private unDpr?: () => void
   private flight: {
@@ -239,7 +241,9 @@ export class Editor {
     on(this.overlay, 'pointercancel', (e: PointerEvent) => {
       if (this.panning && e.pointerId !== this.panning.id) return // another finger's gesture, never the tool's
       this.setPanning(null)
-      this.tool.onCancel?.(e.pointerId)
+      const tool = this.toolFor(e.pointerId)
+      if (e.pointerId === this.barrel) this.barrel = null
+      tool.onCancel?.(e.pointerId)
     })
     // The window-level key listeners assume one Editor per page.
     on(window, 'keydown', (e: KeyboardEvent) => this.onKeyDown(e))
@@ -331,12 +335,12 @@ export class Editor {
   // The toolbar keeps focus in a text field, so undo/redo can arrive mid-gesture or mid-edit: end it first (a text edit is
   // committed, then undone), or a later commit would patch an element that undo removed.
   undoOnce(): void {
-    this.tool.onCancel?.()
+    this.cancelGesture()
     this.replay(this.undo.undo(), 'undo')
   }
 
   redoOnce(): void {
-    this.tool.onCancel?.()
+    this.cancelGesture()
     this.replay(this.undo.redo(), 'redo')
   }
 
@@ -356,7 +360,7 @@ export class Editor {
     if (!next) throw new Error(`unknown tool: ${id}`)
     if (next === this.tool) return
     this.cancelFlight()
-    this.tool.onCancel?.()
+    this.cancelGesture()
     this.tool = next
     this.applyCursor()
     this.invalidate()
@@ -740,7 +744,7 @@ export class Editor {
     this.cancelFlight()
     this.pulses.length = 0
     try {
-      this.tool.onCancel?.()
+      this.cancelGesture()
     } catch (err) {
       console.error('cancelling the tool failed', err) // the teardown below must still run
     }
@@ -848,7 +852,7 @@ export class Editor {
       octx.clearRect(0, 0, width * dpr, height * dpr)
       const s = this.camera.zoom * dpr
       octx.setTransform(s, 0, 0, s, -this.camera.x * s, -this.camera.y * s)
-      this.tool.drawOverlay?.(octx)
+      this.toolFor(this.barrel).drawOverlay?.(octx)
       if (this.pulses.length) {
         const PULSE_MS = 1200
         const k = this.camera.zoom
@@ -917,15 +921,39 @@ export class Editor {
     this.cameraChanged()
   }
 
+  /** The tool `pointerId`'s gesture belongs to: the eraser while that pen holds its eraser button, else the active tool. */
+  private toolFor(pointerId: number | null): Tool {
+    return pointerId !== null && pointerId === this.barrel
+      ? (this.tools.eraser as Tool)
+      : this.tool
+  }
+
+  /** Ends whatever gesture is under way, the active tool's or a barrel-button eraser's. */
+  private cancelGesture() {
+    this.tool.onCancel?.()
+    if (this.barrel === null) return
+    this.barrel = null
+    this.tools.eraser?.onCancel?.()
+  }
+
   private onPointer(kind: 'down' | 'move' | 'up', e: PointerEvent) {
     if (kind === 'down') this.cancelFlight()
     if (e.pointerType === 'pen') this.lastPenAt = e.timeStamp
+    // A pen press starts afresh: with its eraser button down (and nothing else owning the pointer) it erases, whatever the tool.
+    if (kind === 'down' && e.pointerType === 'pen')
+      this.barrel =
+        e.buttons & 32 && !this.readOnly && !this.panning && !this.space
+          ? e.pointerId
+          : null
+    const tool = this.toolFor(e.pointerId)
+    const erasing = e.pointerId === this.barrel // the eraser button reports button 5; to the eraser it is a plain press
+    if (kind === 'up' && erasing) this.barrel = null
     const screen = this.toScreen(e.clientX, e.clientY)
     const pan = this.panning
     if (
       pan ||
       (kind === 'down' &&
-        (this.space || (touchOrPen(e) && this.tool === this.tools.hand)))
+        (this.space || (touchOrPen(e) && tool === this.tools.hand)))
     ) {
       if (!pan) {
         try {
@@ -942,10 +970,10 @@ export class Editor {
       }
       return
     }
-    if (this.readOnly && !this.tool.navigates) return
+    if (this.readOnly && !tool.navigates) return
     if (
       kind === 'down' &&
-      this.tool.draws &&
+      tool.draws &&
       e.pointerType === 'touch' &&
       e.timeStamp - this.lastPenAt < PALM_MS
     )
@@ -964,10 +992,10 @@ export class Editor {
       ...sample(e),
       shift: e.shiftKey,
       alt: e.altKey,
-      button: e.button,
+      button: erasing ? 0 : e.button,
       pointerType: e.pointerType,
       pointerId: e.pointerId,
-      ...(this.tool.draws && kind === 'move'
+      ...(tool.draws && kind === 'move'
         ? {
             samples: (coalesced.length ? coalesced : [e]).map(sample),
             predicted: (e.getPredictedEvents?.() ?? []).map(sample),
@@ -975,9 +1003,9 @@ export class Editor {
         : {}),
     }
     if (kind === 'down') this.overlay.setPointerCapture?.(e.pointerId)
-    if (kind === 'down') this.tool.onPointerDown(ev)
-    else if (kind === 'move') this.tool.onPointerMove(ev)
-    else this.tool.onPointerUp(ev)
+    if (kind === 'down') tool.onPointerDown(ev)
+    else if (kind === 'move') tool.onPointerMove(ev)
+    else tool.onPointerUp(ev)
   }
 
   private onKeyDown(e: KeyboardEvent) {
@@ -1011,7 +1039,7 @@ export class Editor {
       !this.readOnly &&
       // A focused button keeps Enter (like Space above) so it can be pressed from the keyboard.
       !(e.key === 'Enter' && e.target instanceof HTMLButtonElement) &&
-      this.tool.onKey?.(e)
+      this.toolFor(this.barrel).onKey?.(e)
     ) {
       e.preventDefault()
     } else if (!mod && !e.altKey) {
