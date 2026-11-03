@@ -1,5 +1,6 @@
 export { boardTools, linearGeometry } from './board'
 export { byOf, describeElement, detailOf } from './describe'
+export { addDiagram, layout } from './diagram'
 export { type Placement, PlacementSchema, resolvePlacement } from './place'
 export {
   agentMayEdit,

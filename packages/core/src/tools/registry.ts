@@ -31,6 +31,8 @@ export type ToolOutput =
       ids: string[]
       bounds: WireBounds | null
       warnings?: string[]
+      /** Extra facts for the model, e.g. which element a diagram node became. */
+      info?: Record<string, unknown>
     }
   | { kind: 'focus'; bounds: WireBounds; note?: string }
 
