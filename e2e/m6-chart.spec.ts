@@ -118,6 +118,25 @@ test('M6 chart: add with C, edit the data grid, draw, undo, reload, reopen by do
   expect(added?.h).toBe(320)
   await expect(btn(page, 'Select')).toHaveAttribute('aria-pressed', 'true')
 
+  // 1b. real keystrokes go to the cell they are typed in: the chart is selected and its grid open, so Backspace and Delete
+  // must not delete it and letters must not pick tools (fill() sends no keydown, so only typing proves this)
+  const title = dialog(page).getByLabel('Title')
+  await title.click()
+  await title.pressSequentially('cvepmtho')
+  await title.press('Delete')
+  for (let i = 0; i < 12; i++) await title.press('Backspace')
+  await expect(title).toHaveValue('')
+  const cell = dialog(page).getByLabel('Row 1 Series 1', { exact: true })
+  await cell.click()
+  await cell.press('ControlOrMeta+a')
+  await cell.press('Backspace')
+  await cell.pressSequentially('42')
+  await expect(cell).toHaveValue('42')
+  await expect(dialog(page)).toBeVisible()
+  expect(await elements(page)).toHaveLength(1)
+  await expect(btn(page, 'Select')).toHaveAttribute('aria-pressed', 'true')
+  await cell.fill('3')
+
   // 2. a non-number is refused where it is typed; a good edit applies in one step
   await dialog(page).getByLabel('Row 2 Series 1', { exact: true }).fill('abc')
   await dialog(page).getByRole('button', { name: 'Apply' }).click()
