@@ -6,11 +6,11 @@ Everything between the chat dock and the AI providers: the **Meta Model API** pr
 
 ## Provider
 
-- **Meta Model API (`META_API_KEY`) for all LLM and vision roles.** Used for: chat completions with tool calling and multimodal image input (tutor, Arabic tutor, fallback, reviewer), cheap ingestion/memory summaries (`CHEAP_MODEL`), and scanned/math page transcription (`VISION_MODEL`, [library-ingestion](./library-ingestion.md)). Connects to `META_API_BASE_URL` (default `https://api.meta.ai/v1`) via `@ai-sdk/openai-compatible`.
+- **Meta Model API (`META_API_KEY` or `MODEL_API_KEY`) for all LLM and vision roles.** Aligned with the official [Meta Model Cookbook (`01_api_fundamentals`)](https://github.com/meta-models/meta-model-cookbook/tree/main/01_api_fundamentals). Used for: chat completions with tool calling and multimodal image input (tutor, Arabic tutor, fallback, reviewer), cheap ingestion/memory summaries (`CHEAP_MODEL`), and scanned/math page transcription (`VISION_MODEL`, [library-ingestion](./library-ingestion.md)). Connects to `META_API_BASE_URL` (default `https://api.meta.ai/v1`) via `@ai-sdk/openai-compatible`.
 - **OpenRouter (`OPENROUTER_API_KEY`) for embeddings only.** Used exclusively at runtime for `baai/bge-m3` embeddings (`POST https://openrouter.ai/api/v1/embeddings`) since Meta's hosted API does not expose an embeddings endpoint, and retained for the historical M0 S2–S4 benchmark scripts (`spikes/`).
 - Both keys live **only in the server environment**. The browser never talks to the Meta Model API or OpenRouter.
 - Libraries: `ai` 7.0.159 and `@ai-sdk/openai-compatible` 3.0.82 on the server, exact pins (the web app uses `ai` only: `DefaultChatTransport` and `readUIMessageStream`; there is **no** `@ai-sdk/react`) (plus `@openrouter/ai-sdk-provider` 3 in M0 spike benchmarks; [tech-stack](./tech-stack.md)). All AI SDK server code is behind one adapter module, `apps/server/src/tutor/llm.ts`.
-- Provider options: configure `createOpenAICompatible({ name: 'meta-llama', baseURL: process.env.META_API_BASE_URL ?? 'https://api.meta.ai/v1', apiKey: process.env.META_API_KEY, includeUsage: true })`. (In M0 Spike S3 on OpenRouter, `extraBody: { provider: { data_collection: 'deny' } }` was verified to route cleanly.)
+- Provider options: configure `createOpenAICompatible({ name: 'meta', baseURL: process.env.META_API_BASE_URL ?? 'https://api.meta.ai/v1', apiKey: process.env.META_API_KEY || process.env.MODEL_API_KEY, includeUsage: true })`.
 
 ## Models (Meta Model API active defaults + M0 S3 benchmarked baseline)
 

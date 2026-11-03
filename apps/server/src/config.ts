@@ -145,7 +145,10 @@ export function loadConfig(
     host: env.HOST || '127.0.0.1',
     dataDir: resolve(baseDir, env.DATA_DIR || './data'),
     publicOrigin,
-    keys: { meta: !!env.META_API_KEY, openrouter: !!env.OPENROUTER_API_KEY },
+    keys: {
+      meta: !!(env.META_API_KEY || env.MODEL_API_KEY),
+      openrouter: !!env.OPENROUTER_API_KEY,
+    },
     metaBaseUrl,
     visionModel: env.VISION_MODEL || 'muse-spark-1.3',
     cheapModel: env.CHEAP_MODEL || 'muse-spark-1.3',

@@ -44,6 +44,13 @@ describe('loadConfig', () => {
     })
     expect(c.keys).toEqual({ meta: true, openrouter: false })
     expect(JSON.stringify(c)).not.toContain('sk-secret-meta')
+
+    // Also supports MODEL_API_KEY from Meta Model Cookbook
+    const cCookbook = loadConfig({
+      MODEL_API_KEY: 'sk-cookbook-key',
+    })
+    expect(cCookbook.keys.meta).toBe(true)
+    expect(JSON.stringify(cCookbook)).not.toContain('sk-cookbook-key')
   })
 
   it('has library defaults from .env.example', () => {

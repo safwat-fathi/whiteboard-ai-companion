@@ -71,16 +71,17 @@ const tutorSearch = createSearcher({
   providers: tutorProviders,
   config,
 })
+const metaApiKey = process.env.META_API_KEY || process.env.MODEL_API_KEY
 const tutor = createTutor({
   config,
   boards,
   messages: messagesDb,
   settings: settingsDb,
   books: booksDb,
-  llm: process.env.META_API_KEY
+  llm: metaApiKey
     ? createLlm({
         baseUrl: config.metaBaseUrl,
-        apiKey: process.env.META_API_KEY,
+        apiKey: metaApiKey,
       })
     : null,
   stub: tutorStub,
