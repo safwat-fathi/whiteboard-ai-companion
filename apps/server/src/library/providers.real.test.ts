@@ -40,7 +40,7 @@ const make = (
   meta: string,
   or: string,
   env: Record<string, string | undefined> = {
-    META_API_KEY: 'meta-key',
+    MODEL_API_KEY: 'meta-key',
     OPENROUTER_API_KEY: 'or-key',
   },
   cfg: Record<string, string | undefined> = {},
@@ -183,7 +183,7 @@ describe('transcribePage', () => {
   it('names the missing key', async () => {
     await expect(
       make('http://unused', 'http://unused', {}).transcribePage(png),
-    ).rejects.toThrow(/META_API_KEY/)
+    ).rejects.toThrow(/MODEL_API_KEY/)
   })
 
   it('says which model the Meta Model API does not know and which setting to change on a 404', async () => {

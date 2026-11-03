@@ -155,7 +155,7 @@ export function createTutor(deps: TutorDeps) {
     if (!deps.stub && !deps.llm)
       throw new ApiError(
         'upstream_error',
-        'The tutor is not configured: the server has no META_API_KEY.',
+        'The tutor is not configured: the server has no MODEL_API_KEY.',
       )
 
     const turnId = newId()

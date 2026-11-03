@@ -123,7 +123,7 @@ describe('health and routing', () => {
     expect(r.json).toEqual({
       ok: true,
       migrations: 2,
-      keys: { meta: true, openrouter: false },
+      keys: { meta: true, model: true, openrouter: false },
     })
     expect(r.text).not.toContain('sk-secret-meta-value')
   })

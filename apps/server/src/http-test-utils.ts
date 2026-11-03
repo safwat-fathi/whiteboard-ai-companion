@@ -69,6 +69,7 @@ export async function boot(
   const config = loadConfig({
     PUBLIC_ORIGIN: ORIGIN,
     DATA_DIR: dataDir,
+    MODEL_API_KEY: 'sk-secret-meta-value',
     META_API_KEY: 'sk-secret-meta-value',
     EMBED_DIMS: '16',
     DAILY_BUDGET_USD: o.dailyBudget ?? '5',

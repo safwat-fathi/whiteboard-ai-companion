@@ -188,7 +188,7 @@ describe('estimate and preview', () => {
     const h = await boot({
       providers: {
         async transcribePage() {
-          throw new Error('META_API_KEY is not set')
+          throw new Error('MODEL_API_KEY is not set')
         },
       },
     })
@@ -196,7 +196,7 @@ describe('estimate and preview', () => {
     const r = await post(h, `/api/books/${id}/preview`, { pages: [1] })
     expect(r.status).toBe(200)
     expect(r.json.pages[0].r4).toEqual({
-      error: expect.stringContaining('META_API_KEY'),
+      error: expect.stringContaining('MODEL_API_KEY'),
     })
     expect(r.json.pages[0].r1.text).toContain('quick')
   })
