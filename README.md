@@ -4,7 +4,9 @@
 
 A personal **study companion**. Upload a book, choose what to study (a topic, a chapter, the whole book) and **chat with an AI tutor inside the app**. The tutor explains on a shared infinite whiteboard with text, LaTeX equations, diagrams, charts and figures from your book, and cites the pages. You can draw and write on the same board, select anything and ask about it, and jump to wherever the AI worked.
 
-> **Status: M1–M6 built, tested, and merged to `main`** (M6: pen, highlighter, eraser, charts and the tutor's `add_chart`, `draw_stroke` and `arrange`). The infinite canvas, LaTeX math rendering, multi-tab SQLite sync, library ingestion with hybrid search, and in-app AI tutor (powered by the Meta Model API with live tool execution, board context, citations, and turn undo) are all live and verified. Plan: [`docs/PLAN.md`](docs/PLAN.md); scope, gates and status per phase: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+<img width="1248" height="522" alt="Screenshot 2026-11-03 at 8 58 14 PM" src="https://github.com/user-attachments/assets/452043f5-eae2-4fbc-95ee-2c639e6eb8d7" />
+<img width="1916" height="964" alt="Screenshot 2026-11-03 at 9 03 51 PM" src="https://github.com/user-attachments/assets/19397897-204e-46b6-ac51-a1abf8182946" />
+<img width="1916" height="964" alt="Screenshot 2026-11-03 at 9 07 17 PM" src="https://github.com/user-attachments/assets/fde57b62-8068-4ed3-bc23-890d023b4988" />
 
 ## What it does (v1)
 
