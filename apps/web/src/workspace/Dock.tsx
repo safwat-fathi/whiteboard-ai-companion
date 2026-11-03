@@ -248,7 +248,7 @@ export function Dock({
                   ? {
                       background: '#1a56db',
                       color: '#fff',
-                      borderColor: '#1a56db',
+                      border: '1px solid #1a56db',
                     }
                   : {}),
               }}

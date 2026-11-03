@@ -196,6 +196,8 @@ export function createTutor(deps: TutorDeps) {
         let status: 'done' | 'stopped' = 'done'
         let stubbed: ReturnType<typeof stubModel> | undefined
         try {
+          // the message starts before anything else, so the client has one to attach every part to; its id is the stored one
+          emit({ type: 'start', messageId: `${turnId}:a` })
           emit({ type: 'data-turn', data: { turnId } })
           emit({ type: 'data-status', data: { state: 'thinking' } })
           const scope = board.scope
@@ -240,6 +242,7 @@ export function createTutor(deps: TutorDeps) {
             },
           })
           for await (const c of result.toUIMessageStream({
+            sendStart: false,
             sendFinish: false,
             onError: wire,
           }))

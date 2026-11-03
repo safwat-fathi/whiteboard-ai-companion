@@ -62,6 +62,8 @@ describe('POST /api/chat', () => {
     expect(r.headers['content-type']).toMatch(/text\/event-stream/)
     const chunks = sseChunks(r.text)
     const types = chunks.map((c) => c.type)
+    expect(types[0]).toBe('start') // the message exists before any part is attached to it
+    expect(chunks[0]?.messageId).toMatch(/:a$/)
     expect(types.indexOf('data-turn')).toBeLessThan(types.indexOf('text-start'))
     expect(types.indexOf('text-end')).toBeLessThan(types.indexOf('data-usage'))
     expect(types.at(-1)).toBe('finish')

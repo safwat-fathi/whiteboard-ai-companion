@@ -1,0 +1,79 @@
+[
+  {
+    "match": "explain",
+    "steps": [
+      {
+        "text": "Let me draw this chapter.",
+        "toolCalls": [
+          {
+            "name": "add_text",
+            "input": {
+              "text": "Quick brown fox",
+              "placement": {
+                "x": 80,
+                "y": 80
+              }
+            }
+          },
+          {
+            "name": "add_math",
+            "input": {
+              "latex": "E = mc^2",
+              "placement": {
+                "x": 80,
+                "y": 160
+              }
+            }
+          },
+          {
+            "name": "add_shape",
+            "input": {
+              "kind": "ellipse",
+              "label": "Fox",
+              "placement": {
+                "x": 80,
+                "y": 260
+              }
+            }
+          }
+        ],
+        "usage": {
+          "in": 900,
+          "cached": 0,
+          "out": 120
+        }
+      },
+      {
+        "text": "The fox keeps running through the meadow [p. $PAGE_0](cite:$BOOK_ID#$PAGE_0).",
+        "usage": {
+          "in": 1200,
+          "cached": 900,
+          "out": 40
+        }
+      }
+    ]
+  },
+  {
+    "match": "slow",
+    "steps": [
+      {
+        "toolCalls": [
+          {
+            "name": "add_shape",
+            "input": {
+              "kind": "rect",
+              "placement": {
+                "x": 400,
+                "y": 80
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+        "chunkDelayMs": 40
+      }
+    ]
+  }
+]
