@@ -115,6 +115,32 @@ export function ImageIcon({ size = 18, ...props }: IconProps) {
   )
 }
 
+export function PenIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...defaultProps(size)} {...props}>
+      <path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  )
+}
+
+export function HighlighterIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...defaultProps(size)} {...props}>
+      <path d="M9 11l-6 6v3h9l3-3" />
+      <path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
+    </svg>
+  )
+}
+
+export function EraserIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...defaultProps(size)} {...props}>
+      <path d="M20 20H9L3.6 14.6a2 2 0 0 1 0-2.8L12.8 2.6a2 2 0 0 1 2.8 0l5.8 5.8a2 2 0 0 1 0 2.8L12 20.6" />
+      <path d="M7 11l6 6" />
+    </svg>
+  )
+}
+
 export function UndoIcon({ size = 18, ...props }: IconProps) {
   return (
     <svg {...defaultProps(size)} {...props}>

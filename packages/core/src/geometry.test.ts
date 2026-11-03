@@ -13,7 +13,7 @@ import {
 } from './geometry'
 import { applyBatch, createScene } from './scene'
 import { DEFAULT_STYLE, type Element } from './schema'
-import { mk } from './test-utils'
+import { mk, stroke } from './test-utils'
 
 const R45 = Math.PI / 4
 
@@ -394,5 +394,177 @@ describe('outline', () => {
   it('ignores rotation', () => {
     const r = mk('a', { x: 10, y: 20, w: 100, h: 60, rotation: 1 })
     expect(outline(r)).toEqual(outline({ ...r, rotation: 0 }))
+  })
+})
+
+describe('freehand', () => {
+  const thick = { ...DEFAULT_STYLE, strokeWidth: 4 }
+
+  it('bounds are the rotated box plus the ink reach (0.75 of the width for a pen)', () => {
+    const el = stroke(
+      's',
+      { x: 10, y: 20, w: 100, h: 20, rotation: Math.PI / 2, style: thick },
+      {
+        points: [
+          [0, 10],
+          [100, 10],
+        ],
+      },
+    )
+    const b = bounds(el)
+    // box centre (60, 30); turned 90 degrees it spans x 50..70, y -20..80; the pen reaches 3 (0.75 * 4) past it
+    expect(b.minX).toBeCloseTo(47)
+    expect(b.maxX).toBeCloseTo(73)
+    expect(b.minY).toBeCloseTo(-23)
+    expect(b.maxY).toBeCloseTo(83)
+    const tap = bounds(stroke('t', { x: 5, y: 5, w: 0, h: 0, style: thick }))
+    expect(tap).toEqual({ minX: 2, minY: 2, maxX: 8, maxY: 8 })
+  })
+
+  for (const zoom of [0.05, 1, 20]) {
+    it(`hits within tolerance plus the ink reach and misses 20 world units beyond that at zoom ${zoom}`, () => {
+      const el = stroke(
+        's',
+        { x: 10, y: 10, w: 100, h: 0, style: thick },
+        {
+          points: [
+            [0, 0],
+            [100, 0],
+          ],
+        },
+      )
+      const tol = 6 / zoom
+      // the reach of a 4-wide pen is 3
+      expect(hitTest(el, { x: 60, y: 10 + 0.9 * (tol + 3) }, tol)).toBe(true)
+      expect(hitTest(el, { x: 60, y: 10 + 1.1 * (tol + 3) }, tol)).toBe(false)
+      expect(hitTest(el, { x: 60, y: 10 + tol + 3 + 20 }, tol)).toBe(false)
+      expect(hitTest(el, { x: 60, y: 10 - tol - 3 - 20 }, tol)).toBe(false)
+    })
+  }
+
+  it('only the polyline counts: the box outline and interior around a diagonal stroke are not hit', () => {
+    const el = stroke('d', { x: 200, y: 100 }) // (0,0) -> (50,25) -> (100,50) in a 100 x 50 box
+    expect(hitTest(el, { x: 250, y: 125 }, 3)).toBe(true) // on the stroke, box interior
+    expect(hitTest(el, { x: 300, y: 100 }, 3)).toBe(false) // top-right corner of the box
+    expect(hitTest(el, { x: 200, y: 150 }, 3)).toBe(false) // bottom-left corner of the box
+    expect(hitTest(el, { x: 250, y: 100 }, 3)).toBe(false) // top edge of the box
+  })
+
+  it('hits in the unrotated frame and a one-point tap is a dot', () => {
+    const el = stroke(
+      's',
+      { x: 0, y: 0, w: 100, h: 0, rotation: Math.PI / 2, style: thick },
+      {
+        points: [
+          [0, 0],
+          [100, 0],
+        ],
+      },
+    )
+    // turned about (50, 0) it is the vertical line x = 50, y -50..50
+    expect(hitTest(el, { x: 50, y: 20 }, 1)).toBe(true)
+    expect(hitTest(el, { x: 20, y: 0 }, 1)).toBe(false)
+    expect(hitTest(el, { x: 80, y: 0 }, 1)).toBe(false)
+    const tap = stroke(
+      't',
+      { x: 10, y: 10, w: 0, h: 0, style: thick },
+      { points: [[0, 0]] },
+    )
+    expect(hitTest(tap, { x: 13, y: 10 }, 1)).toBe(true) // 3 away, reach 3 + tolerance 1
+    expect(hitTest(tap, { x: 15.5, y: 10 }, 1)).toBe(false)
+  })
+
+  it('resizeBox scales the box and its points; apply then inverse is the identity', () => {
+    const el = stroke('s', { x: 100, y: 100, w: 100, h: 50 })
+    expect(lockedAspect(el)).toBeNull()
+    expect(resizeBox(el, 'se', { x: 300, y: 200 }, false)).toEqual({
+      x: 100,
+      y: 100,
+      w: 200,
+      h: 100,
+      'data.points': [
+        [0, 0],
+        [100, 50],
+        [200, 100],
+      ],
+    })
+    expect(resizeBox(el, 'nw', { x: 50, y: 80 }, false)).toEqual({
+      x: 50,
+      y: 80,
+      w: 150,
+      h: 70,
+      'data.points': [
+        [0, 0],
+        [75, 35],
+        [150, 70],
+      ],
+    })
+    expect(resizeBox(el, 'e', { x: 400, y: 0 }, true)).toMatchObject({
+      w: 300,
+      h: 150,
+    })
+
+    const scene = createScene([el])
+    const set = resizeBox(el, 'se', { x: 300, y: 200 }, false)
+    const { inverse } = applyBatch(scene, {
+      batchId: 'b',
+      label: 'Resize',
+      ops: [{ op: 'patch', id: 's', set }],
+    })
+    expect(scene.els.get('s')).toMatchObject({ w: 200, h: 100 })
+    applyBatch(scene, inverse)
+    expect(scene.els.get('s')).toEqual({ ...el, v: 2 })
+  })
+
+  it('resizeBox of a straight stroke keeps its flat axis: no NaN, no jump, box stays tight', () => {
+    const vertical = stroke(
+      'v',
+      { x: 10, y: 10, w: 0, h: 40 },
+      {
+        points: [
+          [0, 0],
+          [0, 40],
+        ],
+      },
+    )
+    const p = resizeBox(vertical, 'se', { x: 40, y: 90 }, false)
+    expect(p).toEqual({
+      x: 10,
+      y: 10,
+      w: 0,
+      h: 80,
+      'data.points': [
+        [0, 0],
+        [0, 80],
+      ],
+    })
+    expect(resizeBox(vertical, 'w', { x: -30, y: 0 }, false)).toMatchObject({
+      x: 10,
+      w: 0,
+    })
+    const tap = stroke('t', { x: 5, y: 6, w: 0, h: 0 }, { points: [[0, 0]] })
+    for (const h of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const)
+      expect(resizeBox(tap, h, { x: 50, y: 60 }, false)).toEqual({
+        x: 5,
+        y: 6,
+        w: 0,
+        h: 0,
+        'data.points': [[0, 0]],
+      })
+
+    const turned = stroke('r', { x: 0, y: 0, w: 100, h: 50, rotation: R45 })
+    const set = resizeBox(turned, 'se', { x: 150, y: 120 }, false)
+    const after = { ...turned, ...set } as Element
+    // the north-west corner stays where it was in the world
+    const corner = (e: Element) => {
+      const c = { x: e.x + e.w / 2, y: e.y + e.h / 2 }
+      const d = { x: -e.w / 2, y: -e.h / 2 }
+      return {
+        x: c.x + d.x * Math.cos(e.rotation) - d.y * Math.sin(e.rotation),
+        y: c.y + d.x * Math.sin(e.rotation) + d.y * Math.cos(e.rotation),
+      }
+    }
+    expect(corner(after).x).toBeCloseTo(corner(turned).x)
+    expect(corner(after).y).toBeCloseTo(corner(turned).y)
   })
 })

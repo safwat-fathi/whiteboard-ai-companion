@@ -77,12 +77,13 @@ const tutor = createTutor({
   messages: messagesDb,
   settings: settingsDb,
   books: booksDb,
-  llm: (process.env.MODEL_API_KEY || process.env.META_API_KEY)
-    ? createLlm({
-        baseUrl: config.metaBaseUrl,
-        apiKey: (process.env.MODEL_API_KEY || process.env.META_API_KEY)!,
-      })
-    : null,
+  llm:
+    process.env.MODEL_API_KEY || process.env.META_API_KEY
+      ? createLlm({
+          baseUrl: config.metaBaseUrl,
+          apiKey: (process.env.MODEL_API_KEY || process.env.META_API_KEY)!,
+        })
+      : null,
   stub: tutorStub,
   summarise: (prompt) => tutorProviders.complete(prompt, { maxTokens: 1200 }),
   blobs,

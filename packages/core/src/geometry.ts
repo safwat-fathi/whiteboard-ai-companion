@@ -1,3 +1,4 @@
+import { inkReach } from './ink'
 import type { Scene } from './scene'
 import type { Binding, Element } from './schema'
 
@@ -46,7 +47,12 @@ export function bounds(el: Element): Rect {
         { x: el.x + el.w, y: el.y + el.h },
         { x: el.x, y: el.y + el.h },
       ].map((p) => rot(p, centre(el), el.rotation))
-  const pad = isLinear(el) ? el.style.strokeWidth / 2 : 0
+  // A pen at full pressure draws wider than its stored width, so a stroke's pad is its ink reach, not half the width.
+  const pad = isLinear(el)
+    ? el.style.strokeWidth / 2
+    : el.type === 'freehand'
+      ? inkReach(el)
+      : 0
   const xs = pts.map((p) => p.x)
   const ys = pts.map((p) => p.y)
   return {
@@ -152,6 +158,16 @@ export function hitTest(el: Element, p: Point, tolWorld: number): boolean {
     return d <= tolWorld + el.style.strokeWidth / 2
   }
   const q = toLocal(el, p)
+  // A stroke is boxed (it rotates about its centre) but only its polyline counts, in the unrotated frame.
+  if (el.type === 'freehand')
+    return (
+      polyDist(
+        q,
+        el.data.points.map(([px, py]) => ({ x: el.x + px, y: el.y + py })),
+        false,
+      ) <=
+      tolWorld + inkReach(el)
+    )
   if (el.type === 'text' || el.type === 'math' || el.type === 'image')
     return (
       q.x >= el.x - tolWorld &&
@@ -201,9 +217,13 @@ export function routeArrow(arrow: Element, scene: Scene): [number, number][] {
 
 const MIN = 1
 
+const tenth = (n: number) => Math.round(n * 10) / 10 + 0 // R1: points sit on a 0.1 grid; `+ 0` turns -0 into 0
+
 /**
  * Linear elements (line/arrow) are never box-resized or rotated in M1: returns `{}`. The select tool
  * must show endpoint handles for them and edit `data.points` itself.
+ * A stroke resizes freely and its patch also scales `data.points` with the box; a zero-width or
+ * zero-height stroke ignores handles on that axis (its box must stay tight).
  * `to` is a world point; the handle acts in the element's rotated frame, the opposite anchor stays fixed in world space. */
 export function resizeBox(
   el: Element,
@@ -213,10 +233,13 @@ export function resizeBox(
 ): Patch {
   if (isLinear(el)) return {}
   const q = toLocal(el, to)
-  const west = handle.includes('w')
-  const east = handle.includes('e')
-  const north = handle.includes('n')
-  const south = handle.includes('s')
+  // a stroke with no width (or height) has nothing to scale on that axis: its handles there do nothing
+  const flatX = el.type === 'freehand' && el.w === 0
+  const flatY = el.type === 'freehand' && el.h === 0
+  const west = handle.includes('w') && !flatX
+  const east = handle.includes('e') && !flatX
+  const north = handle.includes('n') && !flatY
+  const south = handle.includes('s') && !flatY
   let left = el.x
   let right = el.x + el.w
   let top = el.y
@@ -258,7 +281,17 @@ export function resizeBox(
   )
   const w = right - left
   const h = bottom - top
-  return { x: c.x - w / 2, y: c.y - h / 2, w, h }
+  const box = { x: c.x - w / 2, y: c.y - h / 2, w, h }
+  if (el.type !== 'freehand') return box
+  const sx = el.w > 0 ? w / el.w : 1
+  const sy = el.h > 0 ? h / el.h : 1
+  return {
+    ...box,
+    'data.points': el.data.points.map(([px, py]) => [
+      tenth(px * sx),
+      tenth(py * sy),
+    ]),
+  }
 }
 
 /** Returns `{}` for linear elements (see resizeBox). */

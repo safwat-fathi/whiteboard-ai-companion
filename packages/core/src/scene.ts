@@ -4,6 +4,7 @@ import {
   type Batch,
   type Element,
   ElementSchema,
+  FreehandElementSchema,
   type Id,
   ImageElementSchema,
   MathElementSchema,
@@ -31,6 +32,7 @@ const SCHEMA = {
   text: TextElementSchema,
   math: MathElementSchema,
   image: ImageElementSchema,
+  freehand: FreehandElementSchema,
 }
 
 // Current value at a dotted path, or null if absent (absent only happens on optional leaves).

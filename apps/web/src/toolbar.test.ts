@@ -56,6 +56,25 @@ describe('Toolbar', () => {
     expect(btn('Rectangle').getAttribute('aria-pressed')).toBe('false')
   })
 
+  it('has a Pen (P) and a Highlighter (Shift+P) that pick their tools', async () => {
+    const { ed, btn } = await mount()
+    expect(btn('Pen').title).toBe('Pen (P)')
+    expect(btn('Highlighter').title).toBe('Highlighter (Shift+P)')
+    await act(async () => btn('Highlighter').click())
+    expect(ed.tool.id).toBe('highlighter')
+    expect(btn('Highlighter').getAttribute('aria-pressed')).toBe('true')
+    await act(async () => btn('Pen').click())
+    expect(ed.tool.id).toBe('pen')
+  })
+
+  it('has an Eraser (E) that picks its tool', async () => {
+    const { ed, btn } = await mount()
+    expect(btn('Eraser').title).toBe('Eraser (E)')
+    await act(async () => btn('Eraser').click())
+    expect(ed.tool.id).toBe('eraser')
+    expect(btn('Eraser').getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('does not take focus from the canvas or a text field, and runs undo and redo', async () => {
     const { ed, btn } = await mount()
     const undo = vi.spyOn(ed, 'undoOnce')

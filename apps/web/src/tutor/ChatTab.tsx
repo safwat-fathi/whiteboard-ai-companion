@@ -21,6 +21,7 @@ import {
 import {
   type Chips,
   defaultChips,
+  effectiveMode,
   modeWords,
   type SelMode,
   selectionChip,
@@ -103,6 +104,7 @@ export function ChatTab(o: {
   const [mode, setMode] = useState<Mode>('ask')
   const [heard, setHeard] = useState('')
   const [sel, setSel] = useState<string[]>([])
+  const [ink, setInk] = useState(false)
   const [chips, setChips] = useState<Chips>(defaultChips())
   const [files, setFiles] = useState<{ blobId: string; url: string }[]>([])
   const [problem, setProblem] = useState<string | null>(null)
@@ -144,7 +146,10 @@ export function ChatTab(o: {
   const bridge = o.bridge
   useEffect(() => {
     if (!bridge) return
-    const read = () => setSel(bridge.selection())
+    const read = () => {
+      setSel(bridge.selection())
+      setInk(bridge.selectionHasInk())
+    }
     read()
     return bridge.subscribe(read)
   }, [bridge])
@@ -420,7 +425,7 @@ export function ChatTab(o: {
             aria-label="What goes with your message"
             className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-slate-600 border-none m-0"
           >
-            {selectionChip(chips, sel.length) && (
+            {selectionChip(chips, sel.length, ink) && (
               <span
                 title="The AI may edit these"
                 className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/90 px-2.5 py-0.5 text-xs font-medium text-blue-700 shadow-2xs"
@@ -428,7 +433,7 @@ export function ChatTab(o: {
                 Selection ({sel.length}) ·
                 <select
                   aria-label="How the selection is sent"
-                  value={chips.selection}
+                  value={effectiveMode(chips, ink)}
                   onChange={(e) =>
                     setChips((c) => ({
                       ...c,
@@ -443,6 +448,11 @@ export function ChatTab(o: {
                     </option>
                   ))}
                 </select>
+                {effectiveMode(chips, ink) !== chips.selection && (
+                  <span title="Handwriting is read from a picture, so one goes along">
+                    (auto)
+                  </span>
+                )}
                 <button
                   type="button"
                   aria-label="Do not send the selection"

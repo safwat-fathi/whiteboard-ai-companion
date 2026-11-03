@@ -20,6 +20,8 @@ export function detailOf(el: Element): string {
       return el.data.label
         ? `${el.data.kind} ${JSON.stringify(clip(el.data.label, 40))}`
         : el.data.kind
+    case 'freehand':
+      return `stroke, ${el.data.points.length} pts${el.data.highlighter ? ', highlighter' : ''}`
     case 'image': {
       const src = el.data.source?.bookPage
       return src

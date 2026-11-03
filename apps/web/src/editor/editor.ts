@@ -36,7 +36,12 @@ import { createBitmapProvider, importImage } from './images'
 import { shortcutKey } from './keys'
 import { createWebMathProvider } from './math'
 import { browserPlatform } from './platform'
-import { type Tool, type ToolEvent, tools as toolFactories } from './tools'
+import {
+  type Sample,
+  type Tool,
+  type ToolEvent,
+  tools as toolFactories,
+} from './tools'
 import type { CropTool } from './tools/crop'
 import type { MathTool } from './tools/math'
 import type { TextTool } from './tools/text'
@@ -50,6 +55,9 @@ const typing = (t: EventTarget | null) =>
 // An allowlist: a mouse (or a test's bare MouseEvent) has Space, touch and pen have no keyboard.
 const touchOrPen = (e: PointerEvent) =>
   e.pointerType === 'touch' || e.pointerType === 'pen'
+
+/** Drawing tools ignore a touch that lands this soon (ms) after a pen event: the palm resting beside the pen. */
+export const PALM_MS = 600
 
 const canvas = (z: number) => {
   const c = document.createElement('canvas')
@@ -143,6 +151,10 @@ export class Editor {
   private hoverCursor = ''
   /** The pointer dragging the canvas and where it was last seen; one pointer at a time. */
   private panning: { id: number; at: Point } | null = null
+  /** `timeStamp` of the last pen pointer event (hovering counts), for palm rejection. */
+  private lastPenAt = Number.NEGATIVE_INFINITY
+  /** The pen pressed down with its eraser button (`buttons & 32`): that pointer's whole gesture goes to the eraser, `tool` unchanged. */
+  private barrel: number | null = null
   private off: (() => void)[] = []
   private unDpr?: () => void
   private flight: {
@@ -229,7 +241,9 @@ export class Editor {
     on(this.overlay, 'pointercancel', (e: PointerEvent) => {
       if (this.panning && e.pointerId !== this.panning.id) return // another finger's gesture, never the tool's
       this.setPanning(null)
-      this.tool.onCancel?.()
+      const tool = this.toolFor(e.pointerId)
+      if (e.pointerId === this.barrel) this.barrel = null
+      tool.onCancel?.(e.pointerId)
     })
     // The window-level key listeners assume one Editor per page.
     on(window, 'keydown', (e: KeyboardEvent) => this.onKeyDown(e))
@@ -321,12 +335,12 @@ export class Editor {
   // The toolbar keeps focus in a text field, so undo/redo can arrive mid-gesture or mid-edit: end it first (a text edit is
   // committed, then undone), or a later commit would patch an element that undo removed.
   undoOnce(): void {
-    this.tool.onCancel?.()
+    this.cancelGesture()
     this.replay(this.undo.undo(), 'undo')
   }
 
   redoOnce(): void {
-    this.tool.onCancel?.()
+    this.cancelGesture()
     this.replay(this.undo.redo(), 'redo')
   }
 
@@ -346,7 +360,7 @@ export class Editor {
     if (!next) throw new Error(`unknown tool: ${id}`)
     if (next === this.tool) return
     this.cancelFlight()
-    this.tool.onCancel?.()
+    this.cancelGesture()
     this.tool = next
     this.applyCursor()
     this.invalidate()
@@ -730,7 +744,7 @@ export class Editor {
     this.cancelFlight()
     this.pulses.length = 0
     try {
-      this.tool.onCancel?.()
+      this.cancelGesture()
     } catch (err) {
       console.error('cancelling the tool failed', err) // the teardown below must still run
     }
@@ -838,7 +852,7 @@ export class Editor {
       octx.clearRect(0, 0, width * dpr, height * dpr)
       const s = this.camera.zoom * dpr
       octx.setTransform(s, 0, 0, s, -this.camera.x * s, -this.camera.y * s)
-      this.tool.drawOverlay?.(octx)
+      this.toolFor(this.barrel).drawOverlay?.(octx)
       if (this.pulses.length) {
         const PULSE_MS = 1200
         const k = this.camera.zoom
@@ -907,14 +921,39 @@ export class Editor {
     this.cameraChanged()
   }
 
+  /** The tool `pointerId`'s gesture belongs to: the eraser while that pen holds its eraser button, else the active tool. */
+  private toolFor(pointerId: number | null): Tool {
+    return pointerId !== null && pointerId === this.barrel
+      ? (this.tools.eraser as Tool)
+      : this.tool
+  }
+
+  /** Ends whatever gesture is under way, the active tool's or a barrel-button eraser's. */
+  private cancelGesture() {
+    this.tool.onCancel?.()
+    if (this.barrel === null) return
+    this.barrel = null
+    this.tools.eraser?.onCancel?.()
+  }
+
   private onPointer(kind: 'down' | 'move' | 'up', e: PointerEvent) {
     if (kind === 'down') this.cancelFlight()
+    if (e.pointerType === 'pen') this.lastPenAt = e.timeStamp
+    // A pen press starts afresh: with its eraser button down (and nothing else owning the pointer) it erases, whatever the tool.
+    if (kind === 'down' && e.pointerType === 'pen')
+      this.barrel =
+        e.buttons & 32 && !this.readOnly && !this.panning && !this.space
+          ? e.pointerId
+          : null
+    const tool = this.toolFor(e.pointerId)
+    const erasing = e.pointerId === this.barrel // the eraser button reports button 5; to the eraser it is a plain press
+    if (kind === 'up' && erasing) this.barrel = null
     const screen = this.toScreen(e.clientX, e.clientY)
     const pan = this.panning
     if (
       pan ||
       (kind === 'down' &&
-        (this.space || (touchOrPen(e) && this.tool === this.tools.hand)))
+        (this.space || (touchOrPen(e) && tool === this.tools.hand)))
     ) {
       if (!pan) {
         try {
@@ -931,19 +970,42 @@ export class Editor {
       }
       return
     }
-    if (this.readOnly && !this.tool.navigates) return
+    if (this.readOnly && !tool.navigates) return
+    if (
+      kind === 'down' &&
+      tool.draws &&
+      e.pointerType === 'touch' &&
+      e.timeStamp - this.lastPenAt < PALM_MS
+    )
+      return
+    const pen = e.pointerType === 'pen' // a mouse reports a pressure of 0.5 or 0, which is no pressure
+    const sample = (p: PointerEvent): Sample => {
+      const at = this.toScreen(p.clientX, p.clientY)
+      return {
+        screen: at,
+        world: screenToWorld(at, this.camera, this.viewport),
+        ...(pen ? { pressure: p.pressure } : {}),
+      }
+    }
+    const coalesced = e.getCoalescedEvents?.() ?? []
     const ev: ToolEvent = {
-      screen,
-      world: screenToWorld(screen, this.camera, this.viewport),
+      ...sample(e),
       shift: e.shiftKey,
       alt: e.altKey,
-      button: e.button,
+      button: erasing ? 0 : e.button,
       pointerType: e.pointerType,
+      pointerId: e.pointerId,
+      ...(tool.draws && kind === 'move'
+        ? {
+            samples: (coalesced.length ? coalesced : [e]).map(sample),
+            predicted: (e.getPredictedEvents?.() ?? []).map(sample),
+          }
+        : {}),
     }
     if (kind === 'down') this.overlay.setPointerCapture?.(e.pointerId)
-    if (kind === 'down') this.tool.onPointerDown(ev)
-    else if (kind === 'move') this.tool.onPointerMove(ev)
-    else this.tool.onPointerUp(ev)
+    if (kind === 'down') tool.onPointerDown(ev)
+    else if (kind === 'move') tool.onPointerMove(ev)
+    else tool.onPointerUp(ev)
   }
 
   private onKeyDown(e: KeyboardEvent) {
@@ -977,11 +1039,14 @@ export class Editor {
       !this.readOnly &&
       // A focused button keeps Enter (like Space above) so it can be pressed from the keyboard.
       !(e.key === 'Enter' && e.target instanceof HTMLButtonElement) &&
-      this.tool.onKey?.(e)
+      this.toolFor(this.barrel).onKey?.(e)
     ) {
       e.preventDefault()
     } else if (!mod && !e.altKey) {
-      const t = Object.values(this.tools).find((t) => t.key === k)
+      const same = Object.values(this.tools).filter((t) => t.key === k)
+      // Shift+P is the highlighter; a key whose tools carry no Shift flag ignores Shift (Shift+R is the rectangle).
+      const t =
+        same.find((t) => !!t.shift === e.shiftKey) ?? same.find((t) => !t.shift)
       if (t && (!this.readOnly || t.navigates)) this.setTool(t.id)
     }
   }

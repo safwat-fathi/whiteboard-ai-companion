@@ -29,7 +29,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from './schema'
-import { mk } from './test-utils'
+import { mk, scribble } from './test-utils'
 
 const platform = nodePlatform()
 const vp = { width: 600, height: 400, dpr: 1 }
@@ -1075,5 +1075,365 @@ describe('image rendering and RenderCache tiers', () => {
     expect(red(30, 30)).toEqual([255, 0, 0])
     expect(red(180, 30)).toEqual([255, 0, 0])
     cache.dispose()
+  })
+})
+
+describe('ink rendering', () => {
+  registerBundledFonts()
+  type Pt = [number, number]
+  const px = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+    const d = ctx.getImageData(x, y, 1, 1).data
+    return [d[0] as number, d[1] as number, d[2] as number]
+  }
+  const near = (got: number[], want: number[], tol = 2) =>
+    got.forEach((g, i) => {
+      expect(Math.abs(g - (want[i] as number))).toBeLessThanOrEqual(tol)
+    })
+  const sty = (strokeWidth: number, over: Record<string, unknown> = {}) => ({
+    ...mk('s').style,
+    strokeWidth,
+    ...over,
+  })
+  const text = (id: string, t: string, size: number, p: Partial<Element>) =>
+    mk(id, {
+      type: 'text',
+      data: { text: t, size, align: 'left', dir: 'auto' },
+      ...p,
+    } as never)
+
+  // handwriting-like samples, deterministic
+  const along = (n: number, f: (i: number) => Pt): Pt[] =>
+    Array.from({ length: n }, (_, i) => f(i))
+  const swell = (n: number) =>
+    Array.from(
+      { length: n },
+      (_, i) => 0.15 + 0.85 * Math.sin((i / (n - 1)) * Math.PI) ** 2,
+    )
+
+  const inkEls = (): Element[] => [
+    text('t', 'Highlight this', 44, { x: 30, y: 24, w: 330, h: 62, z: 'a0' }),
+    mk('box', {
+      x: 400,
+      y: 24,
+      w: 170,
+      h: 90,
+      fill: '#cfe3ff',
+      z: 'a1',
+    }),
+    // highlighter swipes across the text and across the filled shape, above both
+    scribble(
+      'hl1',
+      along(30, (i) => [20 + i * 12.5, 56 + 3 * Math.sin(i / 3)]),
+      undefined,
+      { z: 'a5', style: sty(26, { stroke: '#ffd400', opacity: 0.45 }) },
+      { highlighter: true },
+    ),
+    scribble(
+      'hl2',
+      along(12, (i) => [380 + i * 18, 40 + i * 4]),
+      undefined,
+      { z: 'a5', style: sty(22, { stroke: '#ff69b4', opacity: 0.45 }) },
+      { highlighter: true },
+    ),
+    // pen with a pressure curve: thick in the middle, thin at both ends
+    scribble(
+      'pen',
+      along(60, (i) => [30 + i * 9, 170 + 22 * Math.sin(i / 5)]),
+      swell(60),
+      { z: 'a6', style: sty(10) },
+    ),
+    // pen with simulated pressure: the speed (point spacing) thins the line
+    scribble(
+      'sim',
+      along(50, (i) => [30 + i * (4 + i * 0.25), 250 + 18 * Math.sin(i / 4)]),
+      undefined,
+      { z: 'a6', style: sty(10, { stroke: '#c0392b' }) },
+    ),
+    // a tap, a rotated loop and a faded stroke
+    scribble('dot', [[60, 340]], [0.9], { z: 'a6', style: sty(16) }),
+    scribble(
+      'loop',
+      along(40, (i) => [
+        300 + 40 * Math.cos((i / 39) * 2 * Math.PI * 1.3),
+        340 + 28 * Math.sin((i / 39) * 2 * Math.PI * 1.3),
+      ]),
+      swell(40),
+      { z: 'a6', rotation: 0.5, style: sty(9, { stroke: '#2c7be5' }) },
+    ),
+    scribble(
+      'faded',
+      along(20, (i) => [440 + i * 6, 310 + 30 * Math.sin(i / 3)]),
+      Array(20).fill(0.6),
+      { z: 'a6', style: sty(12, { opacity: 0.4 }) },
+    ),
+  ]
+  const inkScene = () => createScene(inkEls())
+
+  it('matches the ink golden (pressure pen, simulated pen, highlighter over text and a shape)', async () => {
+    const { c, ctx } = canvas(600, 400)
+    render(ctx, inkScene(), cam, { width: 600, height: 400, dpr: 1 }, platform)
+    await matchesGolden(c, 'ink', TIGHT)
+  })
+
+  it('matches the zoom 2 ink golden', async () => {
+    const { c, ctx } = canvas(600, 400)
+    render(
+      ctx,
+      inkScene(),
+      { x: 270, y: 10, zoom: 2 },
+      { width: 600, height: 400, dpr: 1 },
+      platform,
+    )
+    await matchesGolden(c, 'ink-zoom2', TIGHT)
+  })
+
+  it('strokes are filled, not outlined: a 10-wide pen at pressure 0.5 is 10 pixels thick', () => {
+    const pen = scribble(
+      'p',
+      [
+        [10, 30],
+        [150, 30],
+      ],
+      [0.5, 0.5],
+      { style: sty(10) },
+    )
+    const { ctx } = canvas(160, 60)
+    render(
+      ctx,
+      createScene([pen]),
+      cam,
+      { width: 160, height: 60, dpr: 1 },
+      platform,
+    )
+    let dark = 0
+    for (let y = 0; y < 60; y++) if ((px(ctx, 80, y)[0] as number) < 128) dark++
+    expect(dark).toBeGreaterThanOrEqual(9)
+    expect(dark).toBeLessThanOrEqual(11)
+  })
+
+  it('ignores style.fill: the ink is the stroke colour', () => {
+    const pen = scribble(
+      'p',
+      [
+        [10, 30],
+        [150, 30],
+      ],
+      [0.5, 0.5],
+      { style: sty(10, { stroke: '#0000ff', fill: '#ff0000' }) },
+    )
+    const { ctx } = canvas(160, 60)
+    render(
+      ctx,
+      createScene([pen]),
+      cam,
+      { width: 160, height: 60, dpr: 1 },
+      platform,
+    )
+    near(px(ctx, 80, 30), [0, 0, 255], 1)
+  })
+
+  describe('highlighter (R2: multiply)', () => {
+    // a #cfe3ff block (207, 227, 255) under a #ffd400 (255, 212, 0) swipe at opacity 0.45
+    const hlScene = (hlOpacity = 0.45, extra: Element[] = []) =>
+      createScene([
+        mk('block', {
+          x: 10,
+          y: 10,
+          w: 100,
+          h: 60,
+          fill: '#cfe3ff',
+          z: 'a0',
+          style: sty(0, { fill: '#cfe3ff' }),
+        }),
+        scribble(
+          'hl',
+          [
+            [0, 40],
+            [130, 40],
+          ],
+          undefined,
+          {
+            z: 'a1',
+            style: sty(20, { stroke: '#ffd400', opacity: hlOpacity }),
+          },
+          { highlighter: true },
+        ),
+        ...extra,
+      ])
+    const draw = (scene = hlScene()) => {
+      const { c, ctx } = canvas(140, 80)
+      render(ctx, scene, cam, { width: 140, height: 80, dpr: 1 }, platform)
+      return { c, ctx }
+    }
+    // W3C multiply with an opaque backdrop d and source s at alpha a: d * (1 - a + a * s)
+    const mult = (d: number[], s: number[], a: number) =>
+      d.map((dv, i) => dv * (1 - a + (a * (s[i] as number)) / 255))
+    const alpha = (d: number[], s: number[], a: number) =>
+      d.map((dv, i) => dv * (1 - a) + a * (s[i] as number))
+
+    it('darkens the overlap with the shape underneath: the W3C multiply formula, not plain alpha', () => {
+      const { ctx } = draw()
+      const under = [207, 227, 255]
+      const hl = [255, 212, 0]
+      const got = px(ctx, 60, 40)
+      near(got, mult(under, hl, 0.45)) // about (207, 210, 140)
+      for (let i = 0; i < 3; i++)
+        expect(got[i] as number).toBeLessThanOrEqual((under[i] as number) + 1) // never lighter than what is under
+      expect(alpha(under, hl, 0.45)[0] as number).toBeGreaterThan(225) // plain alpha would wash the red out to 229
+      expect(got[0] as number).toBeLessThan(215)
+      // beside the block, over the white page, the two modes agree
+      near(px(ctx, 125, 40), mult([255, 255, 255], hl, 0.45))
+    })
+
+    it('keeps dark ink dark: text under a highlighter stays near black', () => {
+      const scene = createScene([
+        mk('blk', {
+          x: 10,
+          y: 10,
+          w: 100,
+          h: 60,
+          z: 'a0',
+          style: sty(0, { fill: '#000000' }),
+          fill: '#000000',
+        }),
+        scribble(
+          'hl',
+          [
+            [0, 40],
+            [130, 40],
+          ],
+          undefined,
+          { z: 'a1', style: sty(20, { stroke: '#ffd400', opacity: 0.45 }) },
+          { highlighter: true },
+        ),
+      ])
+      const { ctx } = draw(scene)
+      near(px(ctx, 60, 40), [0, 0, 0], 1) // alpha would turn it brown (115, 95, 0)
+    })
+
+    it('does not leak multiply into later elements, with or without opacity', () => {
+      for (const o of [0.45, 1]) {
+        const above = mk('above', {
+          x: 40,
+          y: 20,
+          w: 40,
+          h: 40,
+          z: 'a2',
+          fill: '#cfe3ff',
+          style: sty(0, { fill: '#cfe3ff' }),
+        })
+        const { ctx } = draw(hlScene(o, [above]))
+        near(px(ctx, 60, 40), [207, 227, 255], 1) // opaque on top: the swipe is hidden, not multiplied
+        expect(ctx.globalCompositeOperation).toBe('source-over')
+        expect(ctx.globalAlpha).toBe(1)
+      }
+    })
+
+    it('multiplies with an opaque swipe too (the highlighter honours opacity 1)', () => {
+      const { ctx } = draw(hlScene(1))
+      near(px(ctx, 60, 40), mult([207, 227, 255], [255, 212, 0], 1)) // (207, 189, 0)
+    })
+
+    it('paints identically with and without a spatial index, and twice over', () => {
+      const scene = inkScene()
+      const a = canvas(600, 400)
+      const b = canvas(600, 400)
+      const index = new SpatialIndex()
+      index.load([...scene.els.values()])
+      const v = { width: 600, height: 400, dpr: 1 }
+      render(a.ctx, scene, cam, v, platform)
+      render(b.ctx, scene, cam, v, platform, { index })
+      render(b.ctx, scene, cam, v, platform, { index })
+      expect(a.c.toBuffer('image/png').equals(b.c.toBuffer('image/png'))).toBe(
+        true,
+      )
+    })
+  })
+
+  it('builds the outline once per element across frames, again for a replaced element and per platform', () => {
+    let built = 0
+    const base = nodePlatform()
+    const counting = (): Platform => ({
+      ...base,
+      createPath2D: (d?: string) => {
+        built++
+        return base.createPath2D(d)
+      },
+    })
+    const p1 = counting()
+    const el = scribble(
+      's',
+      along(30, (i) => [i * 5, 20 * Math.sin(i / 4)]),
+      undefined,
+    )
+    const v = { width: 600, height: 400, dpr: 1 }
+    const { ctx } = canvas()
+    render(ctx, createScene([el]), cam, v, p1)
+    render(ctx, createScene([el]), cam, v, p1)
+    render(ctx, createScene([el]), { x: 0, y: 0, zoom: 3 }, v, p1)
+    expect(built).toBe(1) // zoom does not rebuild: the outline is in world units
+    render(ctx, createScene([{ ...el, v: el.v + 1 }]), cam, v, p1)
+    expect(built).toBe(2) // elements are replaced on every change
+    render(ctx, createScene([el]), cam, v, counting())
+    expect(built).toBe(3) // a Path2D from one platform is not valid on another
+  })
+
+  describe('culling by ink reach', () => {
+    // A pen of width 40 at full pressure reaches 30 past its line; strokeWidth / 2 would be 20.
+    const fat = (y: number) =>
+      scribble(
+        'fat',
+        [
+          [20, y],
+          [120, y],
+        ],
+        [1, 1],
+        { style: sty(40) },
+      )
+    for (const withIndex of [false, true])
+      it(`draws a stroke whose ink reaches into view though its half-width does not (index ${withIndex})`, () => {
+        const scene = createScene([fat(-25)])
+        const index = new SpatialIndex()
+        index.load([...scene.els.values()])
+        const { ctx } = canvas(160, 40)
+        const stats = render(
+          ctx,
+          scene,
+          cam,
+          { width: 160, height: 40, dpr: 1 },
+          platform,
+          withIndex ? { index } : {},
+        )
+        expect(stats).toEqual({ drawn: 1, culled: 0 })
+        expect(px(ctx, 70, 2)[0] as number).toBeLessThan(128) // the lowest rows of the ink are on screen
+      })
+
+    it('still culls a stroke whose ink cannot reach the view', () => {
+      const { ctx } = canvas(160, 40)
+      const stats = render(
+        ctx,
+        createScene([fat(-35)]),
+        cam,
+        { width: 160, height: 40, dpr: 1 },
+        platform,
+      )
+      expect(stats).toEqual({ drawn: 0, culled: 1 })
+    })
+
+    it('a rotated stroke is culled by its rotated bounds', () => {
+      // turned a quarter about its centre (70, -25) it becomes the vertical line x = 70, y -75..25
+      const el = { ...fat(-25), rotation: Math.PI / 2 }
+      const { ctx } = canvas(160, 40)
+      const stats = render(
+        ctx,
+        createScene([el]),
+        cam,
+        { width: 160, height: 40, dpr: 1 },
+        platform,
+      )
+      expect(stats).toEqual({ drawn: 1, culled: 0 })
+      expect(px(ctx, 70, 10)[0] as number).toBeLessThan(128)
+      expect(px(ctx, 120, 10)[0] as number).toBeGreaterThan(200)
+    })
   })
 })

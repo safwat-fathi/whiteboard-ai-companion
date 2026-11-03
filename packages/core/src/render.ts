@@ -1,5 +1,6 @@
 import { bounds, type Point, type Rect, routeArrow } from './geometry'
 import type { SpatialIndex } from './index'
+import { inkReach, strokeOutline } from './ink'
 import {
   type CanvasLike,
   FONT_STACK,
@@ -600,6 +601,16 @@ function arrowHead(p: Path2D, tip: Point, from: Point, size: number) {
 
 function build(el: Element, scene: Scene, platform: Platform): Path2D {
   const { x, y, w, h } = el
+  if (el.type === 'freehand') {
+    // the outline in world units, so a zoom change reuses it
+    const { points, pressure, smoothing, highlighter } = el.data
+    return strokeOutline(
+      points.map(([px, py]) => [x + px, y + py]),
+      pressure,
+      { size: el.style.strokeWidth, smoothing, highlighter },
+      platform,
+    )
+  }
   const p = platform.createPath2D()
   if (el.type !== 'shape') return p
   const { kind, radius } = el.data
@@ -686,6 +697,15 @@ function linearRect(el: Element, scene: Scene): Rect {
 // Max stroke is 100, so strokeWidth / 2 <= 50 for the index query.
 const MAX_STROKE_PAD = 50
 
+/** Turns the context about the element's box centre (text, math, image, strokes and closed shapes rotate this way). */
+function rotateAbout(ctx: CanvasRenderingContext2D, el: Element) {
+  const cx = el.x + el.w / 2
+  const cy = el.y + el.h / 2
+  ctx.translate(cx, cy)
+  ctx.rotate(el.rotation)
+  ctx.translate(-cx, -cy)
+}
+
 const intersects = (a: Rect, b: Rect) =>
   a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY
 
@@ -727,8 +747,14 @@ export function render(
     const box = el.rotation
       ? bounds(el)
       : { minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h }
-    if (intersects(inflate(box, el.style.strokeWidth / 2), view))
-      closed.push(el)
+    // bounds() of a stroke already carries its ink reach (it is padded for the index too)
+    const pad =
+      el.type === 'freehand'
+        ? el.rotation
+          ? 0
+          : inkReach(el)
+        : el.style.strokeWidth / 2
+    if (intersects(inflate(box, pad), view)) closed.push(el)
   }
   // Every line is tested (a bound arrow's routed path can be anywhere). Z order is restored by the sort below, so no
   // pre-sort of the whole scene here.
@@ -748,17 +774,28 @@ export function render(
       if (state) {
         ctx.save()
         ctx.globalAlpha = el.style.opacity
-        if (el.rotation) {
-          const cx = el.x + el.w / 2
-          const cy = el.y + el.h / 2
-          ctx.translate(cx, cy)
-          ctx.rotate(el.rotation)
-          ctx.translate(-cx, -cy)
-        }
+        if (el.rotation) rotateAbout(ctx, el)
       }
       if (el.type === 'text') drawText(ctx, el, platform, s, opts.cache)
       else if (el.type === 'math') drawMath(ctx, el, platform, s, opts.cache)
       else drawImage(ctx, el, platform, s, opts.cache)
+      if (state) ctx.restore()
+      drawn++
+      continue
+    }
+    if (el.type === 'freehand') {
+      // Ink is a filled outline in the stroke colour (never stroked, style.fill is ignored). A highlighter multiplies, so
+      // it always takes the save/restore: the composite operation must not reach the elements above it.
+      const { opacity } = el.style
+      const state = el.rotation !== 0 || opacity !== 1 || el.data.highlighter
+      if (state) {
+        ctx.save()
+        ctx.globalAlpha = opacity
+        if (el.rotation) rotateAbout(ctx, el)
+        if (el.data.highlighter) ctx.globalCompositeOperation = 'multiply'
+      }
+      ctx.fillStyle = el.style.stroke
+      ctx.fill(pathOf(el, scene, platform))
       if (state) ctx.restore()
       drawn++
       continue
@@ -771,13 +808,7 @@ export function render(
     if (state) {
       ctx.save()
       ctx.globalAlpha = opacity
-      if (rotated) {
-        const cx = el.x + el.w / 2
-        const cy = el.y + el.h / 2
-        ctx.translate(cx, cy)
-        ctx.rotate(el.rotation)
-        ctx.translate(-cx, -cy)
-      }
+      if (rotated) rotateAbout(ctx, el)
     }
     if (fill && !line) {
       ctx.fillStyle = fill

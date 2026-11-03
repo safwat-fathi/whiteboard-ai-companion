@@ -4,6 +4,7 @@ import { nodePlatform, registerBundledFonts } from '../node'
 import type { MathEntry, Platform } from '../platform'
 import { applyBatch, createScene } from '../scene'
 import { DEFAULT_STYLE, type Element } from '../schema'
+import { stroke } from '../test-utils'
 import { boardTools } from './board'
 import {
   ELEMENT_BUDGET,
@@ -478,6 +479,65 @@ describe('arrows the tutor may not edit are left alone (side-effect patches obey
       ctx,
     )
     expect(patched(out)).toEqual(['b', arrow.ids[0]])
+  })
+})
+
+describe('strokes', () => {
+  it('get_elements finds strokes by type and region, and a text search does not trip on them', async () => {
+    const ctx = ctxOf([
+      stroke('pen', { x: 1000, y: 0 }),
+      human('box'),
+      human('t', {
+        type: 'text',
+        data: { text: 'pen', size: 20, align: 'left', dir: 'auto' },
+      } as Partial<Element>),
+    ])
+    const get = async (input: unknown) =>
+      (
+        (await tool('get_elements').execute(
+          tool('get_elements').input.parse(input),
+          ctx,
+        )) as { data: { elements: { id: string; detail: string }[] } }
+      ).data.elements
+    expect(await get({ type: 'freehand' })).toMatchObject([
+      { id: 'pen', detail: 'stroke, 3 pts' },
+    ])
+    expect((await get({ text: 'pen' })).map((e) => e.id)).toEqual(['t'])
+    expect(
+      (await get({ region: { x: 990, y: -10, w: 30, h: 30 } })).map(
+        (e) => e.id,
+      ),
+    ).toEqual(['pen'])
+  })
+  it('update_elements moves and recolours a stroke it may edit, but not resize, turn or rewrite it', async () => {
+    const ctx = ctxOf([stroke('pen')], { grantedIds: new Set(['pen']) })
+    await written(
+      'update_elements',
+      {
+        updates: [
+          {
+            id: 'pen',
+            set: { x: 40, y: 50, 'style.stroke': '#ff0000' },
+          },
+        ],
+      },
+      ctx,
+    )
+    expect(el(ctx, 'pen')).toMatchObject({
+      x: 40,
+      y: 50,
+      style: { stroke: '#ff0000' },
+    })
+    const t = tool('update_elements')
+    for (const set of [
+      { w: 300 },
+      { h: 10 },
+      { rotation: 1 },
+      { 'data.points': [[0, 0]] },
+    ])
+      await expect(
+        t.execute(t.input.parse({ updates: [{ id: 'pen', set }] }), ctx),
+      ).rejects.toThrow(/stroke/)
   })
 })
 

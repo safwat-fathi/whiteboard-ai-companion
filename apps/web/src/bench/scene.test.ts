@@ -1,8 +1,12 @@
-import { ElementSchema, type Platform } from '@whiteboard/core'
+import { bounds, ElementSchema, type Platform } from '@whiteboard/core'
 import { describe, expect, it } from 'vitest'
 import {
   describeScene,
+  INK_POINTS,
+  INK_SHAPES,
+  INK_STROKES,
   makeImageScene,
+  makeInkScene,
   makeMathScene,
   makeMixedScene,
   makeScene,
@@ -101,6 +105,60 @@ describe('bench scene', () => {
       expect(els.filter((e) => e.type === 'math')).toHaveLength(250)
       expect(els.filter((e) => e.type === 'image')).toHaveLength(250)
       expect(els.map((e) => e.z)).toEqual([...els.map((e) => e.z)].sort())
+    })
+  })
+  describe('M6 ink scene', () => {
+    const w = world(5000)
+    const els = makeInkScene(w)
+
+    it('is 1,000 shapes and 500 strokes of 100 points, every element valid, ids unique, z ascending', () => {
+      for (const el of els)
+        expect(ElementSchema.safeParse(el).success).toBe(true)
+      expect(new Set(els.map((e) => e.id)).size).toBe(els.length)
+      expect(els.map((e) => e.z)).toEqual([...els.map((e) => e.z)].sort())
+      const d = describeScene(els, w)
+      expect(d).toMatchObject({
+        total: INK_SHAPES + INK_STROKES,
+        shapes: INK_SHAPES,
+        lines: 0,
+        text: 0,
+        strokes: INK_STROKES,
+        highlighters: INK_STROKES / 10,
+        rotatedShapes: INK_SHAPES / 4,
+      })
+      for (const e of els)
+        if (e.type === 'freehand')
+          expect(e.data.points).toHaveLength(INK_POINTS)
+    })
+
+    it('mixes ink above and below the shapes, 200 of the 450 pens carry pressure, highlighters none', () => {
+      const types = els.map((e) => e.type)
+      expect(types.indexOf('freehand')).toBeLessThan(types.lastIndexOf('shape'))
+      expect(types.lastIndexOf('freehand')).toBeGreaterThan(
+        types.indexOf('shape'),
+      )
+      const pens = els.flatMap((e) =>
+        e.type === 'freehand' && !e.data.highlighter ? [e] : [],
+      )
+      expect(
+        pens.filter((e) => e.type === 'freehand' && e.data.pressure),
+      ).toHaveLength(200)
+      for (const e of els)
+        if (e.type === 'freehand' && e.data.highlighter)
+          expect(e.data.pressure).toBeUndefined()
+    })
+
+    it('keeps every bounding box (ink reach included) inside the world and is deterministic', () => {
+      for (const e of els) {
+        const b = bounds(e)
+        expect(b.minX).toBeGreaterThanOrEqual(w.x - 1e-6)
+        expect(b.minY).toBeGreaterThanOrEqual(w.y - 1e-6)
+        expect(b.maxX).toBeLessThanOrEqual(w.x + w.w + 1e-6)
+        expect(b.maxY).toBeLessThanOrEqual(w.y + w.h + 1e-6)
+      }
+      const a = JSON.stringify(els)
+      expect(JSON.stringify(makeInkScene(w))).toBe(a)
+      expect(JSON.stringify(makeInkScene(w, 2))).not.toBe(a)
     })
   })
 })

@@ -7,13 +7,19 @@ import { type RunningServer, startServer } from './helpers/server'
 // M5 "Board context" script (docs/plans/testing-spikes.md): select three elements -> the chip says what goes along ->
 // "What the AI sees" lists those ids and a picture -> send -> the model's request holds the digest with those ids and one
 // image -> "make these red" changes only those -> editing an unselected element is refused -> viewport and whole-board
-// payloads stay inside the digest budget. The step with a hand-drawn stroke waits for the pen (M6).
+// payloads stay inside the digest budget. Then the M6 handwriting step: three strokes drawn with the mouse and a shape are
+// selected, the chip says the picture is automatic, and exactly one image goes along even with "structure" chosen.
 const API = 'http://localhost:4201'
 const WEB = 'http://localhost:3201'
 
 test.describe.configure({ mode: 'serial' })
 
-type El = { id: string; style: { stroke: string }; author: { kind: string } }
+type El = {
+  id: string
+  type: string
+  style: { stroke: string }
+  author: { kind: string }
+}
 type W = {
   __editor?: {
     readOnly: boolean
@@ -201,6 +207,87 @@ test('the board goes along with the question: chips, a preview, a picture, edit 
   const wide = await userContent(page)
   expect(wide.filter((p) => p.type === 'file')).toHaveLength(2)
   expect((wide[0]?.text ?? '').length).toBeLessThan(9500) // about 3,000 tokens
+
+  // 7. handwriting (M6): the viewport and board chips go back off; three strokes drawn with real mouse input, then
+  // selected with a shape. Handwriting is only readable as a picture, so structure-only still sends exactly one.
+  await chips.getByRole('button', { name: 'Viewport' }).click()
+  await chips.getByLabel('Whole board').selectOption('off')
+  await page.getByRole('button', { name: 'Pen', exact: true }).click()
+  const inkPaths: [number, number][][] = [
+    [
+      [150, 300],
+      [250, 380],
+      [350, 300],
+    ],
+    [
+      [150, 420],
+      [350, 420],
+    ],
+    [
+      [420, 300],
+      [480, 420],
+    ],
+  ]
+  for (const pts of inkPaths) {
+    const [first, ...rest] = pts as [[number, number], ...[number, number][]]
+    await page.mouse.move(...first)
+    await page.mouse.down()
+    for (const p of rest) await page.mouse.move(...p, { steps: 4 })
+    await page.mouse.up()
+  }
+  const strokeIds = await page.evaluate(
+    () =>
+      (window as unknown as W).__editor
+        ?.getSnapshot()
+        .elements.filter((e) => e.type === 'freehand')
+        .map((e) => e.id) ?? [],
+  )
+  expect(strokeIds).toHaveLength(3)
+  await page.evaluate((ids) => {
+    const ed = (window as unknown as W).__editor
+    ed?.selection.clear()
+    for (const id of [...ids, 'sel-a']) ed?.selection.add(id)
+  }, strokeIds)
+  await expect(chips).toContainText('Selection (4)')
+  await chips.getByLabel('How the selection is sent').selectOption('structure')
+  await expect(chips).toContainText('(auto)')
+  await expect(chips.getByLabel('How the selection is sent')).toHaveValue(
+    'both',
+  )
+  await dock.getByRole('button', { name: 'What the AI sees' }).click()
+  const inkPeek = page.getByRole('dialog', { name: 'What the AI sees' })
+  for (const id of [...strokeIds, 'sel-a'])
+    await expect(inkPeek).toContainText(id)
+  await expect(inkPeek.getByRole('img')).toHaveCount(1)
+  await inkPeek.getByRole('button', { name: 'Close' }).click()
+  await composer.fill('read my handwriting')
+  await composer.press('Enter')
+  await expect(
+    dock.getByRole('article', { name: 'Tutor' }).nth(3),
+  ).toContainText('It says hello.', { timeout: 30_000 })
+  const inkContent = await userContent(page)
+  for (const id of [...strokeIds, 'sel-a'])
+    expect(inkContent[0]?.text).toContain(`"id":"${id}"`)
+  expect(inkContent[0]?.text).toContain('stroke, 3 pts') // the digest names a stroke without its coordinates
+  expect(inkContent.filter((p) => p.type === 'file')).toHaveLength(1)
+
+  // a text-only selection with the same "structure" choice sends no picture
+  await page.evaluate(() => {
+    const ed = (window as unknown as W).__editor
+    ed?.selection.clear()
+    ed?.selection.add('sel-a')
+  })
+  await expect(chips).toContainText('Selection (1)')
+  await chips.getByLabel('How the selection is sent').selectOption('structure')
+  await expect(chips).not.toContainText('(auto)')
+  await composer.fill('what do you see')
+  await composer.press('Enter')
+  await expect(
+    dock.getByRole('article', { name: 'Tutor' }).nth(4),
+  ).toContainText('I see your board.', { timeout: 30_000 })
+  expect(
+    (await userContent(page)).filter((p) => p.type === 'file'),
+  ).toHaveLength(0)
 
   expect(problems).toEqual([])
 })

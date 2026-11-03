@@ -114,6 +114,28 @@ export const ImageDataSchema = z
   )
 export type ImageData = z.infer<typeof ImageDataSchema>
 
+const unit = num.min(0, 'must be 0..1').max(1, 'must be 0..1')
+
+/** A pen or highlighter stroke. `points` are relative to the element's x,y (like a line's); the width is `style.strokeWidth`. Rounding is the caller's job: this only checks finiteness, counts and ranges. */
+export const FreehandDataSchema = z
+  .object({
+    points: z
+      .array(z.tuple([num, num]))
+      .min(1, 'must have at least one point')
+      .max(10_000, 'must have at most 10000 points'),
+    pressure: z
+      .array(unit)
+      .max(10_000, 'must have at most 10000 values')
+      .optional(),
+    smoothing: unit,
+    highlighter: z.boolean(),
+  })
+  .refine((d) => !d.pressure || d.pressure.length === d.points.length, {
+    message: 'must have one value per point',
+    path: ['pressure'],
+  })
+export type FreehandData = z.infer<typeof FreehandDataSchema>
+
 export const BaseShape = {
   id,
   x: num,
@@ -149,11 +171,17 @@ export const ImageElementSchema = z.object({
   type: z.literal('image'),
   data: ImageDataSchema,
 })
+export const FreehandElementSchema = z.object({
+  ...BaseShape,
+  type: z.literal('freehand'),
+  data: FreehandDataSchema,
+})
 export const ElementSchema = z.discriminatedUnion('type', [
   ShapeElementSchema,
   TextElementSchema,
   MathElementSchema,
   ImageElementSchema,
+  FreehandElementSchema,
 ])
 export type Element = z.infer<typeof ElementSchema>
 

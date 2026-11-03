@@ -9,6 +9,8 @@ export type PictureKind = 'selection' | 'viewport' | 'board'
 /** What the chat needs from the board, so it can be tested without an Editor. */
 export type BoardBridge = {
   selection(): string[]
+  /** The selection holds handwriting (a freehand element), which the model can only read as a picture. */
+  selectionHasInk(): boolean
   /** Calls `fn` when the selection changes. */
   subscribe(fn: () => void): () => void
   viewport(): Rect & { zoom: number }
@@ -37,7 +39,7 @@ export async function prepareContext(
 ): Promise<Prepared> {
   await bridge.settle()
   const selected = bridge.selection()
-  const attach = attachOf(chips, selected.length)
+  const attach = attachOf(chips, selected.length, bridge.selectionHasInk())
   const pictures: ContextDescriptor['pictures'] = []
   const thumbs: Prepared['thumbs'] = []
   for (const kind of ['selection', 'viewport', 'board'] as const) {
@@ -103,6 +105,10 @@ export function createEditorBridge(
   }
   return {
     selection: () => [...editor.selection],
+    selectionHasInk: () =>
+      [...editor.selection].some(
+        (id) => editor.scene.els.get(id)?.type === 'freehand',
+      ),
     subscribe: (fn) => editor.onSelectionChange(fn),
     viewport: view,
     settle,

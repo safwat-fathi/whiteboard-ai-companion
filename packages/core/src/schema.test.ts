@@ -44,6 +44,21 @@ const image = {
   },
 }
 
+const freehand = {
+  ...base,
+  type: 'freehand',
+  data: {
+    points: [
+      [0, 0],
+      [5, 5],
+      [10, 2],
+    ],
+    pressure: [0.2, 0.5, 0.9],
+    smoothing: 0.5,
+    highlighter: false,
+  },
+}
+
 describe('ElementSchema', () => {
   it('parses a rect, Arabic text, math, and image (preserving M1 board snapshots)', () => {
     expect(ElementSchema.parse(rect).type).toBe('shape')
@@ -120,6 +135,53 @@ describe('ElementSchema', () => {
         data: { ...image.data, crop: { x: 0, y: 0, w: 0, h: 100 } },
       }).success,
     ).toBe(false)
+  })
+  it('parses a freehand stroke, a one-point tap and the 10,000-point cap', () => {
+    expect(ElementSchema.parse(freehand).type).toBe('freehand')
+    const tap = {
+      ...freehand,
+      data: { ...freehand.data, points: [[3, 3]], pressure: undefined },
+    }
+    expect(ElementSchema.parse(tap)).toMatchObject({
+      data: { points: [[3, 3]] },
+    })
+    const many = Array.from({ length: 10_000 }, (_, i) => [i, i % 7])
+    expect(
+      ElementSchema.safeParse({
+        ...freehand,
+        data: { ...freehand.data, points: many, pressure: many.map(() => 0.5) },
+      }).success,
+    ).toBe(true)
+  })
+  it('rejects a freehand with NaN, mismatched pressure, too many points or bad ranges', () => {
+    const bad = (data: object) =>
+      ElementSchema.safeParse({
+        ...freehand,
+        data: { ...freehand.data, ...data },
+      })
+    expect(
+      bad({
+        points: [
+          [0, 0],
+          [Number.NaN, 1],
+          [2, 2],
+        ],
+      }).success,
+    ).toBe(false)
+    expect(bad({ points: [] }).success).toBe(false)
+    expect(bad({ pressure: [0.5, 0.5] }).success).toBe(false)
+    expect(bad({ pressure: [0.2, 0.5, 1.5] }).success).toBe(false)
+    expect(bad({ pressure: [0.2, 0.5, Number.NaN] }).success).toBe(false)
+    expect(bad({ smoothing: 1.1 }).success).toBe(false)
+    expect(bad({ highlighter: 'yes' }).success).toBe(false)
+    const over = Array.from({ length: 10_001 }, () => [0, 0])
+    const r = bad({ points: over, pressure: undefined })
+    expect(r.success).toBe(false)
+    expect(r.error?.issues[0]?.message).toBe('must have at most 10000 points')
+    expect(bad({ pressure: [0.5] }).error?.issues[0]).toMatchObject({
+      path: ['data', 'pressure'],
+      message: 'must have one value per point',
+    })
   })
   it('strips unknown fields on math and image too', () => {
     expect(ElementSchema.parse({ ...rect, junk: 1 })).not.toHaveProperty('junk')
