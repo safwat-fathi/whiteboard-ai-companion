@@ -40,6 +40,7 @@ The student talks to the AI **inside the app**. There is no external client, no 
 ## Composer
 
 - Multi-line textarea (`dir="auto"`); **Enter** sends, **Shift+Enter** newline. **Send** becomes **Stop** while a turn runs.
+- **New chat** (left of Send; disabled while a turn runs or the chat is empty): `POST /api/boards/:id/chat/reset`. The earlier messages are hidden and the AI's rolling summary is dropped, so the AI forgets the conversation; the board, its elements and the Activity tab are untouched.
 - **Context chips (R3)** above the input, each removable and each showing what it will send:
 
   | Chip              | Default                       | Options                                       |

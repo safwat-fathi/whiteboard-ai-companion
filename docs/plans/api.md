@@ -30,7 +30,8 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
 | `GET /api/health` | DB open, migrations current, `META_API_KEY` and `OPENROUTER_API_KEY` present |
 | `GET /api/boards` · `POST /api/boards {title, scope}` | List / create |
 | `GET /api/boards/:id` · `PATCH` · `DELETE` | Metadata, title, scope |
-| `GET /api/boards/:id/messages` | Chat history (paged) |
+| `GET /api/boards/:id/messages` | Chat history (paged); starts after the last _New chat_ |
+| `POST /api/boards/:id/chat/reset` | _New chat_: hides the board's messages so far (they stay in the database) and drops its rolling summary; the board is untouched. `{}` body, returns `{ok: true}`; `turn_busy` (409) while a turn runs; `not_found` for an unknown board; the usual `Origin` check applies |
 | `POST /api/boards/:id/context-preview` | Exact digest text, thumbnails and token estimate for a context descriptor ([board-context](./board-context.md)) |
 | `GET /api/boards/:id/export.png?x=&y=&w=&h=&width=` | Server render of a region (used by tests and the snapshot fallback) |
 | `POST /api/blobs` (raw body, ≤ 10 MB) · `GET /api/blobs/:id` | Image/picture upload and fetch (raw stream with `Content-Type: image/png\|jpeg\|webp\|gif`, header-verified size/dimensions; returns `{id, byteLength, mediaType, width, height}`; `nosniff`) |
