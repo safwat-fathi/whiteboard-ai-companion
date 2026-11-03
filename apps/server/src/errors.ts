@@ -4,6 +4,7 @@ const STATUS = {
   forbidden_origin: 403,
   not_found: 404,
   turn_busy: 409,
+  conflict: 409,
   payload_too_large: 413,
   ingest_failed: 422,
   budget_exceeded: 429,

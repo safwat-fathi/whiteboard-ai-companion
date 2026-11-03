@@ -5,25 +5,59 @@ import { loadConfig } from './config'
 import {
   createBlobsDb,
   createBoardsDb,
+  createBooksDb,
   openDatabase,
   schemaVersion,
 } from './db'
 import { attachGateway } from './gateway'
 import { createHttpServer } from './http'
+import { createProviders, stubProviders } from './library/providers'
+import { createQueue } from './library/queue'
+import { createVectorCache } from './library/search'
+import { runInWorker } from './library/worker'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const config = loadConfig(process.env, repoRoot)
 const db = openDatabase({ dataDir: config.dataDir })
 const boards = new BoardService(createBoardsDb(db))
-const blobs = createDiskBlobStore({
-  dataDir: config.dataDir,
-  db: createBlobsDb(db),
-})
+const blobsDb = createBlobsDb(db)
+const blobs = createDiskBlobStore({ dataDir: config.dataDir, db: blobsDb })
+
+// The library: a book's ingest job runs on a worker thread, one at a time; INGEST_STUB=1 swaps in offline providers (tests, e2e).
+const booksDb = createBooksDb(db)
+const interrupted = booksDb.failInterrupted('interrupted by a restart')
+if (interrupted > 0)
+  console.log(
+    `${interrupted} book(s) were mid-job when the server stopped: marked failed (Retry resumes them)`,
+  )
+const stub = process.env.INGEST_STUB === '1'
+const cache = createVectorCache(booksDb)
+const queue = createQueue(
+  (bookId) => runInWorker({ bookId, dataDir: config.dataDir, config, stub }),
+  {
+    onDone: (bookId) => cache.invalidate(bookId),
+    onError: (bookId, e) =>
+      console.error(
+        `ingest of book ${bookId} failed: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+  },
+)
 const server = createHttpServer({
   config,
   boards,
   blobs,
   schemaVersion: () => schemaVersion(db),
+  library: {
+    books: booksDb,
+    blobs: blobsDb,
+    dataDir: config.dataDir,
+    config,
+    providers: stub
+      ? stubProviders({ dims: config.embedDims })
+      : createProviders({ config, env: process.env }),
+    cache,
+    enqueue: queue.enqueue,
+  },
 })
 
 const gateway = attachGateway(server, { boards, config })

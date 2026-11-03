@@ -259,4 +259,61 @@ describe('books', () => {
     expect(books.chunksByOrd('x', [])).toEqual([])
     expect(books.chunksByOrd('y', [2]).map((c) => c.text)).toEqual(['y2'])
   })
+
+  it('counts pages by method and chunks without loading them', () => {
+    const { books, blob } = open()
+    blob(H('a'))
+    books.createBook({ id: 'b', title: 'B', fileBlob: H('a') }, 1)
+    const page = (n: number, method: 'R1' | 'R3' | 'R4') =>
+      books.upsertPage({
+        bookId: 'b',
+        pageIndex: n,
+        label: null,
+        text: 't',
+        method,
+      })
+    page(1, 'R1')
+    page(2, 'R1')
+    page(3, 'R4')
+    expect(books.methodCounts('b')).toEqual({ R1: 2, R3: 0, R4: 1 })
+    expect(books.methodCounts('nope')).toEqual({ R1: 0, R3: 0, R4: 0 })
+    expect(books.chunkCount('b')).toBe(0)
+    books.insertChunks('b', [chunk(0), chunk(1)])
+    expect(books.chunkCount('b')).toBe(2)
+  })
+
+  it('moves every book that was mid-job to failed, leaving the others alone', () => {
+    const { books, blob } = open()
+    blob(H('a'))
+    const states = [
+      'uploaded',
+      'queued',
+      'extracting',
+      'structuring',
+      'embedding',
+      'summarising',
+      'ready',
+      'failed',
+    ] as const
+    for (const st of states) {
+      books.createBook({ id: st, title: st, fileBlob: H('a') }, 1)
+      books.setStatus(st, st, { progress: 0.5 })
+    }
+    books.setStatus('failed', 'failed', { error: 'earlier failure' })
+    expect(books.failInterrupted('interrupted by a restart')).toBe(5)
+    const now = Object.fromEntries(
+      books.listBooks().map((b) => [b.id, [b.status, b.error]]),
+    )
+    expect(now).toEqual({
+      uploaded: ['uploaded', null],
+      queued: ['failed', 'interrupted by a restart'],
+      extracting: ['failed', 'interrupted by a restart'],
+      structuring: ['failed', 'interrupted by a restart'],
+      embedding: ['failed', 'interrupted by a restart'],
+      summarising: ['failed', 'interrupted by a restart'],
+      ready: ['ready', null],
+      failed: ['failed', 'earlier failure'],
+    })
+    expect(books.getBook('extracting')?.progress).toBe(0.5) // the bar keeps where it got to
+  })
 })

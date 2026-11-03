@@ -16,6 +16,7 @@ import type { Config } from './config'
 import { ScopeSchema } from './db'
 import { apiError } from './errors'
 import { defaultRect, renderBoardPng } from './export'
+import { createLibraryRoutes, type LibraryDeps } from './http-books'
 
 import {
   MAX_JSON_BYTES,
@@ -73,6 +74,8 @@ export type HttpDeps = {
   boards: BoardService
   blobs: BlobStore
   schemaVersion: () => number
+  /** The book library routes (/api/books, /api/search); without it they are unknown paths. */
+  library?: LibraryDeps
 }
 
 /** Image bytes with every header that stops a browser from treating them as anything but an image. */
@@ -117,6 +120,7 @@ const PatchBoard = z
 /** The HTTP layer: Origin gate, CORS, JSON errors in the api.md envelope, health and the board REST routes. */
 export function createHttpServer(deps: HttpDeps): http.Server {
   const { config, boards } = deps
+  const library = deps.library && createLibraryRoutes(deps.library)
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
     if (!checkHost(req.headers.host, config))
@@ -261,6 +265,12 @@ export function createHttpServer(deps: HttpDeps): http.Server {
         return sendBlob(res, blob.bytes, blob.mime, method === 'HEAD')
       }
     }
+    if (
+      library &&
+      (seg[1] === 'books' || seg[1] === 'search') &&
+      (await library(req, res, seg, method))
+    )
+      return
     throw notFound()
   }
 

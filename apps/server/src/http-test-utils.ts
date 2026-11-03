@@ -11,10 +11,15 @@ import { loadConfig } from './config'
 import {
   createBlobsDb,
   createBoardsDb,
+  createBooksDb,
   openDatabase,
   schemaVersion,
 } from './db'
 import { createHttpServer } from './http'
+import { runIngest } from './library/ingest'
+import { type Providers, stubProviders } from './library/providers'
+import { createQueue } from './library/queue'
+import { createVectorCache } from './library/search'
 
 // Shared by the HTTP test files: a real server on a random port over a temp database, and a raw client.
 export const ORIGIN = 'http://localhost:3000'
@@ -26,7 +31,13 @@ export type Res = {
   // biome-ignore lint/suspicious/noExplicitAny: a test helper that reads arbitrary JSON
   json: any
 }
-export async function boot() {
+export async function boot(
+  o: {
+    providers?: Partial<Providers>
+    dailyBudget?: string
+    maxPdfBytes?: number
+  } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), 'wb-http-'))
   const dataDir = join(root, 'data')
   const db: Database.Database = openDatabase({ dataDir })
@@ -36,13 +47,44 @@ export async function boot() {
     PUBLIC_ORIGIN: ORIGIN,
     DATA_DIR: dataDir,
     META_API_KEY: 'sk-secret-meta-value',
+    EMBED_DIMS: '16',
+    DAILY_BUDGET_USD: o.dailyBudget ?? '5',
   })
-  const blobs = createDiskBlobStore({ dataDir, db: createBlobsDb(db) })
+  const blobsDb = createBlobsDb(db)
+  const blobs = createDiskBlobStore({ dataDir, db: blobsDb })
+  // The library with offline providers; its jobs run in this process (`queue.whenIdle()` waits for them).
+  const booksDb = createBooksDb(db)
+  const providers: Providers = {
+    ...stubProviders({ dims: 16 }),
+    ...o.providers,
+  }
+  const cache = createVectorCache(booksDb)
+  const queue = createQueue(
+    (id) =>
+      runIngest(id, {
+        books: booksDb,
+        providers,
+        dataDir,
+        config,
+        r4Concurrency: 1,
+      }),
+    { onDone: (id) => cache.invalidate(id), onError: () => {} },
+  )
   const server = createHttpServer({
     config,
     boards,
     blobs,
     schemaVersion: () => schemaVersion(db),
+    library: {
+      books: booksDb,
+      blobs: blobsDb,
+      dataDir,
+      config,
+      providers,
+      cache,
+      enqueue: queue.enqueue,
+      maxPdfBytes: o.maxPdfBytes,
+    },
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   onTestFinished(async () => {
@@ -103,5 +145,16 @@ export async function boot() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-  return { call, json, boards, config, port, blobs, db }
+  return {
+    call,
+    json,
+    boards,
+    config,
+    port,
+    blobs,
+    db,
+    booksDb,
+    queue,
+    dataDir,
+  }
 }

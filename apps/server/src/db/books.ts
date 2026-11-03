@@ -268,6 +268,17 @@ export function createBooksDb(db: Database.Database) {
     )
   const ftsAll = fts(false)
 
+  const selMethods = db.prepare(
+    'SELECT method, count(*) AS n FROM book_pages WHERE book_id = ? GROUP BY method',
+  )
+  const selChunkCount = db.prepare(
+    'SELECT count(*) AS n FROM book_chunks WHERE book_id = ?',
+  )
+  const failMidJob = db.prepare(
+    `UPDATE books SET status = 'failed', error = ?
+     WHERE status IN ('queued', 'extracting', 'structuring', 'embedding', 'summarising')`,
+  )
+
   const insSpend = db.prepare(
     'INSERT INTO spend (at, kind, ref, cost_usd) VALUES (?, ?, ?, ?)',
   )
@@ -318,6 +329,20 @@ export function createBooksDb(db: Database.Database) {
         return { existed: true, orphanBlob: users === 0 ? b.file_blob : null }
       })
     },
+    /** Whether any book still uses this file blob. */
+    blobInUse: (blobId: string): boolean =>
+      (blobUsers.get(blobId) as { n: number }).n > 0,
+    /** Books that were queued or running when the server went away can never finish: mark them failed so they can be retried or deleted. */
+    failInterrupted: (message: string): number =>
+      failMidJob.run(message).changes,
+    methodCounts(bookId: string): Record<Rung, number> {
+      const out: Record<Rung, number> = { R1: 0, R3: 0, R4: 0 }
+      for (const r of selMethods.all(bookId) as { method: Rung; n: number }[])
+        out[r.method] = r.n
+      return out
+    },
+    chunkCount: (bookId: string): number =>
+      (selChunkCount.get(bookId) as { n: number }).n,
     /** Drops sections and chunks (and their FTS rows) but keeps the extracted pages, the expensive part. */
     clearStructure(bookId: string): void {
       tx(() => {

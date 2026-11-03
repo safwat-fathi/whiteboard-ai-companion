@@ -16,7 +16,10 @@ export function createBlobsDb(db: Database.Database) {
   const select = db.prepare(
     'SELECT id, mime, bytes, created_at FROM blobs WHERE id = ?',
   )
+  const del = db.prepare('DELETE FROM blobs WHERE id = ?')
   return {
+    /** True when there was a row to remove (the caller removes the file). */
+    remove: (id: string): boolean => del.run(id).changes > 0,
     /** Idempotent: a second insert of the same id changes nothing. */
     insert: (b: BlobRow): void =>
       void insert.run(b.id, b.mime, b.bytes, b.createdAt),
