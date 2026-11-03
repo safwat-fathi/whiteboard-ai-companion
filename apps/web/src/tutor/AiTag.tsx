@@ -64,6 +64,7 @@ export function AiTag({
       onPointerLeave={() => setTag(null)}
       // The offset (12) must exceed the invisible hit margin (-inset-2 = 8): otherwise the tag spawns under the
       // pointer and swallows the wheel and the clicks meant for the board (m5-jump: Follow stayed on after a wheel).
+      // The button is `relative` so it paints above that positioned ::before; without it the margin covers the button.
       className="fixed z-20 flex items-center gap-2 rounded-xl border border-blue-500/80 bg-blue-600 px-2.5 py-1 text-xs text-white shadow-md shadow-blue-900/20 backdrop-blur-md transition-opacity duration-150 before:absolute before:-inset-2 before:content-['']"
       style={{
         left: tag.x + 12,
@@ -76,7 +77,7 @@ export function AiTag({
       <button
         type="button"
         onClick={() => onShow(tag.turnId)}
-        className="rounded-lg bg-white/95 px-2 py-0.5 text-xs font-semibold text-blue-700 shadow-xs transition-colors hover:bg-white active:scale-95 cursor-pointer"
+        className="relative rounded-lg bg-white/95 px-2 py-0.5 text-xs font-semibold text-blue-700 shadow-xs transition-colors hover:bg-white active:scale-95 cursor-pointer"
       >
         Show in chat
       </button>
