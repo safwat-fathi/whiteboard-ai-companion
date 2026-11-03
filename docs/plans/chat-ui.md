@@ -45,7 +45,7 @@ The student talks to the AI **inside the app**. There is no external client, no 
 
   | Chip              | Default                       | Options                                       |
   | ----------------- | ----------------------------- | --------------------------------------------- |
-  | **Selection (n)** | On when something is selected | as: structure · picture · both (default both) |
+  | **Selection (n)** | On when something is selected | as: structure · picture · both (default both); with handwriting selected, `structure` is shown as "structure + picture (auto)" |
   | **Viewport**      | Off                           | picture                                       |
   | **Whole board**   | Off                           | as: structure · picture · both                |
 

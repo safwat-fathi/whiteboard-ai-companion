@@ -142,3 +142,8 @@ e2e/m6-ink.spec.ts · e2e-server/{m6-gate,m5-context}.spec.ts
 ## Not built (noted, add when needed)
 
 Group rotation and group `reorder`; spacing snap and resize snap; partial-stroke (splitting) eraser; Arabic or RTL chart labels; binary-packed stroke points; live-ink broadcast; per-cluster picture crops; right-click Ask AI; the worker-canvas path.
+
+## Outcome (2026-11-03)
+
+Stages 1 to 4 and the close were built and merged to `main` stage by stage (gate at `c52484e`): ink, handwriting reaching the tutor, charts with a data grid, and the tutor's `add_chart`, `draw_stroke` and `arrange`. **Stage 5 (T14 to T17: group, group and multi-select resize, snap, the Arrange menu, `arrange`'s `group` and `ungroup`) was cut**, as the plan allows; R9 (partly), R11, R12 and R13 are therefore designs only. Deviations are recorded in PLAN §19 #54 to #58: `checkPatch` accepts a value any element type takes; chart values bounded to ±1e15 with a capped tick loop (a security-review finding); `draw_stroke` fills in between sparse points; `arrange` takes one flat input; the grid is a `role="dialog"` div; `layoutChart` takes `{measure, ink}`. Not run: `pnpm bench` for `chart200`, the live Meta run, the manual demo.
+

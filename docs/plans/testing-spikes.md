@@ -52,13 +52,31 @@ Run 2026-11-03 with the scripted model (`TUTOR_STUB=1`; deterministic and free) 
 
 **Live Meta Model API (api.meta.ai), probed 2026-11-03:** `reasoning_effort: "low"` is accepted (HTTP 200); on a one-word answer the reasoning tokens were 208 with it and 256 without, which is noise, so it is wired as an optional, default-off setting. **Not yet run (yours):** one real run of the gate script from the UI on an ingested book, reading the cost footer (tokens always, dollars only if `TUTOR_PRICE_*` is set); long turns may need a higher `TURN_TIMEOUT_MS` (Muse took 15–25 s per step in S3).
 
+## M6 results
+
+Run 2026-11-03 with the scripted model (`TUTOR_STUB=1`) unless stated. At `c52484e`, in a fresh worktree: frozen install, lint 0 errors (11 `biome-ignore` warnings that predate M6), typecheck clean, production build clean with no key name in the client build; unit core 354/355, math 20, web 548, server 422; `pnpm e2e` 17/17 (editor, local mode) and `pnpm e2e:server` 9/9. The one unit failure is `text.test.ts` "handles a 10,000-char single word quickly" (a 1 s bound: 0.6 s alone, 1.3 to 2.0 s inside the parallel core suite). It predates M6, is load-sensitive, and is what turns CI red before the build step is reached.
+
+| Script | Spec | What it proves |
+|---|---|---|
+| Ink | `e2e/m6-ink.spec.ts` | real mouse input draws a pen stroke (one `add`, nothing committed while the button is down), undo and redo, reload keeps it, a highlight over text, erase, a second tab is read-only, no console errors; the server picture of a stroke and a highlight matches the browser's (`e2e-server/m3-gate.spec.ts`) |
+| Chart | `e2e/m6-chart.spec.ts` | `C` and a click add a chart and open its grid; a non-number is refused where it is typed; an edit is one undo step; the bars are on the canvas; it survives a reload; double-click reopens the grid. Typed keys (tool letters, Delete, Backspace) stay in the grid's cells |
+| Board context, handwriting step | `e2e-server/m5-context.spec.ts` | three strokes drawn with the mouse and a box are selected, the chip says "structure + picture (auto)" with `structure` chosen, *What the AI sees* lists the ids and one thumbnail, the request holds exactly one image and the stroke ids, a text-only selection sends none |
+| **M6 gate** | `e2e-server/m6-gate.spec.ts` | handwrite → marquee-select → **Ask AI** (one picture in the request) → "chart the sales numbers" → the chart and a stroke appear, authored by the turn → **the server's picture of the board (ink, chart, stroke) matches the browser's: 0.261% of pixels differ against the 1.5% bar**, and both series' colours are in it → the tutor aligns two selected boxes in one batch → *Undo this response* takes the alignment, then the chart and its line, back, and the handwriting stays |
+| Goldens | `packages/core/src/render.test.ts` | ink, ink at zoom 2, and four chart scenes (bar, line and area, pie and donut, scatter) at zoom 1 and 2 against committed PNGs from `@napi-rs/canvas`, tight tolerance; the chart goldens were looked at, not only generated |
+
+**Bench** (`apps/web/src/bench/RESULT.md`, M6 section; headed Chrome, MacBook Air M1 on AC): the ink scene (1,000 shapes and 500 strokes of 100 points) holds **60.0 fps pan and zoom at DPR 1 and 2**. First ink is **16.1 ms p95 at DPR 2 (16.0 at DPR 1) against the 16 ms bar**: all of it the 60 Hz vsync wait, the Editor's own frame is 0.3 ms (the same finding and call as M1 and M2). **Not run:** `chart200` (the scene and its test exist; `pnpm bench` needs a quiet machine), so the 90%-of-`text200` bar and the cache pressure of dense charts are open.
+
+**Found while building (PLAN §19 #55, #56, #58):** `niceTicks` could loop forever on large close-together values (found by the automated security review; fixed and pinned); `checkPatch` checked a path against the first element type that has it; the pen's outline smooths sparse points, so `draw_stroke` fills in between them.
+
+**Not verified:** the live Meta Model API run (ask for a chart on a real book, read the cost footer) and the manual demo (handwrite, select, **Ask AI**, chart); Stage 5 (group, snap, Arrange menu) is not built.
+
 ## Risks
 
 | Risk | Mitigation |
 |---|---|
 | Text editing on a canvas (IME, selection, RTL) | The doc's `<textarea>` overlay; test Arabic and Latin from M1 |
 | Arabic shaping on a server canvas | S1; fallback ladder (browser tab → headless Chromium) |
-| Large boards miss the frame budget | S1; worker-canvas path ready (the renderer is pure) |
+| Large boards miss the frame budget | S1 measured main-thread cached bitmaps against a worker canvas (the worker was slower); the worker path is **not built** (the renderer is pure, so it could be); the M6 ink scene (1,500 elements) holds 60 fps |
 | PDF math / Arabic extraction quality | S2 ladder; per-page routing; preview before indexing |
 | AI clutters the board | Element budget, titled clusters, `placement: auto`, `arrange`, *Undo this response* |
 | Retrieval returns the wrong page | Hybrid search; heading-path embedding; eval gate; neighbours; chunk context only if the eval demands |
