@@ -16,7 +16,7 @@ import {
 } from './registry'
 
 const id = z.string().min(1)
-const color = z
+export const color = z
   .string()
   .regex(
     /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20})$/,

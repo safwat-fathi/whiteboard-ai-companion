@@ -268,6 +268,7 @@ describe('the cached prefix', () => {
         'add_text',
         'connect',
         'delete_elements',
+        'draw_stroke',
         'focus_region',
         'get_board',
         'get_elements',

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { createCanvas, loadImage } from '@napi-rs/canvas'
 import {
   type BlobStore,
+  coreTools,
   type Element,
   fitMath,
   layoutText,
@@ -373,5 +374,52 @@ describe('chart in the picture', () => {
       )
         blue++
     expect(blue).toBeGreaterThan(1500) // three bars: far more than antialiasing noise
+  })
+})
+
+describe('stroke in the picture', () => {
+  beforeAll(() => registerBundledFonts())
+  it('draws what draw_stroke made, in ink on white, where the stroke is', async () => {
+    const tool = coreTools.find((t) => t.name === 'draw_stroke')
+    if (!tool) throw new Error('no draw_stroke')
+    const out = await tool.execute(
+      tool.input.parse({
+        points: [
+          [0, 0],
+          [100, 40],
+          [200, 0],
+        ],
+        width: 8,
+        placement: { x: 20, y: 30 },
+      }),
+      {
+        scene: { els: new Map() },
+        platform: nodePlatform(),
+        turnId: 't',
+        author: { kind: 'agent', id: 'tutor:t' },
+        grantedIds: new Set(),
+        selection: [],
+        added: 0,
+      },
+    )
+    if (out.kind !== 'write') throw new Error('not a write')
+    const el = (out.batch.ops[0] as { el: Element }).el
+    const png = await renderBoardPng(
+      [el],
+      { x: 0, y: 0, w: 240, h: 100 },
+      240,
+      { blobs: store() },
+    )
+    const img = await loadImage(png)
+    const c = createCanvas(img.width, img.height)
+    const ctx = c.getContext('2d')
+    ctx.drawImage(img, 0, 0)
+    const dark = (x: number, y: number) =>
+      (ctx.getImageData(x, y, 1, 1).data[0] as number) < 100
+    // a pen tapers at its ends, so probe the quarter points of the two segments and the vertex between them
+    expect(dark(70, 50)).toBe(true)
+    expect(dark(120, 70)).toBe(true)
+    expect(dark(170, 50)).toBe(true)
+    expect(dark(120, 10)).toBe(false) // empty board above it stays white
   })
 })

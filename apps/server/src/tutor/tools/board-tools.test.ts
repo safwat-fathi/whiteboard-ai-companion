@@ -346,4 +346,51 @@ describe('the board tools inside a turn', () => {
       'title: chart labels support Latin letters and digits only',
     )
   })
+
+  it('draws a stroke as one batch by the turn, shown as drawing; a one-point stroke is told what is wrong', async () => {
+    const t = await setup([
+      {
+        match: 'underline',
+        steps: [
+          {
+            toolCalls: [
+              {
+                name: 'draw_stroke',
+                input: {
+                  points: [
+                    [0, 0],
+                    [60, 8],
+                    [120, 0],
+                  ],
+                  placement: { x: 40, y: 50 },
+                },
+              },
+              { name: 'draw_stroke', input: { points: [[1, 1]] } },
+            ],
+          },
+          { text: 'Done.' },
+        ],
+      },
+    ])
+    const r = await t.chat('underline it')
+    const chunks = sseChunks(r.text)
+    expect(
+      chunks.filter((c) => c.type === 'data-batch').map((c) => c.data.label),
+    ).toEqual(['Draw stroke'])
+    expect(
+      chunks.filter((c) => c.type === 'data-status').map((c) => c.data.state),
+    ).toContain('drawing')
+    const els = t.scene()
+    expect(els).toHaveLength(1)
+    expect(els[0]).toMatchObject({
+      type: 'freehand',
+      x: 40,
+      y: 50,
+      w: 120,
+      h: 8,
+    })
+    expect(JSON.stringify((await t.recorded()).at(-1)?.prompt)).toContain(
+      'points: give 2 to 500 points',
+    )
+  })
 })
