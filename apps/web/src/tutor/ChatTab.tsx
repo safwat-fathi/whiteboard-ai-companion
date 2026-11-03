@@ -562,7 +562,16 @@ export function ChatTab(o: {
             }}
             className="w-full resize-none border-none bg-transparent p-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none font-sans leading-relaxed min-h-[52px]"
           />
-          <div className="flex items-center justify-end pt-1">
+          <div className="flex items-center justify-between pt-1">
+            <button
+              type="button"
+              disabled={streaming || chat.messages.length === 0}
+              onClick={() => void chat.newChat()}
+              title="Start a new chat. The board stays; the AI forgets this conversation."
+              className="rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+            >
+              New chat
+            </button>
             {streaming ? (
               <button
                 type="button"

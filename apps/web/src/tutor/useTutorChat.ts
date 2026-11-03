@@ -186,7 +186,26 @@ export function useTutorChat(o: {
     [boardId, transport],
   )
 
+  /** New chat: the server hides the old messages and drops its summary; the board is untouched. */
+  const newChat = useCallback(async () => {
+    if (abort.current) return
+    const res = await doFetch(
+      `${apiBase}/api/boards/${encodeURIComponent(boardId)}/chat/reset`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      },
+    )
+    if (!res.ok)
+      return setError(parseChatError(await res.text().catch(() => '')))
+    setMessages([])
+    setNext(undefined)
+    setError(null)
+  }, [apiBase, boardId, doFetch])
+
   return {
+    newChat,
     messages,
     status,
     error,
