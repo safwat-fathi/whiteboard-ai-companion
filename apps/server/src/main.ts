@@ -84,6 +84,7 @@ const tutor = createTutor({
       })
     : null,
   stub: tutorStub,
+  summarise: (prompt) => tutorProviders.complete(prompt, { maxTokens: 1200 }),
   blobs,
   tools: (ctx) =>
     tutorToolSet(

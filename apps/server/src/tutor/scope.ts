@@ -7,7 +7,7 @@ export const estimateTokens = (s: string): number => Math.ceil(s.length / 3)
 /** Book text and titles are data, never instructions: a page cannot close the tag it sits in or open one of ours. */
 export function defang(text: string): string {
   return text.replace(
-    /<(\/?)(page|chapter|book|outline|book_passage|board_state|student_profile)\b/gi,
+    /<(\/?)(page|chapter|book|outline|book_passage|board_state|student_profile|conversation_summary|conversation)\b/gi,
     '‹$1$2',
   )
 }

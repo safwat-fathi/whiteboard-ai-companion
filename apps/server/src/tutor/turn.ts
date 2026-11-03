@@ -31,8 +31,9 @@ import {
   upstreamError,
   usageOf,
 } from './llm'
+import { createMemory } from './memory'
 import { systemPrefix } from './prompts'
-import { buildScopePack } from './scope'
+import { buildScopePack, defang } from './scope'
 import { dailyCap } from './settings'
 import { type StubFixture, stubModel } from './stub'
 
@@ -57,6 +58,8 @@ export type TutorDeps = {
   llm: Llm | null
   /** Present = TUTOR_STUB: a scripted model replaces the provider and nothing else changes. */
   stub?: StubFixture[]
+  /** The cheap model, for the rolling summary of older turns; absent = no summaries. */
+  summarise?: (prompt: string) => Promise<string>
   /** Where uploaded pictures live: the turn reads the ones the student attached. */
   blobs: BlobStore
   /** The tools of a turn and, optionally, a hook that adds pictures to the next step. */
@@ -127,6 +130,11 @@ export function createTutor(deps: TutorDeps) {
   const t = config.tutor
   const active = new Map<string, string>() // boardId -> turnId: one turn per board
   const recorded = new Map<string, RecordedCall[]>()
+  const memory = createMemory({
+    messages,
+    settings,
+    summarise: deps.summarise ?? null,
+  })
 
   /**
    * Checks everything that can fail with a plain HTTP error, takes the board's lock and stores the question. Throws
@@ -152,7 +160,8 @@ export function createTutor(deps: TutorDeps) {
 
     const turnId = newId()
     const boardId = board.id
-    const history = historyOf(messages.page(boardId, { limit: 16 }).messages)
+    const mem = memory.load(boardId)
+    const history = historyOf(mem.window)
     active.set(boardId, turnId) // taken before the first await, so a second request cannot slip in
     let context: Awaited<ReturnType<typeof buildTurnContext>>
     try {
@@ -257,7 +266,12 @@ export function createTutor(deps: TutorDeps) {
               {
                 role: 'user',
                 content: [
-                  { type: 'text', text: context.text },
+                  {
+                    type: 'text',
+                    text: mem.summary
+                      ? `<conversation_summary>\n${defang(mem.summary)}\n</conversation_summary>\n${context.text}`
+                      : context.text,
+                  },
                   ...context.pictures.map((p) => ({
                     type: 'image' as const,
                     image: p.bytes,
@@ -363,6 +377,13 @@ export function createTutor(deps: TutorDeps) {
         } finally {
           active.delete(boardId)
         }
+        // best effort and off the critical path: a failed summary just means the window is all the tutor remembers
+        void memory.maybeSummarise(boardId).catch((e) => {
+          console.error(
+            'summary failed:',
+            e instanceof Error ? e.name : typeof e,
+          )
+        })
         emit({ type: 'finish' } as UIMessageChunk)
       },
     })

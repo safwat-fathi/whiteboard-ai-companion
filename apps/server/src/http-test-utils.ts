@@ -52,6 +52,8 @@ export async function boot(
     tutor?: {
       fixtures?: StubFixture[]
       tools?: TutorDeps['tools']
+      /** The cheap model for conversation summaries. */
+      summarise?: (prompt: string) => Promise<string>
       /** The real board tools (the ones main.ts wires) instead of `tools`. */
       realTools?: boolean
     }
@@ -101,6 +103,7 @@ export async function boot(
         books: booksDb,
         llm: null,
         stub: o.tutor.fixtures,
+        summarise: o.tutor.summarise,
         blobs,
         tools: o.tutor.realTools
           ? (ctx) =>
