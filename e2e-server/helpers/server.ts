@@ -9,6 +9,8 @@ export async function startServer(o: {
   dataDir: string
   port?: number
   publicOrigin?: string
+  /** Extra environment for the server process, e.g. INGEST_STUB=1 for the offline library providers. */
+  env?: Record<string, string>
 }): Promise<RunningServer> {
   const port = o.port ?? 4201
   const publicOrigin = o.publicOrigin ?? 'http://localhost:3201'
@@ -26,6 +28,7 @@ export async function startServer(o: {
         HOST: '127.0.0.1',
         DATA_DIR: o.dataDir,
         PUBLIC_ORIGIN: publicOrigin,
+        ...o.env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     },
