@@ -7,7 +7,7 @@ Versions are the latest seen on npm on **2026-11-01**. Pin exact versions at ins
 ## Principles
 
 - **TypeScript, strict, everywhere.** One zod schema per concept (element, op, tool input, API body) shared by browser, server and the tool registry.
-- **No Docker, no database server, no queue, no cache server.** Two Node processes, one SQLite file, one folder of blobs. The external AI services are the **Meta Model API** (`META_API_KEY`, for all LLM/vision calls) and **OpenRouter** (`OPENROUTER_API_KEY`, strictly for `baai/bge-m3` embeddings).
+- **No Docker, no database server, no queue, no cache server.** Two Node processes, one SQLite file, one folder of blobs. The external AI services are the **Meta Model API** (`MODEL_API_KEY`, for all LLM/vision calls) and **OpenRouter** (`OPENROUTER_API_KEY`, strictly for `baai/bge-m3` embeddings).
 - **Leaf libraries yes, canvas/whiteboard frameworks no** (the doc's rule: no tldraw, Excalidraw, Konva or similar).
 - **pnpm only.** `"packageManager": "pnpm@12.8.1"`, `pnpm-lock.yaml` committed, `pnpm install --frozen-lockfile` in CI and on the VPS. Never npm, yarn, bun or `npx` (use `pnpm exec` / `pnpm dlx`). pnpm blocks dependency install scripts by default: run `pnpm approve-builds better-sqlite3` once and commit the resulting setting.
 
