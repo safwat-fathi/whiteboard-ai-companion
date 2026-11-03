@@ -1,22 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type Book,
   createLibraryApi,
-  type Estimate,
   type LibraryApi,
-  type PageRange,
-  type PreviewPage,
 } from '../../src/library/api'
 import {
-  formatUsd,
   isInProgress,
   methodSummary,
-  parseRanges,
   pollDelay,
-  r3Cost,
   statusText,
 } from '../../src/library/status'
 import { UploadIcon } from '../../src/ui/icons'
@@ -46,7 +40,6 @@ function Library({ api }: { api: LibraryApi }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [over, setOver] = useState(false)
-  const [indexing, setIndexing] = useState<Book | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -75,7 +68,8 @@ function Library({ api }: { api: LibraryApi }) {
     try {
       const book = await api.upload(file, file.name.replace(/\.pdf$/i, ''))
       await refresh()
-      setIndexing(book)
+      await api.index(book.id)
+      await refresh()
     } catch (e) {
       setError(message(e))
     } finally {
@@ -179,10 +173,10 @@ function Library({ api }: { api: LibraryApi }) {
               {b.status === 'uploaded' && (
                 <button
                   type="button"
-                  onClick={() => setIndexing(b)}
+                  onClick={() => void act(() => api.index(b.id))}
                   className="rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors cursor-pointer"
                 >
-                  Index…
+                  Index
                 </button>
               )}
               {(b.status === 'failed' ||
@@ -226,202 +220,6 @@ function Library({ api }: { api: LibraryApi }) {
           <li style={ui.muted}>No books yet.</li>
         )}
       </ul>
-
-      {indexing && (
-        <EstimateDialog
-          api={api}
-          book={indexing}
-          onClose={() => {
-            setIndexing(null)
-            void refresh()
-          }}
-        />
-      )}
     </Shell>
-  )
-}
-
-/** What indexing will do and cost, a look at pages before paying for anything, and the button that starts it. */
-function EstimateDialog({
-  api,
-  book,
-  onClose,
-}: {
-  api: LibraryApi
-  book: Book
-  onClose: () => void
-}) {
-  const [estimate, setEstimate] = useState<Estimate | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [r3Text, setR3Text] = useState('')
-  const [previewText, setPreviewText] = useState('1')
-  const [previews, setPreviews] = useState<PreviewPage[] | null>(null)
-  const [working, setWorking] = useState<'preview' | 'start' | null>(null)
-  const closeRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    let live = true
-    api
-      .estimate(book.id)
-      .then((e) => live && setEstimate(e))
-      .catch((e) => live && setError(message(e)))
-    return () => {
-      live = false
-    }
-  }, [api, book.id])
-  useEffect(() => {
-    closeRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  const ranges: PageRange[] | null = parseRanges(r3Text)
-  const pages = book.pages ?? 0
-  const outside = ranges?.find((r) => r.to > pages)
-  const r3Usd = ranges ? r3Cost(ranges) : 0
-  const needed = (estimate?.embedUsd ?? 0) + r3Usd
-  const overBudget = estimate !== null && needed > estimate.dailyRemainingUsd
-  const canStart =
-    estimate !== null &&
-    ranges !== null &&
-    !outside &&
-    !overBudget &&
-    working === null
-
-  async function preview() {
-    const wanted = previewText
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => Number.isInteger(n) && n >= 1)
-      .slice(0, 3)
-    if (wanted.length === 0)
-      return setError('Give up to three page numbers, such as 1, 40.')
-    setWorking('preview')
-    try {
-      setPreviews(await api.preview(book.id, wanted))
-      setError(null)
-    } catch (e) {
-      setError(message(e))
-    } finally {
-      setWorking(null)
-    }
-  }
-  async function start() {
-    setWorking('start')
-    try {
-      await api.index(book.id, ranges && ranges.length > 0 ? ranges : undefined)
-      onClose()
-    } catch (e) {
-      setError(message(e))
-      setWorking(null)
-    }
-  }
-
-  return (
-    <div style={ui.backdrop}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Index ${book.title}`}
-        style={ui.dialog}
-      >
-        <h2 style={{ marginTop: 0 }}>Index “{book.title}”</h2>
-        {error && (
-          <p role="alert" style={ui.alert}>
-            {error}
-          </p>
-        )}
-        {!estimate && !error && <p>Looking at the pages…</p>}
-        {estimate && (
-          <>
-            <p>
-              {estimate.pages} pages. Pages with a text layer are read locally
-              for free ({estimate.r1}). The other {estimate.r4} (
-              {estimate.scanned} scanned, {estimate.mathDense} math-heavy) are
-              read by a vision model (Muse, Meta; not billed here). Making the
-              book searchable costs about {formatUsd(estimate.embedUsd)}{' '}
-              (OpenRouter). Left of today’s budget:{' '}
-              {formatUsd(estimate.dailyRemainingUsd)}.
-            </p>
-            <fieldset style={ui.fieldset}>
-              <legend>Look first (free)</legend>
-              <label>
-                Pages{' '}
-                <input
-                  value={previewText}
-                  onChange={(e) => setPreviewText(e.target.value)}
-                  size={10}
-                />
-              </label>{' '}
-              <button
-                type="button"
-                onClick={() => void preview()}
-                disabled={working !== null}
-              >
-                {working === 'preview' ? 'Reading…' : 'Compare readings'}
-              </button>
-              {previews?.map((p) => (
-                <div key={p.page} style={ui.preview}>
-                  {/* biome-ignore lint/performance/noImgElement: a user's page raster from our own server */}
-                  <img
-                    src={api.pageImageUrl(book.id, p.page, 500)}
-                    alt={`Page ${p.label}`}
-                    style={{ width: 160, alignSelf: 'start' }}
-                  />
-                  <div>
-                    <strong>Local text</strong>
-                    <pre style={ui.pre}>{p.r1.text || '(nothing: a scan)'}</pre>
-                  </div>
-                  <div>
-                    <strong>Vision model</strong>
-                    <pre style={ui.pre}>
-                      {'error' in p.r4
-                        ? `Could not read: ${p.r4.error}`
-                        : p.r4.text}
-                    </pre>
-                  </div>
-                </div>
-              ))}
-            </fieldset>
-            <fieldset style={ui.fieldset}>
-              <legend>Optional paid OCR (R3)</legend>
-              <label>
-                Pages to read with paid OCR{' '}
-                <input
-                  value={r3Text}
-                  onChange={(e) => setR3Text(e.target.value)}
-                  placeholder="e.g. 1-9,20"
-                  size={14}
-                />
-              </label>
-              <div style={ui.muted}>
-                About $0.002 a page, billed by OpenRouter. Leave empty to use
-                only the free and Meta readings.
-                {ranges === null && ' Use page ranges such as 1-9,20.'}
-                {outside &&
-                  ` Page ${outside.to} is past the last page (${pages}).`}
-                {ranges &&
-                  ranges.length > 0 &&
-                  ` This would add about ${formatUsd(r3Usd)}.`}
-                {overBudget && ' That is more than is left of today’s budget.'}
-              </div>
-            </fieldset>
-          </>
-        )}
-        <div style={ui.actions}>
-          <button
-            type="button"
-            onClick={() => void start()}
-            disabled={!canStart}
-          >
-            {working === 'start' ? 'Starting…' : 'Index'}
-          </button>
-          <button type="button" ref={closeRef} onClick={onClose}>
-            Not now
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }
