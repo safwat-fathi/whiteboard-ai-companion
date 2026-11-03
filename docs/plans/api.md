@@ -31,7 +31,6 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
 | `GET /api/boards` · `POST /api/boards {title, scope}` | List / create |
 | `GET /api/boards/:id` · `PATCH` · `DELETE` | Metadata, title, scope |
 | `GET /api/boards/:id/messages` | Chat history (paged) |
-| `GET /api/boards/:id/activity` | AI turns and batches for the Activity tab ([jump-to-ai](./jump-to-ai.md)) |
 | `POST /api/boards/:id/context-preview` | Exact digest text, thumbnails and token estimate for a context descriptor ([board-context](./board-context.md)) |
 | `GET /api/boards/:id/export.png?x=&y=&w=&h=&width=` | Server render of a region (used by tests and the snapshot fallback) |
 | `POST /api/blobs` (raw body, ≤ 10 MB) · `GET /api/blobs/:id` | Image/picture upload and fetch (raw stream with `Content-Type: image/png\|jpeg\|webp\|gif`, header-verified size/dimensions; returns `{id, byteLength, mediaType, width, height}`; `nosniff`) |
@@ -49,6 +48,9 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
 | `GET /api/settings` · `PUT /api/settings` | Student profile, budget overrides |
 | `GET /api/usage?from=&to=` | Spend by day and kind from the `spend` ledger |
 | `GET /api/models` | Configured model names for the UI footer |
+| `POST /api/boards/:id/turns/:turnId/undo` · `POST /api/boards/:id/batches/:batchId/undo` | "Undo this response" / one batch: `{undone, skipped}` (steps the student changed since are skipped); `409 turn_busy` while the turn runs |
+| `GET /api/boards/:id/activity?before=&limit=&turn=&batch=` | Turns that changed the board, newest first: `{turns:[{turnId, startedAt, userText, status, bounds, batches:[{batchId, seq, label, bounds, count, touchedIds}]}], next?}`; `turn`/`batch` fetch the one that matters (deep links) |
+| `GET /api/_test/last-request?boardId=` | `TUTOR_STUB=1` only: what the scripted model was asked (specs read it) |
 
 ## Chat: `POST /api/chat` (SSE)
 
@@ -70,7 +72,12 @@ Response: the AI SDK **UI message stream** over SSE (`createUIMessageStreamRespo
 |---|---|---|
 | `data-turn` | `{turnId}` | Chat dock and Activity tab to correlate the WebSocket batches |
 | `data-batch` | `{batchId, seq, label, bounds, count}` | Tool chips (Locate, Undo) |
-| `data-usage` | `{costUsd, inputTokens, cachedTokens, outputTokens, model}` | Message footer, top-bar spend |
+| `data-usage` | `{costUsd \| null, inputTokens, cachedTokens, outputTokens, model, fallback?, unverifiedCites?}` | Message footer, top-bar spend (`costUsd` is null while the model is unpriced) |
+| `data-status` | `{state: thinking \| reading \| drawing \| done \| stopped}` | "Working…" line, AI presence |
+| `data-source` | `{bookId, pageStart, pageEnd, label?}` | The only pages a `cite:<bookId>#<page>` link may name this turn |
+| `data-focus` | `{bounds, note?}` | `focus_region` pointed at something |
+
+The stream opens with `start` (`messageId: <turnId>:a`) before any data part. `data-batch` also carries `touchedIds`. Request: `message.images` are pasted-image blob ids; `context.pictures` are the browser-rendered pictures (blob ids from `POST /api/blobs`).
 
 The server owns history, so the client sends only the new message plus the context. Aborting the fetch (Stop) aborts the model call and releases the turn lock. Errors arrive as the stream's `error` part with an error `code` from the table above.
 
@@ -86,14 +93,14 @@ One socket per board (`/ws?boardId=<id>`), JSON messages. Both `Origin` and `Hos
 | `ack {clientSeq, seq}` | S→C | Confirms the batch and its place in the order |
 | `ops {seq, batch, author, turnId?, bounds}` | S→C | Broadcast of every accepted batch, including tutor batches |
 | `reject {clientSeq, reason}` | S→C | Failed validation or edit-rights check; client rolls back |
-| `undo {turnId \| batchIds}` *(deferred M5/M6)* | C→S | Server builds inverse batches and applies them as new batches |
-| `agent_status {turnId, state, text?}` *(deferred M5)* | S→C | `thinking · reading · drawing · done · stopped` |
-| `agent_focus {turnId, batchId, bounds}` *(deferred M5)* | S→C | Drives Follow AI, the edge indicator and the AI cursor |
+| `undo {turnId \| batchIds}` *(not built: REST, see above)* | C→S | Server builds inverse batches and applies them as new batches |
+| `agent_status {turnId, state, text?}` *(not built: a `data-status` part on the chat stream)* | S→C | `thinking · reading · drawing · done · stopped` |
+| `agent_focus {turnId, batchId, bounds}` *(not built: agent-authored `ops` carry author, turnId and bounds)* | S→C | Drives Follow AI, the edge indicator and the AI cursor |
 | `render_request` / `render_response` *(deferred M5)* | S→C / C→S | Snapshot fallback: ask the open tab to render |
 
 Dropped from the doc: `presence` and live ink (single human). `author` is derived by the server from the channel, never trusted from a client ([auth-security](./auth-security.md)).
 
-**R6 deferral:** Human undo stays client-side in M1–M3 (M1's `UndoManager` submits inverses as new batches). The WebSocket `undo`, `agent_status`, `agent_focus`, and `render_request` / `render_response` messages arrive in M5/M6 with the AI tutor and follow-AI features.
+**R6 deferral (settled in M5: undo is REST, status is a stream part, focus rides on `ops`):** Human undo stays client-side in M1–M3 (M1's `UndoManager` submits inverses as new batches). The WebSocket `undo`, `agent_status`, `agent_focus`, and `render_request` / `render_response` messages arrive in M5/M6 with the AI tutor and follow-AI features.
 
 ## Versioning and stability
 

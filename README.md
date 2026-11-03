@@ -111,6 +111,10 @@ Set in `.env` (server) — the full list is in [`deployment`](docs/plans/deploym
 | `EMBED_MODEL`                                                  | Embedding model ID (`baai/bge-m3`, 1024-d via OpenRouter embeddings endpoint)                                                         |
 | `DATA_DIR`                                                     | Where the SQLite file and blobs live (`./data` by default)                                                                            |
 | `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD`         | Spending and loop caps                                                                                                                |
+| `TURN_TIMEOUT_MS`                                              | Wall clock for one tutor turn (default 120000); raise it if long answers are cut off                                                  |
+| `TUTOR_PRICE_IN_PER_M` · `TUTOR_PRICE_OUT_PER_M`               | USD per million tokens. Unset = turns are unpriced (tokens are still counted); `MAX_TURN_COST_USD` and the spend ledger need a price   |
+| `TUTOR_REASONING_EFFORT`                                       | `low` · `medium` · `high`, sent as `reasoning_effort` (optional; default: the model's own)                                            |
+| `TUTOR_STUB`                                                   | `1` = a scripted model replaces the real one (tests and e2e only)                                                                      |
 
 ## Repo layout
 

@@ -58,7 +58,7 @@ Rerankers and LLM-written chunk context are deferred until the eval says recall@
 
 ## Citations and grounding
 
-- Book-based claims carry `[p. N](cite:<chunkId>)`. The server **validates** that each `chunkId` was retrieved this turn (or is in the scope pack); unknown ids are stripped and flagged in the message footer.
+- Book-based claims carry `[p. LABEL](cite:<bookId>#<page>)` (the file page in the link, the printed label as text). The server **validates** that each page was shown to the model this turn (the scope pack's pages, a `search_book` hit's page range, a `read_section` range, all announced as `data-source` parts); other `cite:` links are turned into their plain text when the message is saved and counted in the footer (`unverifiedCites`).
 - Answers separate **From your book** from **General explanation** (not in your book). Empty or weak retrieval is stated, not papered over.
 - `pageLabel` is the printed page label, so citations match the physical book; the Source tab opens the PDF page index behind it.
 
@@ -87,3 +87,9 @@ For a 1M-context model we deliberately target ~100k tokens of prompt per step: c
 `eval/<book>.jsonl` holds `{q, pages: [...]}` (≥ 10 per book, written by the student). `pnpm eval:retrieval` reports recall@8 and MRR per embedding model, vector-only versus hybrid. **Target: the expected page is in the top 8 for ≥ 80% [my call]**; below that, try neighbours, then `qwen3-embedding-8b`, then chunk context, then a reranker.
 
 A second, manual check per scope type: ask three questions that need the book and three that do not, and confirm the answer labels them correctly and the citations open the right page.
+
+## As built in M5 (2026-11-03)
+
+- **Scope pack:** a chapter goes in whole (each page as `<page n="file page" label="printed label">`) when it fits `CHAPTER_STUFF_MAX_TOKENS`, otherwise its section and sub-section summaries; a book goes in as outline plus top-level summaries; a topic board has none. Book and board text are defanged (`<page`, `<book`, `<board_state` … cannot be opened or closed from inside the data). The whole-book cached prompt is **not built**.
+- **Memory:** last 16 messages verbatim; past ~8,000 tokens of older history `CHEAP_MODEL` writes a rolling summary (settings `memory:<boardId>`), which goes into the volatile user-message block as `<conversation_summary>`, not the cached prefix. Earlier turns reach the model as their text plus one line per board change.
+- **Prefix:** charter + profile + scope pack, byte-identical across steps and turns (tested).

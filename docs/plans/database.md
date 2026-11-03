@@ -40,6 +40,7 @@ CREATE TABLE board_ops (
   label        TEXT NOT NULL,
   bounds       TEXT,                           -- json {x,y,w,h}, server-computed
   touched_ids  TEXT NOT NULL,                  -- json array of element ids
+  -- migration 0002 adds: inverse TEXT (json Batch; agent batches only, for "Undo this response")
   ops          TEXT NOT NULL,                  -- json array of ops
   created_at   INTEGER NOT NULL,
   PRIMARY KEY (board_id, seq)

@@ -30,7 +30,7 @@ The student talks to the AI **inside the app**. There is no external client, no 
 - **Assistant message parts:**
   - *Text:* Markdown (`react-markdown`, GFM) with LaTeX through `remark-math` + our `renderMath()` ([math-renderer](./math-renderer.md)). `dir="auto"` per message so Arabic and English both read correctly.
   - *Tool chips:* one per board action, e.g. "Added concept map · 12 elements · **Locate**". Click = Locate that batch; secondary action = Undo that batch.
-  - *Links with custom schemes:* `[p. 42](cite:<chunkId>)` opens the Source tab on that page; `[the red arrow](board:<elementId>)` runs Locate on the element.
+  - *Links with custom schemes:* `[p. 42](cite:<bookId>#<page>)` opens the Source tab on that page; `[the red arrow](board:<elementId>)` runs Locate on the element.
   - *Footer:* model, tokens, cost of the turn (hover for cached tokens).
 - **User message** shows its attached context as chips (what was sent): "Selection · 3 elements · picture", and a thumbnail when a picture was attached.
 
@@ -48,7 +48,7 @@ The student talks to the AI **inside the app**. There is no external client, no 
   Details and the exact payloads: [board-context](./board-context.md). A **"What the AI sees"** link opens a preview with the exact digest text, thumbnails and a token estimate.
 - **Quick actions** (prefill the input, no new backend): *Explain on the board* · *Summarise this chapter* · *Check my work* (needs a selection) · *Ask*. They set the turn `mode`.
 - **Attach images:** paste or drop an image into the composer to include it as an image part (uploaded via `POST /api/blobs`).
-- **Entry from the board:** the selection toolbar's **Ask AI** and the right-click menu focus the composer with the Selection chip attached. No keyboard shortcut is assigned until M5 (browser-reserved combos such as Ctrl+L are avoided).
+- **Entry from the board:** the selection toolbar's **Ask AI** focuses the composer (the right-click menu is not built) with the Selection chip attached. No keyboard shortcut is assigned until M5 (browser-reserved combos such as Ctrl+L are avoided).
 
 ## States
 
@@ -66,7 +66,7 @@ After each finished turn: **Undo this response** (reverts every batch of the tur
 
 ## Transport
 
-`useChat` with `DefaultChatTransport({ api: '/api/chat' })`. The default request sends the whole message array; the server owns history, so customise the transport to send only the new message plus the context descriptor (`prepareSendMessagesRequest` pattern, **verify in M5**). Server response: AI SDK UI message stream (SSE) plus custom `data-batch` and `data-usage` parts ([api](./api.md)). `stop()` aborts the fetch; the server aborts the model call.
+`useChat` with `DefaultChatTransport({ api: '/api/chat' })`. The default request sends the whole message array; the server owns history, so customise the transport to send only the new message plus the context descriptor (`prepareSendMessagesRequest`; **verified in M5**: the web app uses `ai`'s `DefaultChatTransport` and `readUIMessageStream` in a small `useTutorChat` hook, with no `@ai-sdk/react`). Server response: AI SDK UI message stream (SSE) plus custom `data-batch` and `data-usage` parts ([api](./api.md)). `stop()` aborts the fetch; the server aborts the model call.
 
 ## Accessibility and i18n
 

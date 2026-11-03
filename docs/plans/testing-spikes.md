@@ -36,6 +36,20 @@ Measured 2026-11-03 on the three real books, ingested with `pnpm ingest` (Muse f
 
 S4b measured 93.3% hybrid@8 over the same questions on R1/R3 text (Arabic: 80%, 90% with neighbours, but over 40 pages); the figures above are on what the shipped pipeline stores, and the Arabic row searches all 383 pages. Its one miss asks for the basis of a subspace of cubic polynomials (page 78): the hybrid top 8 lands on pages 72 to 74, and the neighbours reach it. Page 78 is the page whose Muse transcription was cut off at 4,000 tokens in S2; with the 12,000-token budget it comes through whole (1,220 characters, LaTeX included). Embedding the three books cost $0.0086 on OpenRouter in total; Muse calls are not priced. A book is not "done" because it reached `ready`: the first Arabic run did exactly that with 367 empty pages (JBIG2 images rendered blank; PLAN §19 #44), so `runIngest` now refuses a book whose R4 pages are mostly empty.
 
+## M5 results
+
+Run 2026-11-03 with the scripted model (`TUTOR_STUB=1`; deterministic and free) unless stated. In a scratch worktree: `pnpm e2e:server` 8/8 (M3 ×2, M4 ×3, and the three M5 scripts below), `pnpm e2e` 15/15 (editor, local mode), production build clean. Unit: server 415, core 195, web 459 (+1 skipped).
+
+| Script | Spec | What it proves |
+|---|---|---|
+| Tutor end-to-end (the gate) | `e2e-server/m5-gate.spec.ts` | upload → index → *Study this* a chapter → ask → text, formula and shape on the board with `[p. N]` → the citation opens the Source tab on the right page → Stop mid-answer leaves a consistent board and a ready composer → *Undo this response* removes exactly that response → Arabic composer → reload restores the conversation and the verified citation; no console errors |
+| Board context (without its handwriting step, M6) | `e2e-server/m5-context.spec.ts` | the selection chip, *What the AI sees* (ids, a picture, a size), the model's request holds the digest with the ids and exactly one image, "make these red" changes only the selection, an unselected element is refused with a reason the model sees, viewport and whole-board pictures stay inside the digest budget |
+| Jump to AI | `e2e-server/m5-jump.spec.ts` | the off-screen arrow, Jump and Back, Follow (and taking the canvas turns it off), the Activity tab after reload, Locate following a moved element and showing a ghost for a deleted one, the hover tag and Show in chat, deep links |
+| Caching and cost | server tests | the system prefix is byte-identical across steps and turns; the footer shows cached tokens; `MAX_STEPS=2` and a priced `MAX_TURN_COST_USD` stop a looping stub; the ledger equals tokens × price |
+| Security | server tests + a build | an upstream error that quotes the API key reaches no stream, stored message, table or log; book pages, board text and summaries cannot close the tags they sit in; every new POST/PUT needs the right Origin; with fake keys set during `next build`, neither their values nor their names appear in the client output |
+
+**Live Meta Model API (api.meta.ai), probed 2026-11-03:** `reasoning_effort: "low"` is accepted (HTTP 200); on a one-word answer the reasoning tokens were 208 with it and 256 without, which is noise, so it is wired as an optional, default-off setting. **Not yet run (yours):** one real run of the gate script from the UI on an ingested book, reading the cost footer (tokens always, dollars only if `TUTOR_PRICE_*` is set); long turns may need a higher `TURN_TIMEOUT_MS` (Muse took 15–25 s per step in S3).
+
 ## Risks
 
 | Risk | Mitigation |

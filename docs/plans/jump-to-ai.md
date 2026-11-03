@@ -8,6 +8,8 @@
 
 Every agent batch is stored with `turn_id`, `label`, `bounds` (server-computed union of affected elements' bounds: after-apply for add/patch, before-remove for remove) and `touched_ids`. This metadata is kept forever; v1 also keeps op payloads, so history never expires ([database](./database.md)). The doc's 30-day retention is dropped (finding F7).
 
+> **As built (M5):** the server sends no `agent_focus` or `agent_status` message. The client learns of AI work from agent-authored `ops` broadcasts (`author`, `turnId`, `bounds`), which the sync client passes on; status is a `data-status` part on the chat stream. Chips and the Activity rows carry the touched element ids, so Locate follows elements the student moved. Deep links use `GET /api/boards/:id/activity?turn=|batch=`.
+
 ## Triggers
 
 | Trigger | Result |

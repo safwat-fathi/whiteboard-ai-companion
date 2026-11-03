@@ -9,7 +9,7 @@ Everything between the chat dock and the AI providers: the **Meta Model API** pr
 - **Meta Model API (`META_API_KEY`) for all LLM and vision roles.** Used for: chat completions with tool calling and multimodal image input (tutor, Arabic tutor, fallback, reviewer), cheap ingestion/memory summaries (`CHEAP_MODEL`), and scanned/math page transcription (`VISION_MODEL`, [library-ingestion](./library-ingestion.md)). Connects to `META_API_BASE_URL` (default `https://api.meta.ai/v1`) via `@ai-sdk/openai-compatible`.
 - **OpenRouter (`OPENROUTER_API_KEY`) for embeddings only.** Used exclusively at runtime for `baai/bge-m3` embeddings (`POST https://openrouter.ai/api/v1/embeddings`) since Meta's hosted API does not expose an embeddings endpoint, and retained for the historical M0 S2–S4 benchmark scripts (`spikes/`).
 - Both keys live **only in the server environment**. The browser never talks to the Meta Model API or OpenRouter.
-- Libraries: `ai` 7, `@ai-sdk/react` 4, `@ai-sdk/openai-compatible` 2 (plus `@openrouter/ai-sdk-provider` 3 in M0 spike benchmarks; [tech-stack](./tech-stack.md)). All AI SDK server code is behind one adapter module, `apps/server/src/tutor/llm.ts`.
+- Libraries: `ai` 7.0.159 and `@ai-sdk/openai-compatible` 3.0.82 on the server, exact pins (the web app uses `ai` only: `DefaultChatTransport` and `readUIMessageStream`; there is **no** `@ai-sdk/react`) (plus `@openrouter/ai-sdk-provider` 3 in M0 spike benchmarks; [tech-stack](./tech-stack.md)). All AI SDK server code is behind one adapter module, `apps/server/src/tutor/llm.ts`.
 - Provider options: configure `createOpenAICompatible({ name: 'meta-llama', baseURL: process.env.META_API_BASE_URL ?? 'https://api.meta.ai/v1', apiKey: process.env.META_API_KEY, includeUsage: true })`. (In M0 Spike S3 on OpenRouter, `extraBody: { provider: { data_collection: 'deny' } }` was verified to route cleanly.)
 
 ## Models (Meta Model API active defaults + M0 S3 benchmarked baseline)
@@ -102,7 +102,14 @@ Keep the system prompt prefix (charter + profile + scope pack) byte-identical ac
 
 ## Stub tutor (tests, offline)
 
-`TUTOR_STUB=1` replaces the model with a scripted sequence from `apps/server/test/fixtures/*.json` (assistant text deltas + tool calls). The rest of the stack (Board service, WebSocket, SSE, chips, Locate) runs for real. Used by Playwright and by UI development without spending credits.
+`TUTOR_STUB=1` replaces **only the model** with `MockLanguageModelV4` (from `ai/test`) playing a scripted fixture from `apps/server/test/fixtures/tutor/*.json`: `{match, steps:[{text?, toolCalls?, usage?, chunkDelayMs?}]}`, chosen by a substring of the student's message (`*` matches anything); `$BOOK_ID` and `$PAGE_0` in a step are filled from the board's scope; the last step repeats once the list runs out, so a single tool-call step is a runaway loop for the cap tests. The loop, tools, Board service, WebSocket, SSE, caps and persistence run for real. With the stub on, `GET /api/_test/last-request?boardId=` returns what the model was asked (system prompt, messages with images reduced to byte counts, tool names) so specs can assert the digest and pictures. Used by Vitest and Playwright (`e2e-server/m5-*.spec.ts`).
+
+## M5 as built (2026-11-03)
+
+- **Tools: 15** (`get_board get_elements get_snapshot add_text add_math add_shape connect add_diagram add_book_figure update_elements delete_elements focus_region get_outline search_book read_section`). Board tools are pure builders in `packages/core/src/tools` (`ToolDef` with a zod input, `execute(input, ctx) → read | write | focus`); book, figure and snapshot tools live in `apps/server/src/tutor/tools`; `adapt()` maps both to AI SDK `tool()`. A turn's tool calls run one at a time. `add_diagram` is a layered layout written by hand. Errors the model can fix (bad LaTeX, a missing id, an edit it may not make) are thrown as plain messages and arrive as tool errors.
+- **Edit rights** live in `BoardService.submit` (`agentMayEdit`); see PLAN §19 #49.
+- **Pricing is optional** (PLAN §19 #50): tokens are always counted, USD only when `TUTOR_PRICE_IN_PER_M`/`TUTOR_PRICE_OUT_PER_M` are set; `MAX_TURN_COST_USD` then applies. `TUTOR_REASONING_EFFORT` is optional and off by default. Model latency is 15–25 s per step, so `TURN_TIMEOUT_MS` (default 120000) may need raising for long turns.
+- **Fallback** is a model wrapper: a 5xx before any output goes once to `TUTOR_FALLBACK_MODEL`; 402 and 429 are worded for the student and never echo the provider's text.
 
 ## MCP later (M7, optional)
 
