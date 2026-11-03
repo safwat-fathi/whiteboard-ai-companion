@@ -47,6 +47,23 @@ describe('niceTicks', () => {
     expect(niceTicks(-5, -5)).toEqual([-5, -4, -3, -2, -1, 0])
     expect(niceTicks(Number.NaN, 3)).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1])
   })
+  it('terminates and stays finite on values too big or too close for float steps (no infinite loop)', () => {
+    // past 2^53 `i++` stops changing i, so a naive tick loop never ends
+    for (const [lo, hi] of [
+      [1e17, 1e17 + 16],
+      [1e300, 1e300 * (1 + 1e-15)],
+      [-Number.MAX_VALUE, Number.MAX_VALUE],
+      [0, Number.MAX_VALUE],
+      [Number.MIN_VALUE, 2 * Number.MIN_VALUE],
+    ] as const) {
+      const t = niceTicks(lo, hi)
+      expect(t.length).toBeGreaterThanOrEqual(2)
+      expect(t.length).toBeLessThanOrEqual(12)
+      expect(t.every(Number.isFinite)).toBe(true)
+      for (let i = 1; i < t.length; i++)
+        expect(t[i] as number).toBeGreaterThan(t[i - 1] as number)
+    }
+  })
   it('keeps float noise out of the ticks', () => {
     for (const t of niceTicks(0, 0.3)) expect(String(t).length).toBeLessThan(6)
   })

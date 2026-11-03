@@ -351,6 +351,23 @@ describe('ElementSchema', () => {
         true,
       )
     })
+    it('keeps values within a quadrillion, where float steps still mean something', () => {
+      const one = (values: number[], xs?: number[]) =>
+        parse({
+          kind: xs ? 'scatter' : 'bar',
+          categories: xs ? [] : values.map((_, i) => `c${i}`),
+          series: [{ name: 's', values, ...(xs && { xs }) }],
+        })
+      expect(one([1e15, -1e15]).success).toBe(true)
+      const big = one([1e15 + 2])
+      expect(big.success).toBe(false)
+      expect(big.error?.issues[0]?.message).toBe(
+        'must be between -1e15 and 1e15',
+      )
+      expect(one([-1e15 - 2]).success).toBe(false)
+      expect(one([1], [1e16]).success).toBe(false)
+      expect(one([Number.MAX_VALUE]).success).toBe(false)
+    })
     it('takes only hex palette colours, up to eight', () => {
       expect(parse({ palette: ['#e69f00', '#56b4e9'] }).success).toBe(true)
       expect(parse({ palette: ['red'] }).success).toBe(false)

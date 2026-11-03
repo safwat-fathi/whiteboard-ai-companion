@@ -145,11 +145,15 @@ const chartLabel = (max: number) =>
     .string()
     .max(max, `must be at most ${max} characters`)
     .regex(CHART_LABEL, 'chart labels support Latin letters and digits only')
+// Past a quadrillion a chart means nothing, and tick steps stop being exact (2^53 is about 9e15).
+const chartNum = num
+  .min(-1e15, 'must be between -1e15 and 1e15')
+  .max(1e15, 'must be between -1e15 and 1e15')
 const ChartSeriesSchema = z.object({
   name: chartLabel(40),
-  values: z.array(num).max(200, 'must have at most 200 values'),
+  values: z.array(chartNum).max(200, 'must have at most 200 values'),
   /** Scatter only: the x of each value. */
-  xs: z.array(num).max(200, 'must have at most 200 values').optional(),
+  xs: z.array(chartNum).max(200, 'must have at most 200 values').optional(),
 })
 
 /** A data-driven chart (R6). Whole `categories` and `series` leaves are replaced on edit, never patched by index. */

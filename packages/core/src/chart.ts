@@ -102,7 +102,11 @@ const fin = (n: number, d = 0) => (Number.isFinite(n) ? n : d)
 export function niceTicks(min: number, max: number, count = 5): number[] {
   let lo = Math.min(min, max)
   let hi = Math.max(min, max)
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+  if (
+    !Number.isFinite(lo) ||
+    !Number.isFinite(hi) ||
+    !Number.isFinite(hi - lo)
+  ) {
     lo = 0
     hi = 1
   } else if (lo === hi) {
@@ -116,10 +120,30 @@ export function niceTicks(min: number, max: number, count = 5): number[] {
   const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * 10 ** exp
   const first = Math.floor(lo / step + 1e-9)
   const last = Math.ceil(hi / step - 1e-9)
-  const out: number[] = []
-  for (let i = first; i <= last; i++)
-    out.push(Number((i * step).toPrecision(12)) + 0)
-  return out.length >= 2 ? out : [out[0] ?? 0, (out[0] ?? 0) + step]
+  // Past 2^53 an integer stops counting (`i++` would never reach `last`), and a step that is not finite or does not span
+  // the range in a few steps is not a step: draw evenly spaced values instead. The loop is counted, never open-ended.
+  if (
+    Number.isSafeInteger(first) &&
+    Number.isSafeInteger(last) &&
+    last - first >= 1 &&
+    last - first <= 20
+  ) {
+    const out: number[] = []
+    for (let k = 0; k <= last - first; k++)
+      out.push(Number(((first + k) * step).toPrecision(12)) + 0)
+    // rounding away float noise must not merge two ticks (at 1e300 it can)
+    if (
+      out.every(
+        (v, k) => Number.isFinite(v) && (k === 0 || v > (out[k - 1] as number)),
+      )
+    )
+      return out
+  }
+  const d = (hi - lo) / (count - 1)
+  const even = Array.from({ length: count }, (_, k) => lo + d * k).filter(
+    (v, k, a) => Number.isFinite(v) && (k === 0 || v > (a[k - 1] as number)),
+  )
+  return even.length >= 2 ? even : [lo, hi]
 }
 
 const trim = (n: number, digits: number) => String(Number(n.toFixed(digits)))
