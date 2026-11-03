@@ -2,7 +2,7 @@
 
 This roadmap orders work by dependency and gate, not by calendar; no durations are estimated.
 
-> **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** and **Cerebral Valley**.
+> **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)** hosted by **Meta** and **Cerebral Valley** (see [eligibility, tracks, and submission rules](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)).
 > **Status:** 2026-11-03 · M5 built on `m5-tutor` (live run open); earlier: 2026-11-02 · K and M0 done; M1 merged to `main` (manual Arabic-keyboard demo and three perf decisions still yours); M2 built on branch `m2-math-images`, gate and demo open; M3 next. The table in §1 and the status log at the end are the live record.
 > **What this is:** the execution view of [PLAN.md](./PLAN.md) §17: phases M0–M7 with scope, dependencies, gates, acceptance scripts, risks and status. Aspect details stay in [`plans/`](./plans/); this file links to them instead of restating them.
 > **Order and gates mirror PLAN §17.** If they ever differ, §17 wins until both are updated. Everything not in §17 is tagged **[my call]**; override any.

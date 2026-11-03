@@ -1,6 +1,6 @@
 # Whiteboard AI
 
-> 🏆 **Built for the [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** & **Cerebral Valley**.
+> 🏆 **Built for the [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)** hosted by **Meta** & **Cerebral Valley**.
 
 A personal **study companion**. Upload a book, choose what to study (a topic, a chapter, the whole book) and **chat with an AI tutor inside the app**. The tutor explains on a shared infinite whiteboard with text, LaTeX equations, diagrams, charts and figures from your book, and cites the pages. You can draw and write on the same board, select anything and ask about it, and jump to wherever the AI worked.
 
@@ -17,9 +17,14 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 
 ## Hackathon & Meta AI Integration
 
-> Planned design (M5): nothing in this section is built yet, and the model choices are **[spike]** until re-measured against the Meta Model API.
+Whiteboard AI is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)** (October 26 – November 4, 2026), hosted by **Meta** and **Cerebral Valley** (see full guidelines and eligibility on the [official details page](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)).
 
-Whiteboard AI is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (October 26 – November 4, 2026), hosted by **Meta** and **Cerebral Valley**.
+### Hackathon Eligibility & Alignment
+
+- **Tracks:** Eligible for either the **Indie Developer Track** (individual builders, students, small teams ≤ 4; judged on creativity, technical ambition, and functionality) or the **Startup Track** (judged on technical execution and production readiness).
+- **Themes:** Aligned with **Theme 1: Build for Your World** (bringing Meta's models into education and technical textbook study) and **Theme 2: Push the Frontier** (multimodal 2D canvas co-working with AI models).
+- **Required Stack:** Integrates Meta's foundation models via the **Meta Model API** (`https://api.meta.ai/v1`) using Meta Muse models (`muse-spark-1.3`, `muse-wonder-1.0`), alongside support for Meta open-weights Llama models.
+- **Deliverables:** Fully functioning local-first study platform with automated verification test suite, live video demo capability, and reproducible codebase.
 
 The project re-imagines how learners interact with textbooks and technical subjects by uniting Meta foundation models with an interactive visual workspace via the **Meta Model API**:
 

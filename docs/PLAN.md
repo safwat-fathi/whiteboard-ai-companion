@@ -1,6 +1,6 @@
 # Whiteboard AI — Study Companion: Validation and Full Plan
 
-> **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** and **Cerebral Valley**.
+> **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)** hosted by **Meta** and **Cerebral Valley** (submission deadline: November 4, 2026; see [eligibility & details](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)).
 > **Status:** revision 1 approved 2026-11-01 · **revision 2** (same day, approved at Kickoff: ROADMAP K ✔): no Docker, in-app chat, whiteboard as AI context, plan split into one file per aspect, README added.
 > **Inputs:** Claude Doc *Whiteboard Engine: Design Doc* (https://claude.ai/artifact/QPPBUq22meEmXKSmJ856qq, rev 11; all text and both diagrams read) · your answers to its 5 open questions · your brief (student companion, books + RAG, OpenRouter key, "jump to where the AI worked") · your revision-2 resolutions (next section).
 > **Conventions:** **[my call]** = a decision I made for you; override any. **[spike]** = I could not verify it from here; M0 settles it with evidence.
@@ -44,7 +44,7 @@
 
 ## 0. Context and TL;DR
 
-**Hackathon alignment.** Built specifically for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (Meta × Cerebral Valley). Whiteboard AI tackles visual, multimodal AI education: an interactive whiteboard where Meta models via the **Meta Model API** (`https://api.meta.ai/v1`: `muse-spark-1.3`, `muse-wonder-1.0`; or open-weights `meta-llama/llama-4-maverick` via OpenRouter) act as a personal tutor explaining complex textbooks with formulas, diagrams, and verifiable page citations.
+**Hackathon alignment.** Built specifically for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)** (Meta × Cerebral Valley, see [event details & eligibility](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)). Whiteboard AI qualifies under the *Indie Developer Track* / *Startup Track* (Theme 1: *Build for Your World* and Theme 2: *Push the Frontier*): an interactive whiteboard where Meta models via the **Meta Model API** (`https://api.meta.ai/v1`: `muse-spark-1.3`, `muse-wonder-1.0`; or open-weights `meta-llama/llama-4-maverick` via OpenRouter) act as a personal tutor explaining complex textbooks with formulas, diagrams, and verifiable page citations.
 
 **Context.** The design doc specifies a from-scratch infinite canvas plus 16 MCP tools, and assumes an *external* AI client does the thinking. The product is now a **study companion**: a student uploads books, picks a topic / chapter / whole book, and chats with an AI tutor that explains on a shared whiteboard with page citations. This plan (1) validates the doc against that product and your answers, and (2) adds what is missing.
 
