@@ -59,6 +59,12 @@ export const drawStroke = defineTool({
         'points: give 2 to 500 points, each as [x, y]',
         'points',
       )
+    // far past the board's own limit (1,000,000), and distances would overflow to Infinity and silently drop a segment
+    if (i.points.some((p) => p.some((v) => Math.abs(v) > 1e9)))
+      throw new ToolError(
+        'points: coordinates must be within 1e9 of the origin you chose',
+        'points',
+      )
     // the pen tool's own normalisation: the 0.1 grid, a tight box, points relative to it
     const q = quantiseStroke(densify(i.points as [number, number][]), undefined)
     const pos = resolvePlacement(i.placement, { w: q.w, h: q.h }, ctx)

@@ -184,6 +184,34 @@ describe('draw_stroke', () => {
     await run({ points: Array.from({ length: 500 }, (_, i) => [i, i % 9]) })
   })
 
+  it('refuses coordinates so large that distances overflow, instead of dropping a segment (its length would be Infinity)', async () => {
+    for (const points of [
+      [
+        [0, 0],
+        [1.7e308, 1.7e308],
+      ],
+      [
+        [-2e9, 0],
+        [0, 0],
+      ],
+    ])
+      await expect(
+        Promise.resolve().then(() =>
+          drawStroke.execute(drawStroke.input.parse({ points }), ctx()),
+        ),
+      ).rejects.toMatchObject({
+        name: 'ToolError',
+        field: 'points',
+        message: /within 1e9/,
+      })
+    await run({
+      points: [
+        [-9e8, 0],
+        [9e8, 5],
+      ],
+    }) // a long stroke inside the limit still works and stays inside the point cap
+  })
+
   it('auto placement keeps clear of what is on the board', async () => {
     const existing = [mk('a', { x: 0, y: 0, w: 900, h: 700 })]
     const { c, out } = await run(
