@@ -38,6 +38,7 @@ import { SelectionToolbar } from '../tutor/SelectionToolbar'
 import { type SourceRef, SourceTab } from '../tutor/SourceTab'
 // import { SpendChip } from '../tutor/SpendChip'
 import { useActivity } from '../tutor/useActivity'
+import { ChartGrid } from './ChartGrid'
 import { Dock, TopBar, useDockLayout } from './Dock'
 
 const BOARD = 'local'
@@ -130,6 +131,9 @@ export function Workspace({ boardId }: { boardId?: string }) {
     editor: Editor
     readOnly: boolean
   } | null>(null)
+
+  // The chart whose data grid is open (the editor asks through onEditChart).
+  const [chartId, setChartId] = useState<string | null>(null)
 
   const bridge = useMemo(
     () =>
@@ -239,6 +243,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
         editor = ed
         ed.author = { kind: 'human', id: 'owner' }
         ed.onNotice = (text) => note('notice', { text, role: 'alert' })
+        ed.onEditChart = setChartId
         ed.readOnly = true
         setBoard({ editor: ed, readOnly: true })
 
@@ -301,6 +306,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
       // Platform is created after fonts load: text layout is memoised per Platform object.
       editor = new Editor(host.current, { platform: browserPlatform() })
       editor.onNotice = (text) => note('notice', { text, role: 'alert' })
+      editor.onEditChart = setChartId
       editor.readOnly = true // until load() resolves: a pre-load edit would be wiped by setScene
       const p = createPersistence(editor, BOARD, {
         onSaveError: () =>
@@ -412,6 +418,14 @@ export function Workspace({ boardId }: { boardId?: string }) {
         }}
       />
       <Notices notes={notes} onDismiss={dismissNote} />
+      {board && chartId && (
+        <ChartGrid
+          key={chartId}
+          editor={board.editor}
+          id={chartId}
+          onClose={() => setChartId(null)}
+        />
+      )}
       <Toolbar
         editor={board?.editor ?? null}
         readOnly={board?.readOnly ?? true}

@@ -242,6 +242,7 @@ export const selectTool = (ed: Editor): Tool => {
       if (hit?.type === 'text') ed.editText(hit.id)
       else if (hit?.type === 'math') ed.editMath(hit.id)
       else if (hit?.type === 'image') ed.editCrop(hit.id)
+      else if (hit?.type === 'chart') ed.editChart(hit.id)
     },
     onKey(e: KeyboardEvent) {
       const one = single()
@@ -252,6 +253,10 @@ export const selectTool = (ed: Editor): Tool => {
         }
         if (one?.type === 'math') {
           ed.editMath(one.id)
+          return true
+        }
+        if (one?.type === 'chart') {
+          ed.editChart(one.id)
           return true
         }
       }

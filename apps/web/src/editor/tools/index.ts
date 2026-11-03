@@ -1,5 +1,6 @@
 import type { Point } from '@whiteboard/core'
 import type { Editor } from '../editor'
+import { chartTool } from './chart'
 import { cropTool } from './crop'
 import { eraserTool } from './eraser'
 import { handTool } from './hand'
@@ -67,6 +68,7 @@ export const tools: Record<string, (ed: Editor) => Tool> = {
   arrow: shapeTool('arrow'),
   text: textTool,
   math: mathTool,
+  chart: chartTool,
   image: imageTool,
   pen: inkTool(false),
   highlighter: inkTool(true),

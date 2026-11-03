@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useSyncExternalStore } from 'react'
 import type { Editor } from '../src/editor/editor'
 import {
   ArrowIcon,
+  ChartIcon,
   DiamondIcon,
   EllipseIcon,
   EraserIcon,
@@ -107,6 +108,12 @@ const TOOL_ITEMS: ToolItem[] = [
     id: 'math',
     label: 'Math',
     icon: () => <MathIcon size={17} />,
+    group: 'create',
+  },
+  {
+    id: 'chart',
+    label: 'Chart',
+    icon: () => <ChartIcon size={17} />,
     group: 'create',
   },
 ]

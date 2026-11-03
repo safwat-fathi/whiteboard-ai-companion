@@ -339,3 +339,39 @@ describe('mapLimit', () => {
     })
   })
 })
+
+describe('chart in the picture', () => {
+  beforeAll(() => registerBundledFonts())
+  it('draws the bars of a chart element in its series colour, as the browser does', async () => {
+    const chart = {
+      ...frame('chart', 10, 10, 300, 200),
+      type: 'chart',
+      data: {
+        kind: 'bar',
+        title: 'Sales',
+        categories: ['A', 'B', 'C'],
+        series: [{ name: 's', values: [3, 5, 2] }],
+      },
+    } as Element
+    const png = await renderBoardPng(
+      [chart],
+      { x: 0, y: 0, w: 320, h: 220 },
+      320,
+      { blobs: store() },
+    )
+    const img = await loadImage(png)
+    const c = createCanvas(img.width, img.height)
+    const ctx = c.getContext('2d')
+    ctx.drawImage(img, 0, 0)
+    const { data } = ctx.getImageData(0, 0, c.width, c.height)
+    let blue = 0
+    for (let i = 0; i < data.length; i += 4)
+      if (
+        Math.abs((data[i] as number) - 0) < 12 &&
+        Math.abs((data[i + 1] as number) - 114) < 12 &&
+        Math.abs((data[i + 2] as number) - 178) < 12
+      )
+        blue++
+    expect(blue).toBeGreaterThan(1500) // three bars: far more than antialiasing noise
+  })
+})

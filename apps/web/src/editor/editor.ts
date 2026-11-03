@@ -136,6 +136,8 @@ export class Editor {
   readonly blobs: BlobStore
   readonly platform: Platform
   onNotice?: (message: string) => void
+  /** Asked to open a chart's data grid. The grid is UI outside the canvas: whoever mounts it sets this. */
+  onEditChart?: (id: Id) => void
   private pickerAt: Point | undefined
   private fileInput?: HTMLInputElement
   private listeners = new Set<() => void>()
@@ -381,6 +383,13 @@ export class Editor {
     if (this.readOnly || el?.type !== 'math' || el.locked) return
     this.setTool('math')
     ;(this.tools.math as MathTool).edit(el)
+  }
+
+  /** Opens the data grid of a chart (double-click or Enter in the select tool, or right after adding one). */
+  editChart(id: Id): void {
+    const el = this.scene.els.get(id)
+    if (this.readOnly || el?.type !== 'chart' || el.locked) return
+    this.onEditChart?.(id)
   }
 
   /** Enters non-destructive crop mode for an image element (double-click in the select tool). */

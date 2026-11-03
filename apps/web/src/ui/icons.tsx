@@ -132,6 +132,17 @@ export function HighlighterIcon({ size = 18, ...props }: IconProps) {
   )
 }
 
+export function ChartIcon({ size = 18, ...props }: IconProps) {
+  return (
+    <svg {...defaultProps(size)} {...props}>
+      <path d="M3 3v18h18" />
+      <rect x="7" y="12" width="3" height="6" />
+      <rect x="12" y="8" width="3" height="10" />
+      <rect x="17" y="14" width="3" height="4" />
+    </svg>
+  )
+}
+
 export function EraserIcon({ size = 18, ...props }: IconProps) {
   return (
     <svg {...defaultProps(size)} {...props}>
