@@ -53,6 +53,10 @@ export function checkImageSize(
   return { ok: true }
 }
 
+/** Where a blob's bytes live: `<dataDir>/blobs/<id[0:2]>/<id[2:4]>/<id>`. The id must already be checked with `isBlobId`. */
+export const blobPath = (dataDir: string, id: string): string =>
+  join(dataDir, 'blobs', id.slice(0, 2), id.slice(2, 4), id)
+
 /** A SHA-256 hex id. Every store method checks this first, so an id can never become a path outside blobs/. */
 export const isBlobId = (s: string): boolean => /^[0-9a-f]{64}$/.test(s)
 
@@ -68,8 +72,7 @@ export function createDiskBlobStore(o: {
 }): BlobStore & { path(id: string): string } {
   const max = o.maxBytes ?? MAX_BLOB_BYTES
   const now = o.now ?? Date.now
-  const path = (id: string) =>
-    join(o.dataDir, 'blobs', id.slice(0, 2), id.slice(2, 4), id)
+  const path = (id: string) => blobPath(o.dataDir, id)
 
   return {
     path,
