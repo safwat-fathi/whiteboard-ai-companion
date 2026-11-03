@@ -103,6 +103,15 @@ cp apps/web/.env.example apps/web/.env.local
   pnpm dev:server                # server on :4000 (REST, WebSocket, SSE)
   ```
 
+### Docker (web + server, alternative to the pnpm scripts)
+
+```bash
+cp apps/server/.env.example apps/server/.env   # API keys; optional for the editor alone
+docker compose up --build                      # web on :3000, server on :4000, data in the `whiteboard-data` volume
+```
+
+`NEXT_PUBLIC_API_BASE` is baked in at build time (see `compose.yaml`); change it and re-run with `--build`.
+
 ### Testing
 
 ```bash
@@ -115,7 +124,7 @@ pnpm ingest <file.pdf>           # add a PDF to the library from the terminal (-
 pnpm eval:retrieval --book <id|title> --eval eval/<book>.jsonl   # recall@8 and MRR on a real book
 ```
 
-Deploying to a VPS (Node + systemd + Caddy, no Docker): [`docs/plans/deployment.md`](docs/plans/deployment.md).
+Deploying to a VPS (Node + systemd + Caddy): [`docs/plans/deployment.md`](docs/plans/deployment.md).
 
 ## Configuration
 
