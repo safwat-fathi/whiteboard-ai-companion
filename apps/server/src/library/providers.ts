@@ -1,4 +1,6 @@
+import type { Config } from '../config'
 import { ApiError } from '../errors'
+import { cleanText } from './pdf'
 
 /**
  * Everything M4 asks of an outside service, behind one injectable interface so the pipeline is tested without a network.
@@ -106,6 +108,217 @@ export function stubProviders(o: { dims?: number } = {}): Providers {
     },
     async complete(prompt) {
       return `summary: ${prompt.slice(0, 40)}`
+    },
+  }
+}
+
+const OPENROUTER = 'https://openrouter.ai/api/v1'
+const EMBED_BATCH = 64
+const EMBED_USD_PER_TOKEN = 0.01 / 1e6 // baai/bge-m3, when the response carries no cost
+const R4_MAX_TOKENS = 12_000 // Muse spends reasoning tokens first: the S2 default of 4,000 cut off Arabic page 78
+const R3_CARRIER_MODEL = 'anthropic/claude-haiku-5.5' // reads the parsed PDF; its answer is thrown away (S2)
+// Unchanged from S2/ocr.ts, the prompt the owner validated the Arabic and CK-12 transcriptions with.
+const R4_PROMPT =
+  'Transcribe this textbook page to Markdown. Math as LaTeX ($...$ inline, $$...$$ display). Keep Arabic text exactly as printed (right-to-left, no translation). Keep headings, lists, tables. Output only the transcription; do not invent text that is not on the page; mark illegible parts as [illegible].'
+
+/** The parts of an OpenAI-style reply that M4 reads. */
+type ProviderJson = {
+  data?: { index: number; embedding?: number[] }[]
+  choices?: {
+    finish_reason?: string
+    message?: {
+      content?: string | null
+      annotations?: {
+        file?: { content?: { type?: string; text?: string }[] }
+      }[]
+    }
+  }[]
+  usage?: { cost?: number; prompt_tokens?: number }
+}
+
+const need = (value: string | undefined, name: string): string => {
+  if (!value) throw new ApiError('upstream_error', `${name} is not set`)
+  return value
+}
+
+const unit = (v: Float32Array): Float32Array => {
+  const n = Math.hypot(...v) || 1
+  return v.map((x) => x / n)
+}
+
+/** The real providers: Meta Model API for vision and summaries, OpenRouter for embeddings and the opt-in R3. */
+export function createProviders(o: {
+  config: Pick<
+    Config,
+    'metaBaseUrl' | 'visionModel' | 'cheapModel' | 'embedModel' | 'embedDims'
+  >
+  /** Where the keys are read from (never kept in `Config`). */
+  env: Record<string, string | undefined>
+  openrouterBaseUrl?: string
+  fetch?: typeof fetch
+  sleep?: (ms: number) => Promise<void>
+}): Providers {
+  const { config, env } = o
+  const openrouter = (o.openrouterBaseUrl ?? OPENROUTER).replace(/\/+$/, '')
+
+  async function post(
+    base: string,
+    path: string,
+    key: string,
+    body: unknown,
+  ): Promise<ProviderJson> {
+    const r = await retryFetch(
+      `${base}${path}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      },
+      { fetch: o.fetch, sleep: o.sleep },
+    )
+    try {
+      return (await r.json()) as ProviderJson
+    } catch {
+      throw new ApiError(
+        'upstream_error',
+        'provider sent a reply that is not JSON',
+      )
+    }
+  }
+  const metaChat = (
+    key: string,
+    model: string,
+    maxTokens: number,
+    content: unknown,
+  ) =>
+    post(config.metaBaseUrl, '/chat/completions', key, {
+      model,
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content }],
+    }).then((json) => {
+      const choice = json?.choices?.[0]
+      return {
+        text: String(choice?.message?.content ?? ''),
+        cutOff: choice?.finish_reason === 'length',
+      }
+    })
+
+  return {
+    async embed(texts) {
+      if (texts.length === 0) return { vectors: [], costUsd: 0 }
+      const key = need(env.OPENROUTER_API_KEY, 'OPENROUTER_API_KEY')
+      const vectors: Float32Array[] = []
+      let costUsd = 0
+      for (let i = 0; i < texts.length; i += EMBED_BATCH) {
+        const batch = texts.slice(i, i + EMBED_BATCH)
+        const json = await post(openrouter, '/embeddings', key, {
+          model: config.embedModel,
+          input: batch,
+          usage: { include: true },
+          provider: { data_collection: 'deny' },
+        })
+        const rows = [...(json?.data ?? [])].sort((a, b) => a.index - b.index)
+        if (rows.length !== batch.length)
+          throw new ApiError(
+            'upstream_error',
+            `embeddings: asked for ${batch.length} vectors, got ${rows.length}`,
+          )
+        for (const r of rows) {
+          if (r.embedding?.length !== config.embedDims)
+            throw new ApiError(
+              'upstream_error',
+              `embeddings: got ${r.embedding?.length} dims, expected ${config.embedDims}`,
+            )
+          vectors.push(unit(Float32Array.from(r.embedding)))
+        }
+        costUsd +=
+          json.usage?.cost ??
+          (json.usage?.prompt_tokens ?? 0) * EMBED_USD_PER_TOKEN
+      }
+      return { vectors, costUsd }
+    },
+
+    async transcribePage(png) {
+      const key = need(env.META_API_KEY, 'META_API_KEY')
+      const content = [
+        { type: 'text', text: R4_PROMPT },
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:image/png;base64,${Buffer.from(png).toString('base64')}`,
+          },
+        },
+      ]
+      let r = await metaChat(key, config.visionModel, R4_MAX_TOKENS, content)
+      if (r.cutOff)
+        r = await metaChat(key, config.visionModel, R4_MAX_TOKENS * 2, content)
+      return { text: cleanText(r.text).trim(), truncated: r.cutOff }
+    },
+
+    async ocrPages(pdf, pageCount) {
+      const key = need(env.OPENROUTER_API_KEY, 'OPENROUTER_API_KEY')
+      const json = await post(openrouter, '/chat/completions', key, {
+        model: R3_CARRIER_MODEL,
+        max_tokens: 8,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Reply OK.' },
+              {
+                type: 'file',
+                file: {
+                  filename: 'slice.pdf',
+                  file_data: `data:application/pdf;base64,${Buffer.from(pdf).toString('base64')}`,
+                },
+              },
+            ],
+          },
+        ],
+        plugins: [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }],
+        usage: { include: true },
+        provider: { data_collection: 'deny' },
+      })
+      const parts: { type?: string; text?: string }[] =
+        json?.choices?.[0]?.message?.annotations?.[0]?.file?.content ?? []
+      // One text element per page sits between the <file ...> and </file> markers; image parts are skipped.
+      const pages = parts
+        .filter(
+          (p) =>
+            p.type === 'text' &&
+            typeof p.text === 'string' &&
+            !/^<\/?file[ >]/.test(p.text),
+        )
+        .map((p) => cleanText(p.text as string).trim())
+      if (pages.length !== pageCount && pageCount !== 1)
+        throw new ApiError(
+          'upstream_error',
+          `ocr: asked for ${pageCount} pages, got ${pages.length}`,
+        )
+      return {
+        pages: pageCount === 1 ? [pages.join('\n\n')] : pages,
+        costUsd: json?.usage?.cost ?? 0,
+      }
+    },
+
+    async complete(prompt, opts) {
+      const key = need(env.META_API_KEY, 'META_API_KEY')
+      const r = await metaChat(
+        key,
+        config.cheapModel,
+        opts?.maxTokens ?? 6000,
+        prompt,
+      )
+      const text = cleanText(r.text).trim()
+      if (!text)
+        throw new ApiError(
+          'upstream_error',
+          'the model returned an empty completion',
+        )
+      return text
     },
   }
 }
