@@ -1,12 +1,18 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { ChatRequestSchema } from '@whiteboard/core'
+import { ChatRequestSchema, ContextDescriptorSchema } from '@whiteboard/core'
 import { pipeUIMessageStreamToResponse } from 'ai'
+import { z } from 'zod'
 import type { BoardService } from './board-service'
 import type { MessagesDb } from './db'
 import { apiError } from './errors'
 import { parse, readJson, send } from './http-util'
 import type { Tutor } from './tutor/turn'
 import type { TutorUndo } from './tutor/undo'
+
+const PreviewRequest = z.object({
+  context: ContextDescriptorSchema.default(ContextDescriptorSchema.parse({})),
+  images: z.array(z.string()).max(4).optional(),
+})
 
 export type TutorRoutesDeps = {
   tutor: Tutor
@@ -40,7 +46,7 @@ export function createTutorRoutes(d: TutorRoutesDeps) {
       res.on('close', () => {
         if (!res.writableEnded) ac.abort()
       })
-      const { stream } = d.tutor.start(body, ac.signal) // throws a plain error before any header is written
+      const { stream } = await d.tutor.start(body, ac.signal) // throws a plain error before any header is written
       await pipeUIMessageStreamToResponse({ response: res, stream })
       return true
     }
@@ -72,6 +78,22 @@ export function createTutorRoutes(d: TutorRoutesDeps) {
       send(res, 200, {
         messages: page.messages.map(d.tutor.toDto),
         ...(page.next ? { next: page.next } : {}),
+      })
+      return true
+    }
+    if (
+      seg[1] === 'boards' &&
+      seg[3] === 'context-preview' &&
+      seg.length === 4 &&
+      method === 'POST'
+    ) {
+      const id = decode(seg[2] as string)
+      const body = parse(PreviewRequest, await readJson(req))
+      const ctx = await d.tutor.previewContext(id, body.context, body.images)
+      send(res, 200, {
+        text: ctx.text,
+        pictures: ctx.pictures.map((p) => ({ blobId: p.blobId, of: p.of })),
+        tokens: ctx.tokens,
       })
       return true
     }

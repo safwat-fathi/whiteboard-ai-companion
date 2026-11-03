@@ -81,6 +81,7 @@ const tutor = createTutor({
       })
     : null,
   stub: tutorStub,
+  blobs,
   tools: (ctx) =>
     tutorToolSet(
       {

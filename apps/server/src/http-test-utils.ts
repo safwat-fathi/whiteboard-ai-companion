@@ -98,6 +98,7 @@ export async function boot(
         books: booksDb,
         llm: null,
         stub: o.tutor.fixtures,
+        blobs,
         tools: o.tutor.realTools
           ? (ctx) =>
               tutorToolSet(

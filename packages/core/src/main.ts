@@ -1,5 +1,6 @@
 export * from './blob'
 export * from './cachebudget'
+export * from './digest'
 export * from './flight'
 export * from './geometry'
 export * from './index'

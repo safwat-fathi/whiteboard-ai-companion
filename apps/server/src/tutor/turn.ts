@@ -1,4 +1,5 @@
 import {
+  type BlobStore,
   type ChatRequest,
   type MessageDto,
   newId,
@@ -19,6 +20,7 @@ import type { Config } from '../config'
 import type { BooksDb, MessageRow, MessagesDb, SettingsDb } from '../db'
 import { ApiError } from '../errors'
 import { type SourceRange, sanitizeCites } from './cites'
+import { buildTurnContext } from './context'
 import {
   addUsage,
   costOf,
@@ -54,6 +56,8 @@ export type TutorDeps = {
   llm: Llm | null
   /** Present = TUTOR_STUB: a scripted model replaces the provider and nothing else changes. */
   stub?: StubFixture[]
+  /** Where uploaded pictures live: the turn reads the ones the student attached. */
+  blobs: BlobStore
   /** The tools of a turn and, optionally, a hook that adds pictures to the next step. */
   tools?: (ctx: TurnCtx) => {
     tools: ToolSet
@@ -105,7 +109,14 @@ function historyOf(rows: MessageRow[]): ModelMessage[] {
       })
       .filter(Boolean)
       .join('\n')
-    return { role: m.role, content: text } as ModelMessage
+    const shown = (m.context as { pictures?: unknown[] } | undefined)?.pictures
+      ?.length
+    // an old picture is not sent again, only remembered
+    const note =
+      m.role === 'user' && shown
+        ? `\n(the student attached ${shown} picture${shown === 1 ? '' : 's'} of the board)`
+        : ''
+    return { role: m.role, content: text + note } as ModelMessage
   })
 }
 
@@ -120,7 +131,7 @@ export function createTutor(deps: TutorDeps) {
    * Checks everything that can fail with a plain HTTP error, takes the board's lock and stores the question. Throws
    * before any byte is streamed; whatever goes wrong afterwards reaches the client as a stream `error` part.
    */
-  function start(req: ChatRequest, signal: AbortSignal) {
+  async function start(req: ChatRequest, signal: AbortSignal) {
     const board = boards.getBoard(req.boardId)
     if (!board) throw new ApiError('not_found', `unknown board ${req.boardId}`)
     if (active.has(board.id))
@@ -140,16 +151,26 @@ export function createTutor(deps: TutorDeps) {
     const turnId = newId()
     const boardId = board.id
     const history = historyOf(messages.page(boardId, { limit: 16 }).messages)
+    active.set(boardId, turnId) // taken before the first await, so a second request cannot slip in
+    let context: Awaited<ReturnType<typeof buildTurnContext>>
+    try {
+      context = await buildTurnContext({ boards, blobs: deps.blobs }, boardId, {
+        context: req.context,
+        images: req.message.images,
+      })
+    } catch (e) {
+      active.delete(boardId)
+      throw e
+    }
     messages.append({
       id: `${turnId}:u`,
       boardId,
       turnId,
       role: 'user',
       parts: [{ type: 'text', text: req.message.text }],
-      context: req.context, // ponytail: picture and digest ids join this in T15/T16
+      context: context.stored,
       createdAt: now(),
     })
-    active.set(boardId, turnId)
 
     const stream = createUIMessageStream({
       onError: wire,
@@ -229,7 +250,21 @@ export function createTutor(deps: TutorDeps) {
               profile: settings.get('profile'),
               scopePack: pack.pack ?? undefined,
             }),
-            messages: [...history, { role: 'user', content: req.message.text }],
+            messages: [
+              ...history,
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: context.text },
+                  ...context.pictures.map((p) => ({
+                    type: 'image' as const,
+                    image: p.bytes,
+                    mediaType: p.mediaType,
+                  })),
+                  { type: 'text', text: req.message.text },
+                ],
+              },
+            ],
             tools: toolset?.tools ?? {},
             ...(toolset?.prepareStep
               ? { prepareStep: toolset.prepareStep }
@@ -339,6 +374,16 @@ export function createTutor(deps: TutorDeps) {
     start,
     toDto,
     isBusy: (boardId: string) => active.has(boardId),
+    /** "What the AI sees": the exact context a turn with this descriptor would send. */
+    previewContext: (
+      boardId: string,
+      context: ChatRequest['context'],
+      images: string[] = [],
+    ) =>
+      buildTurnContext({ boards, blobs: deps.blobs }, boardId, {
+        context,
+        images,
+      }),
     lastRequest: (boardId: string) => recorded.get(boardId),
     models: () => ({
       tutor: t.model,
