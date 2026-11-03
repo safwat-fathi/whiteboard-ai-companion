@@ -52,6 +52,8 @@ export async function boot(
     tutor?: {
       fixtures?: StubFixture[]
       tools?: TutorDeps['tools']
+      /** A real model adapter (against a fake endpoint) instead of the scripted one. */
+      llm?: import('./tutor/llm').Llm
       /** The cheap model for conversation summaries. */
       summarise?: (prompt: string) => Promise<string>
       /** The real board tools (the ones main.ts wires) instead of `tools`. */
@@ -101,7 +103,7 @@ export async function boot(
         messages: messagesDb,
         settings: settingsDb,
         books: booksDb,
-        llm: null,
+        llm: o.tutor.llm ?? null,
         stub: o.tutor.fixtures,
         summarise: o.tutor.summarise,
         blobs,
