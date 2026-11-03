@@ -1,4 +1,5 @@
 import { boardTools } from './board'
+import { addChart } from './chart'
 import { addDiagram } from './diagram'
 
 export { linearGeometry } from './board'
@@ -17,4 +18,4 @@ export {
 } from './registry'
 
 /** Every tool that needs only the board (the book tools live on the server). */
-export const coreTools = [...boardTools, addDiagram]
+export const coreTools = [...boardTools, addDiagram, addChart]

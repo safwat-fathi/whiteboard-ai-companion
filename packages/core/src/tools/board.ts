@@ -46,7 +46,7 @@ const budget = (ctx: ToolCtx, adding: number): string[] =>
     : []
 
 /** A write result: the batch to apply plus what the model needs afterwards. */
-function write(
+export function write(
   label: string,
   ops: import('../schema').Op[],
   els: Element[],

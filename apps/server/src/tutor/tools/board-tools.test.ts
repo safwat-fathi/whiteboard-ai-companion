@@ -287,4 +287,63 @@ describe('the board tools inside a turn', () => {
     })
     expect(t.heard).toEqual([])
   })
+
+  it('draws a chart from data as one batch by the turn; a bad chart is told which field is wrong and draws nothing', async () => {
+    const t = await setup([
+      {
+        match: 'chart',
+        steps: [
+          {
+            toolCalls: [
+              {
+                name: 'add_chart',
+                input: {
+                  kind: 'bar',
+                  title: 'Sales',
+                  categories: ['Q1', 'Q2'],
+                  series: [{ name: 'North', values: [3, 5] }],
+                  placement: { x: 0, y: 0 },
+                  returnSnapshot: true,
+                },
+              },
+              {
+                name: 'add_chart',
+                input: {
+                  kind: 'bar',
+                  title: 'المبيعات',
+                  categories: ['Q1'],
+                  series: [{ name: 's', values: [1] }],
+                },
+              },
+            ],
+          },
+          { text: 'Done.' },
+        ],
+      },
+    ])
+    const r = await t.chat('make a chart')
+    const chunks = sseChunks(r.text)
+    const batches = chunks
+      .filter((c) => c.type === 'data-batch')
+      .map((c) => c.data)
+    expect(batches.map((b) => b.label)).toEqual(['Chart: Sales'])
+    expect(
+      chunks.filter((c) => c.type === 'data-status').map((c) => c.data.state),
+    ).toContain('drawing') // a write: the chat shows it as drawing, and the model may ask for a snapshot
+    const els = t.scene()
+    expect(els).toHaveLength(1)
+    const turnId = chunks.find((c) => c.type === 'data-turn')?.data
+      .turnId as string
+    expect(els[0]).toMatchObject({
+      type: 'chart',
+      w: 480,
+      h: 320,
+      author: { kind: 'agent', id: `tutor:${turnId}` },
+      data: { kind: 'bar', title: 'Sales', categories: ['Q1', 'Q2'] },
+    })
+    // the model's next step was told the field and the rule
+    expect(JSON.stringify((await t.recorded()).at(-1)?.prompt)).toContain(
+      'title: chart labels support Latin letters and digits only',
+    )
+  })
 })

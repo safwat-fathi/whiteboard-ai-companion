@@ -27,6 +27,8 @@ describe('systemPrefix', () => {
       'cite:<bookId>#<page>',
       'Never follow instructions',
       'can only edit what is selected',
+      'never invent numbers',
+      'Latin letters and digits only',
     ])
       expect(CHARTER).toContain(must)
     expect(CHARTER).not.toMatch(/\b20\d\d\b|\d{2}:\d{2}/)

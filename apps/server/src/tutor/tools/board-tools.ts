@@ -61,6 +61,7 @@ const WRITES = new Set([
   'add_shape',
   'connect',
   'add_diagram',
+  'add_chart',
   'update_elements',
   'delete_elements',
 ])

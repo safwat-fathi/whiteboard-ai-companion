@@ -261,6 +261,7 @@ describe('the cached prefix', () => {
     expect((await t.recorded())[0]?.tools.sort()).toEqual(
       [
         'add_book_figure',
+        'add_chart',
         'add_diagram',
         'add_math',
         'add_shape',
