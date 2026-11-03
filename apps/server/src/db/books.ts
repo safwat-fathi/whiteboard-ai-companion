@@ -456,6 +456,17 @@ export function createBooksDb(db: Database.Database) {
       const stmt = o.withEmbedding ? selChunksEmb : selChunks
       return (stmt.all(bookId) as RawChunk[]).map(toChunk)
     },
+    /** The chunks of one book at the given positions (`ord`), in order; positions that do not exist are skipped. */
+    chunksByOrd(bookId: string, ords: number[]): ChunkRow[] {
+      if (ords.length === 0) return []
+      return (
+        db
+          .prepare(
+            `SELECT ${CHUNK_COLS} FROM book_chunks WHERE book_id = ? AND ord IN (${placeholders(ords.length)}) ORDER BY ord`,
+          )
+          .all(bookId, ...ords) as RawChunk[]
+      ).map(toChunk)
+    },
     chunksWithoutEmbedding: (bookId: string): ChunkRow[] =>
       (selNoEmb.all(bookId) as RawChunk[]).map(toChunk),
     chunkById(id: number): ChunkRow | undefined {

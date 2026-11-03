@@ -241,4 +241,22 @@ describe('books', () => {
     expect(books.spentSince(0)).toBeCloseTo(0.07, 10)
     expect(books.spentSince(1000)).toBe(0)
   })
+
+  it('fetches chunks of a book by position, for neighbours', () => {
+    const { books, blob } = open()
+    blob(H('a'))
+    for (const id of ['x', 'y'])
+      books.createBook({ id, title: id, fileBlob: H('a') }, 1)
+    books.insertChunks(
+      'x',
+      Array.from({ length: 5 }, (_, i) => chunk(i, { text: `x${i}` })),
+    )
+    books.insertChunks('y', [chunk(2, { text: 'y2' })])
+    expect(books.chunksByOrd('x', [1, 3, 9]).map((c) => c.text)).toEqual([
+      'x1',
+      'x3',
+    ])
+    expect(books.chunksByOrd('x', [])).toEqual([])
+    expect(books.chunksByOrd('y', [2]).map((c) => c.text)).toEqual(['y2'])
+  })
 })
