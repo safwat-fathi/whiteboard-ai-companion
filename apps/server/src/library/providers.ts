@@ -254,7 +254,10 @@ export function createProviders(o: {
     },
 
     async transcribePage(png) {
-      const key = need(env.META_API_KEY, 'META_API_KEY')
+      const key = need(
+        env.MODEL_API_KEY || env.META_API_KEY,
+        'MODEL_API_KEY',
+      )
       const content = [
         { type: 'text', text: R4_PROMPT },
         {
@@ -329,7 +332,10 @@ export function createProviders(o: {
     },
 
     async complete(prompt, opts) {
-      const key = need(env.META_API_KEY, 'META_API_KEY')
+      const key = need(
+        env.MODEL_API_KEY || env.META_API_KEY,
+        'MODEL_API_KEY',
+      )
       const max = opts?.maxTokens ?? 6000
       let r = await metaChat(key, config.cheapModel, 'CHEAP_MODEL', max, prompt)
       // a reasoning model can spend the whole budget thinking and answer with nothing: once more with twice the room

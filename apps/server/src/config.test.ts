@@ -10,7 +10,7 @@ describe('loadConfig', () => {
     expect(isAbsolute(c.dataDir)).toBe(true)
     expect(c.dataDir.endsWith('data')).toBe(true)
     expect(c.publicOrigin).toBe('http://localhost:3000')
-    expect(c.keys).toEqual({ meta: false, openrouter: false })
+    expect(c.keys).toEqual({ meta: false, model: false, openrouter: false })
   })
 
   it('resolves a relative DATA_DIR against baseDir and keeps an absolute one', () => {
@@ -39,11 +39,18 @@ describe('loadConfig', () => {
 
   it('reports key presence as booleans and never keeps the value', () => {
     const c = loadConfig({
-      META_API_KEY: 'sk-secret-meta',
+      MODEL_API_KEY: 'sk-secret-meta',
       OPENROUTER_API_KEY: '',
     })
-    expect(c.keys).toEqual({ meta: true, openrouter: false })
+    expect(c.keys).toEqual({ meta: true, model: true, openrouter: false })
     expect(JSON.stringify(c)).not.toContain('sk-secret-meta')
+
+    // Accepts legacy META_API_KEY as fallback
+    const legacy = loadConfig({
+      META_API_KEY: 'sk-secret-legacy',
+    })
+    expect(legacy.keys.model).toBe(true)
+    expect(legacy.keys.meta).toBe(true)
   })
 
   it('has library defaults from .env.example', () => {

@@ -53,7 +53,7 @@ The student talks to the AI **inside the app**. There is no external client, no 
 
 - **Quick actions** (prefill the input, no new backend): _Explain on the board_ · _Summarise this chapter_ · _Check my work_ (needs a selection) · _Ask_. They set the turn `mode`.
 - **Attach images:** paste or drop an image into the composer to include it as an image part (uploaded via `POST /api/blobs`).
-- **Entry from the board:** the selection toolbar's **Ask AI** focuses the composer (the right-click menu is not built) with the Selection chip attached. No keyboard shortcut is assigned until M5 (browser-reserved combos such as Ctrl+L are avoided).
+- **Entry from the board:** the selection toolbar's **Ask AI** focuses the composer (the right-click menu is not built) with the Selection chip attached. No keyboard shortcut is assigned (browser-reserved combos such as Ctrl+L are avoided; closed decision).
 
 ## States
 

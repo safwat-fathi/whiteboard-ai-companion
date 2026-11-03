@@ -1,3 +1,5 @@
+import { CloseIcon } from '../src/ui/icons'
+
 export type Note = {
   key: string
   text: string
@@ -7,7 +9,13 @@ export type Note = {
 }
 
 // The container is always rendered: live regions are announced reliably only when present before their content.
-export function Notices({ notes }: { notes: Note[] }) {
+export function Notices({
+  notes,
+  onDismiss,
+}: {
+  notes: Note[]
+  onDismiss?: (key: string) => void
+}) {
   return (
     <div
       aria-live="polite"
@@ -40,19 +48,56 @@ export function Notices({ notes }: { notes: Note[] }) {
             borderRadius: 6,
             padding: '6px 12px',
             color: '#3d3000',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
           }}
         >
           {n.text}
-          {n.action && (
-            <button
-              type="button"
-              className="note-btn"
-              onClick={n.action.run}
-              style={{ marginLeft: 10, pointerEvents: 'auto' }}
-            >
-              {n.action.label}
-            </button>
-          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              marginLeft: 8,
+            }}
+          >
+            {n.action && (
+              <button
+                type="button"
+                className="note-btn"
+                onClick={n.action.run}
+                style={{ pointerEvents: 'auto' }}
+              >
+                {n.action.label}
+              </button>
+            )}
+            {onDismiss && (
+              <button
+                type="button"
+                className="note-btn"
+                aria-label="Dismiss"
+                title="Dismiss"
+                onClick={() => onDismiss(n.key)}
+                style={{
+                  pointerEvents: 'auto',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'none',
+                  border: 'none',
+                  padding: '2px 4px',
+                  cursor: 'pointer',
+                  color: 'inherit',
+                  opacity: 0.7,
+                  borderRadius: 3,
+                }}
+              >
+                <CloseIcon size={14} />
+              </button>
+            )}
+          </div>
         </div>
       ))}
     </div>

@@ -57,7 +57,7 @@ Run 2026-11-02, `ai` 7.0.159, `@ai-sdk/openai-compatible` 3.0.82, `run.ts --prov
 
 ### 2. Meta Model API Benchmark (`api.meta.ai/v1`)
 
-Using the active `META_API_KEY` (`LLM_...`) against Meta's official Model API endpoint (`https://api.meta.ai/v1`):
+Using the active `MODEL_API_KEY` (`LLM_...`) against Meta's official Model API endpoint (`https://api.meta.ai/v1`):
 
 | Check | muse-spark-1.3 | muse-wonder-1.0 |
 |---|---|---|
@@ -75,4 +75,4 @@ Using the active `META_API_KEY` (`LLM_...`) against Meta's official Model API en
 - **Prompt caching operates automatically on conversation history**: During multi-step tool calls, turn 2 automatically reported 113 to 756 cached prompt tokens without manual cache breakpoint headers.
 - **Reasoning tokens**: Meta Muse models return structured `reasoning_tokens` (600–1,200 tokens) in `completion_tokens_details`. This increases turn latency (15–25s per turn), but produces rigorous tool arguments and mathematical formatting.
 - **Arabic quality**: Both `muse-spark-1.3` and `muse-wonder-1.0` followed `RULES=1` flawlessly (100% Arabic, 0 English words, strict `$...$` inline and `$$...$$` display math, accurate terminology). Ready for user 1–5 scoring.
-- **Provider / Doc Drift**: If the project uses the Meta Hackathon API (`META_API_KEY`), `.env.example` and `PLAN.md` §19 #30 need to update `META_API_BASE_URL` to `https://api.meta.ai/v1`, `TUTOR_MODEL`/`CHEAP_MODEL` to `muse-spark-1.3`, `REVIEWER_MODEL` to `muse-wonder-1.0`, and set `snapshotAdapter: follow-up-user`. If open-weights Llama 4 is required, it must route via OpenRouter (`meta-llama/llama-4-maverick`).
+- **Provider / Doc Drift**: If the project uses the Meta Hackathon API (`MODEL_API_KEY`), `.env.example` and `PLAN.md` §19 #30 need to update `META_API_BASE_URL` to `https://api.meta.ai/v1`, `TUTOR_MODEL`/`CHEAP_MODEL` to `muse-spark-1.3`, `REVIEWER_MODEL` to `muse-wonder-1.0`, and set `snapshotAdapter: follow-up-user`. If open-weights Llama 4 is required, it must route via OpenRouter (`meta-llama/llama-4-maverick`).

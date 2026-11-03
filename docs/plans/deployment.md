@@ -18,7 +18,7 @@ Dev: the browser at `http://localhost:3000` calls the server at `NEXT_PUBLIC_API
 
 | Key                                                    | Default                                                                                                                               | Meaning                                                                                                   |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `META_API_KEY`                                         | –                                                                                                                                     | Meta Model API key (all LLM/vision calls). Server only. Never in the browser, repo, logs or chat          |
+| `MODEL_API_KEY`                                        | –                                                                                                                                     | Meta Model API key (all LLM/vision calls). Server only. Never in the browser, repo, logs or chat          |
 | `META_API_BASE_URL`                                    | `https://api.meta.ai/v1`                                                                                                              | Meta OpenAI-compatible API endpoint                                                                       |
 | `OPENROUTER_API_KEY`                                   | –                                                                                                                                     | Used exclusively for `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and M0 spike benchmarks         |
 | `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `TUTOR_FALLBACK_MODEL` · `REVIEWER_MODEL` | `muse-spark-1.3` · `muse-spark-1.3` · `muse-spark-1.3` · `muse-wonder-1.0`                                                             | Active Meta Model API models (open-weights Llama 4 supported via OpenRouter). *(S3 OpenRouter baseline: `anthropic/claude-haiku-5.5` · `google/gemini-3.8-flash` · `anthropic/claude-sonnet-5.5`)* |
@@ -37,11 +37,11 @@ Web-only: `NEXT_PUBLIC_API_BASE` (in `apps/web/.env.local`).
 
 ## Local
 
-Prerequisites: Node 22+, pnpm 12 (`corepack enable`), a Meta API key (`META_API_KEY`), and an OpenRouter key (`OPENROUTER_API_KEY`, for `baai/bge-m3` embeddings). Nothing else.
+Prerequisites: Node 22+, pnpm 12 (`corepack enable`), a Meta API key (`MODEL_API_KEY`), and an OpenRouter key (`OPENROUTER_API_KEY`, for `baai/bge-m3` embeddings). Nothing else.
 
 ```
 pnpm install
-cp .env.example .env             # set META_API_KEY and OPENROUTER_API_KEY
+cp .env.example .env             # set MODEL_API_KEY and OPENROUTER_API_KEY
 pnpm dev                         # web :3000, server :4000, data in ./data
 ```
 
@@ -64,7 +64,7 @@ Size: 1 vCPU / 2 GB is enough for one student; 2 vCPU / 4 GB is comfortable for 
 
 ```
 [Unit]
-Description=Whiteboard AI server
+Description=Whiteboard AI Companion server
 After=network.target
 
 [Service]
@@ -129,7 +129,7 @@ On start the server runs pending migrations after performing an online backup of
 ## Operations
 
 - Logs: `journalctl -u whiteboard-server -f`. Logs never contain keys, prompts or book text (see [auth-security](./auth-security.md)).
-- Health: `GET /api/health` (DB open, migrations current, `META_API_KEY` and `OPENROUTER_API_KEY` present).
+- Health: `GET /api/health` (DB open, migrations current, `MODEL_API_KEY` and `OPENROUTER_API_KEY` present).
 - Disk: watch `blobs/` (context pictures and page rasters accumulate; no garbage collection in v1, add a cleanup script when it passes ~5 GB).
 - Upgrading Node: install the new LTS, `pnpm install --frozen-lockfile` (native modules re-fetch prebuilt binaries), restart.
 

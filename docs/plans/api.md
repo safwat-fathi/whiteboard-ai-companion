@@ -27,7 +27,7 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/health` | DB open, migrations current, `META_API_KEY` and `OPENROUTER_API_KEY` present |
+| `GET /api/health` | DB open, migrations current, `MODEL_API_KEY` and `OPENROUTER_API_KEY` present |
 | `GET /api/boards` · `POST /api/boards {title, scope}` | List / create |
 | `GET /api/boards/:id` · `PATCH` · `DELETE` | Metadata, title, scope |
 | `GET /api/boards/:id/messages` | Chat history (paged); starts after the last _New chat_ |

@@ -1,5 +1,5 @@
 [Unit]
-Description=Whiteboard AI web client
+Description=Whiteboard AI Companion web client
 After=network.target
 
 [Service]

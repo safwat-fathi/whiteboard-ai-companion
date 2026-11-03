@@ -77,10 +77,10 @@ const tutor = createTutor({
   messages: messagesDb,
   settings: settingsDb,
   books: booksDb,
-  llm: process.env.META_API_KEY
+  llm: (process.env.MODEL_API_KEY || process.env.META_API_KEY)
     ? createLlm({
         baseUrl: config.metaBaseUrl,
-        apiKey: process.env.META_API_KEY,
+        apiKey: (process.env.MODEL_API_KEY || process.env.META_API_KEY)!,
       })
     : null,
   stub: tutorStub,

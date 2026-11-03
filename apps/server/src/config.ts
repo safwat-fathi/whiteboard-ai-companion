@@ -6,7 +6,7 @@ export type Config = {
   dataDir: string
   publicOrigin: string
   /** Presence only: the key values never leave the environment. */
-  keys: { meta: boolean; openrouter: boolean }
+  keys: { meta: boolean; model: boolean; openrouter: boolean }
   /** Meta Model API base URL (no trailing slash) and the models M4 calls: page transcription (R4) and summaries. */
   metaBaseUrl: string
   visionModel: string
@@ -145,7 +145,11 @@ export function loadConfig(
     host: env.HOST || '127.0.0.1',
     dataDir: resolve(baseDir, env.DATA_DIR || './data'),
     publicOrigin,
-    keys: { meta: !!env.META_API_KEY, openrouter: !!env.OPENROUTER_API_KEY },
+    keys: {
+      meta: !!(env.MODEL_API_KEY || env.META_API_KEY),
+      model: !!(env.MODEL_API_KEY || env.META_API_KEY),
+      openrouter: !!env.OPENROUTER_API_KEY,
+    },
     metaBaseUrl,
     visionModel: env.VISION_MODEL || 'muse-spark-1.3',
     cheapModel: env.CHEAP_MODEL || 'muse-spark-1.3',

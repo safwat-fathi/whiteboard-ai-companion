@@ -20,7 +20,7 @@ const meta = arg('provider') === 'meta';
 const textOnly = meta && !/Llama-4|Vision|muse/i.test(modelId); // Llama-3.3-70B etc. cannot take images
 const tok = { in: 0, out: 0 };
 let lastToks: { in: number; out: number; cached: number }[] = [];
-const mp = createOpenAICompatible({ name: 'meta-llama', baseURL: process.env.META_API_BASE_URL!, apiKey: process.env.META_API_KEY, includeUsage: true });
+const mp = createOpenAICompatible({ name: 'meta-llama', baseURL: process.env.META_API_BASE_URL!, apiKey: process.env.MODEL_API_KEY || process.env.META_API_KEY, includeUsage: true });
 const or = createOpenRouter({ compatibility: 'strict', appName: 'whiteboard-ai-s3', extraBody: { provider: { data_collection: 'deny' } } });
 const lm = (id = modelId) => (meta ? mp(id) : or(id, { usage: { include: true } }));
 

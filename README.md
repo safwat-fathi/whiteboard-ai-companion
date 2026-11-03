@@ -1,10 +1,10 @@
-# Whiteboard AI
+# Whiteboard AI Companion
 
 > 🏆 **Built for the [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** & **Cerebral Valley**.
 
 A personal **study companion**. Upload a book, choose what to study (a topic, a chapter, the whole book) and **chat with an AI tutor inside the app**. The tutor explains on a shared infinite whiteboard with text, LaTeX equations, diagrams, charts and figures from your book, and cites the pages. You can draw and write on the same board, select anything and ask about it, and jump to wherever the AI worked.
 
-> **Status: M1 (core canvas editor) and M2 (math and images) done; M3 (server sync, SQLite op log, blobs, access gate, deploy scripts) built and gate-verified.** The server runs locally and syncs multiple tabs over WebSocket; server PNG snapshot matches browser render; Caddy and systemd deployment configs are ready. The AI tutor is planned (M5): the Meta Model API pieces below describe the plan and are **[spike]** until they are measured against that API (the M0 spikes ran on OpenRouter). Plan: [`docs/PLAN.md`](docs/PLAN.md); scope, gates and status per phase: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status: M1–M5 built, tested, and merged to `main`; currently at stage M6 (ink, charts, polish).** The infinite canvas, LaTeX math rendering, multi-tab SQLite sync, library ingestion with hybrid search, and in-app AI tutor (powered by the Meta Model API with live tool execution, board context, citations, and turn undo) are all live and verified. Plan: [`docs/PLAN.md`](docs/PLAN.md); scope, gates and status per phase: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## What it does (v1)
 
@@ -13,13 +13,11 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 - **Books with page citations.** Upload a PDF, get hybrid search (keywords + embeddings) scoped to a topic, chapter or the whole book. Answers say what is from your book and what is general explanation.
 - **Jump to the AI's work.** Follow the AI live, get an off-screen indicator, or click any chat chip or activity row to fly to where it drew, now or weeks ago.
 - **A from-scratch canvas.** Freehand, shapes, text (Arabic/RTL), LaTeX math (MathJax), charts, images, select/move/resize.
-- **Simple to run.** No login, no Docker, no database server: Node, one SQLite file, a [Meta Model API](https://api.meta.ai) key (`META_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings. Runs on a laptop and on a small VPS.
+- **Simple to run.** No login, no Docker, no database server: Node, one SQLite file, a [Meta Model API](https://api.meta.ai) key (`MODEL_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings. Runs on a laptop and on a small VPS.
 
 ## Hackathon & Meta AI Integration
 
-> Planned design (M5): nothing in this section is built yet, and the model choices are **[spike]** until re-measured against the Meta Model API.
-
-Whiteboard AI is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (October 26 – November 4, 2026), hosted by **Meta** and **Cerebral Valley**.
+Whiteboard AI Companion is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** (October 26 – November 4, 2026), hosted by **Meta** and **Cerebral Valley**.
 
 The project re-imagines how learners interact with textbooks and technical subjects by uniting Meta foundation models with an interactive visual workspace via the **Meta Model API**:
 
@@ -69,7 +67,7 @@ Prerequisites: **Node 22+** and **pnpm 12** (`corepack enable`).
 
 ```bash
 pnpm install
-cp .env.example .env             # optional for local server mode; required for AI keys in M4/M5
+cp .env.example .env             # set MODEL_API_KEY and OPENROUTER_API_KEY for server mode
 ```
 
 ### Running
@@ -103,7 +101,7 @@ Set in `.env` (server) — the full list is in [`deployment`](docs/plans/deploym
 
 | Key                                                            | Purpose                                                                                                                               |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `META_API_KEY`                                                 | Meta Model API secret (chat, tool loop, vision, summaries, page OCR). Server-side only                                                |
+| `MODEL_API_KEY`                                                | Meta Model API secret (chat, tool loop, vision, summaries, page OCR). Server-side only                                                |
 | `META_API_BASE_URL`                                            | Meta OpenAI-compatible base URL (`https://api.meta.ai/v1` by default)                                                                 |
 | `OPENROUTER_API_KEY`                                           | Used exclusively for `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and historical M0 spike scripts. Server-side only           |
 | `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `CHEAP_MODEL` · `VISION_MODEL` | Meta model IDs (default `muse-spark-1.3`; `REVIEWER_MODEL=muse-wonder-1.0`; open-weights Llama 4 via OpenRouter)                     |
@@ -130,16 +128,17 @@ docs/            PLAN.md and docs/plans/*.md
 
 ## Roadmap
 
-| Milestone | What                                                                                             |
-| --------- | ------------------------------------------------------------------------------------------------ |
-| M0        | Spikes: canvas performance, ingestion on real books, OpenRouter loop, embeddings, deploy dry-run |
-| M1–M2     | Core editor, math and images                                                                     |
-| M3        | Server, sync, persistence, first VPS deploy                                                      |
-| M4        | Library: upload, extraction, hybrid search                                                       |
-| **M5**    | **Tutor slice: in-app chat, board context, citations, jump-to-AI**                               |
-| M6–M7     | Ink and charts, hardening, optional MCP adapter                                                  |
+| Milestone | What                                                                                             | Status        |
+| --------- | ------------------------------------------------------------------------------------------------ | ------------- |
+| M0        | Spikes: canvas performance, ingestion on real books, OpenRouter loop, embeddings, deploy dry-run | ✔ Done        |
+| M1–M2     | Core editor, math and images                                                                     | ✔ Done        |
+| M3        | Server, sync, persistence, access gate, deploy scripts                                           | ✔ Done        |
+| M4        | Library: upload, extraction ladder, hybrid search                                                | ✔ Done        |
+| M5        | Tutor slice: in-app chat, board context, citations, jump-to-AI (first usable tutor)               | ✔ Done        |
+| **M6**    | **Ink, charts, polish: pen, highlighter, eraser, charts, arrange/group/snap**                    | ◐ In progress |
+| M7        | Hardening: performance pass, security review, a11y outline, backup drill, optional MCP adapter   | ☐ Planned     |
 
-The first usable tutor is the end of M5. Scope, gates and status per phase, ordered by dependency: [`ROADMAP.md`](docs/ROADMAP.md).
+Currently at stage **M6**. Scope, gates and status per phase, ordered by dependency: [`ROADMAP.md`](docs/ROADMAP.md).
 
 ## License
 

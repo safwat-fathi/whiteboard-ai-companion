@@ -197,7 +197,7 @@ describe('POST /api/chat', () => {
       message: { text: 'hi' },
     })
     expect(r.status).toBe(502)
-    expect(r.json.error.message).toMatch(/META_API_KEY/)
+    expect(r.json.error.message).toMatch(/MODEL_API_KEY/)
     expect(JSON.stringify(r.json)).not.toContain('sk-secret-meta-value')
   })
 

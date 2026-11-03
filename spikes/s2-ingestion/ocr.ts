@@ -44,7 +44,7 @@ async function chat(body: object) {
   const t0 = performance.now();
   const url = isMeta ? `${process.env.META_API_BASE_URL}/chat/completions` : 'https://openrouter.ai/api/v1/chat/completions';
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${isMeta ? process.env.META_API_KEY : process.env.OPENROUTER_API_KEY}`,
+    Authorization: `Bearer ${isMeta ? (process.env.MODEL_API_KEY || process.env.META_API_KEY) : process.env.OPENROUTER_API_KEY}`,
     'Content-Type': 'application/json',
   };
   if (!isMeta) headers['X-Title'] = 'whiteboard-ai-s2';

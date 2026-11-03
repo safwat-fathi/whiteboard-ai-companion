@@ -130,6 +130,15 @@ describe('Notices', () => {
     expect(html).toMatch(/role="alert"[^>]*>Could not save/)
     expect(html).toMatch(/role="status"[^>]*>2 dropped/)
   })
+  it('renders a dismiss button when onDismiss is provided', () => {
+    const html = renderToStaticMarkup(
+      createElement(Notices, {
+        notes: [{ key: 'a', text: 'Info note', role: 'status' }],
+        onDismiss: () => {},
+      }),
+    )
+    expect(html).toContain('aria-label="Dismiss"')
+  })
 })
 
 describe('Page', () => {
