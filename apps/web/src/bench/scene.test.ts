@@ -5,6 +5,7 @@ import {
   INK_POINTS,
   INK_SHAPES,
   INK_STROKES,
+  makeChartScene,
   makeImageScene,
   makeInkScene,
   makeMathScene,
@@ -159,6 +160,26 @@ describe('bench scene', () => {
       const a = JSON.stringify(els)
       expect(JSON.stringify(makeInkScene(w))).toBe(a)
       expect(JSON.stringify(makeInkScene(w, 2))).not.toBe(a)
+    })
+  })
+  describe('M6 chart scene', () => {
+    const w = world(5000)
+    const els = makeChartScene(200, w)
+
+    it('is 200 valid charts, all six kinds, unique ids, z ascending, inside the world, deterministic', () => {
+      expect(els).toHaveLength(200)
+      for (const el of els)
+        expect(ElementSchema.safeParse(el).success).toBe(true)
+      expect(new Set(els.map((e) => e.id)).size).toBe(200)
+      expect(els.map((e) => e.z)).toEqual([...els.map((e) => e.z)].sort())
+      expect(
+        new Set(els.map((e) => (e.type === 'chart' ? e.data.kind : ''))),
+      ).toEqual(new Set(['bar', 'line', 'area', 'pie', 'donut', 'scatter']))
+      for (const e of els) {
+        expect(e.x).toBeGreaterThanOrEqual(w.x)
+        expect(e.y).toBeGreaterThanOrEqual(w.y)
+      }
+      expect(JSON.stringify(makeChartScene(200, w))).toBe(JSON.stringify(els))
     })
   })
 })

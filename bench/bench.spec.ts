@@ -134,7 +134,13 @@ for (const n of [5000, 20000]) {
 }
 
 // M2 scenes (Task 11): 200 equations vs 200 texts (Q10's baseline), 50 large images, and the 5,000 mix with 10% math + images.
-for (const scene of ['text200', 'math200', 'images50', 'mixed5000']) {
+for (const scene of [
+  'text200',
+  'math200',
+  'images50',
+  'mixed5000',
+  'chart200',
+]) {
   test(`bench scene=${scene}`, async ({ context, browser }, testInfo) => {
     const runs = await collect(context, `scene=${scene}`, testInfo.project.name)
     writeFileSync(

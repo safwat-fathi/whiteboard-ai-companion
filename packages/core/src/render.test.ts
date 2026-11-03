@@ -4,6 +4,7 @@ import { fixViewBox, renderMath } from '../../math/src/index'
 import { createNodeMathProvider, rasterizeSvgNode } from '../../math/src/node'
 import equations from '../../math/test/fixtures/equations.json'
 import { matchesGolden } from '../test/matchesGolden'
+import { layoutChart } from './chart'
 import { bounds, fitMath } from './geometry'
 import { SpatialIndex } from './index'
 import { nodePlatform, registerBundledFonts } from './node'
@@ -13,6 +14,7 @@ import type {
   MathProvider,
   Platform,
 } from './platform'
+import { FONT_STACK } from './platform'
 import {
   RenderCache,
   render,
@@ -24,12 +26,13 @@ import {
 import { createScene } from './scene'
 import {
   type Camera,
+  type ChartData,
   type Element,
   type ShapeData,
   ZOOM_MAX,
   ZOOM_MIN,
 } from './schema'
-import { mk, scribble } from './test-utils'
+import { chart, mk, scribble } from './test-utils'
 
 const platform = nodePlatform()
 const vp = { width: 600, height: 400, dpr: 1 }
@@ -1436,4 +1439,239 @@ describe('ink rendering', () => {
       expect(px(ctx, 120, 10)[0] as number).toBeGreaterThan(200)
     })
   })
+})
+
+describe('chart rendering', () => {
+  registerBundledFonts()
+  const px = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+    const d = ctx.getImageData(x, y, 1, 1).data
+    return [d[0] as number, d[1] as number, d[2] as number]
+  }
+  const near = (got: number[], want: number[], tol = 3) =>
+    got.forEach((g, i) => {
+      expect(Math.abs(g - (want[i] as number))).toBeLessThanOrEqual(tol)
+    })
+  const measure = (t: string, size: number) =>
+    platform.measureText(`${size}px ${FONT_STACK}`, t)
+
+  it('paints a bar in its series colour inside the chart box and leaves the board outside it alone', () => {
+    const el = chart('c', { x: 20, y: 20, w: 480, h: 320 })
+    const { c, ctx } = canvas(520, 360)
+    render(
+      ctx,
+      createScene([el]),
+      cam,
+      { width: 520, height: 360, dpr: 1 },
+      platform,
+    )
+    const layout = layoutChart(el.data as ChartData, 480, 320, { measure })
+    const bar = layout.prims.find((p) => p.k === 'rect' && p.role === 'bar')
+    if (bar?.k !== 'rect') throw new Error('no bar')
+    near(px(ctx, 20 + bar.x + bar.w / 2, 20 + bar.y + bar.h / 2), [0, 114, 178])
+    near(px(ctx, 5, 5), [255, 255, 255])
+    expect(c.width).toBe(520)
+  })
+
+  it('takes the chart colour for text and axes from style.stroke and a background from style.fill', () => {
+    const el = chart('c', {
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 120,
+      style: { ...mk('s').style, fill: '#ffeedd' },
+    })
+    const { ctx } = canvas(200, 120)
+    render(
+      ctx,
+      createScene([el]),
+      cam,
+      { width: 200, height: 120, dpr: 1 },
+      platform,
+    )
+    near(px(ctx, 198, 2), [255, 238, 221])
+  })
+
+  it('rotates about its centre like a picture', () => {
+    const el = chart('c', {
+      x: 100,
+      y: 100,
+      w: 200,
+      h: 100,
+      rotation: Math.PI / 2,
+      style: { ...mk('s').style, fill: '#ffeedd' },
+    })
+    const { ctx } = canvas(400, 320)
+    render(
+      ctx,
+      createScene([el]),
+      cam,
+      { width: 400, height: 320, dpr: 1 },
+      platform,
+    )
+    // turned about (200, 150) the box spans x 150..250, y 50..250
+    near(px(ctx, 152, 60), [255, 238, 221])
+    near(px(ctx, 120, 110), [255, 255, 255]) // inside the unturned box, outside the turned one
+  })
+
+  it('bakes a bitmap once per zoom bucket and per version: a second frame builds nothing', () => {
+    const createCanvasSpy = vi.fn(platform.createCanvas)
+    const p2: Platform = { ...platform, createCanvas: createCanvasSpy }
+    const cache = new RenderCache()
+    const el = chart('c', { x: 0, y: 0, w: 300, h: 200 })
+    const scene = createScene([el])
+    const { ctx } = canvas(320, 220)
+    const vp1 = { width: 320, height: 220, dpr: 1 }
+    render(ctx, scene, cam, vp1, p2, { cache })
+    expect(createCanvasSpy).toHaveBeenCalledTimes(1)
+    expect(cache.bytes).toBe(300 * 200 * 4)
+    render(ctx, scene, cam, vp1, p2, { cache })
+    expect(createCanvasSpy).toHaveBeenCalledTimes(1)
+    // a new version is a new bitmap, and a zoom past the bucket is another
+    const next = chart(
+      'c',
+      { x: 0, y: 0, w: 300, h: 200, v: 1 },
+      { kind: 'line' },
+    )
+    render(ctx, createScene([next]), cam, vp1, p2, { cache })
+    expect(createCanvasSpy).toHaveBeenCalledTimes(2)
+    render(
+      ctx,
+      createScene([next]),
+      { x: 0, y: 0, zoom: 2 },
+      { ...vp1, width: 640, height: 440 },
+      p2,
+      { cache },
+    )
+    expect(createCanvasSpy).toHaveBeenCalledTimes(3)
+    cache.dispose()
+  })
+
+  const kinds = {
+    bar: () => [
+      chart(
+        'b',
+        { x: 10, y: 10, w: 480, h: 320 },
+        {
+          kind: 'bar',
+          title: 'Units sold',
+          xLabel: 'Quarter',
+          yLabel: 'Units',
+          categories: ['Q1', 'Q2', 'Q3', 'Q4'],
+          series: [
+            { name: 'North', values: [12, 19, 8, 15] },
+            { name: 'South', values: [9, -4, 14, 20] },
+          ],
+        },
+      ),
+    ],
+    'line-area': () => [
+      chart(
+        'l',
+        { x: 10, y: 10, w: 300, h: 240 },
+        {
+          kind: 'line',
+          title: 'Temperature',
+          categories: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          series: [
+            { name: 'Day', values: [14, 18, 17, 21, 19] },
+            { name: 'Night', values: [6, 9, 8, 12, 10] },
+          ],
+        },
+      ),
+      chart(
+        'a',
+        { x: 320, y: 10, w: 300, h: 240 },
+        {
+          kind: 'area',
+          stacked: true,
+          title: 'Stacked',
+          categories: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          series: [
+            { name: 'Rain', values: [3, 5, 2, 6, 4] },
+            { name: 'Snow', values: [1, 0, 2, 1, 3] },
+          ],
+        },
+      ),
+    ],
+    'pie-donut': () => [
+      chart(
+        'p',
+        { x: 10, y: 10, w: 300, h: 260 },
+        {
+          kind: 'pie',
+          title: 'Share',
+          categories: ['Rent', 'Food', 'Travel', 'Other'],
+          series: [{ name: 'Spend', values: [45, 30, 15, 10] }],
+        },
+      ),
+      chart(
+        'd',
+        { x: 320, y: 10, w: 300, h: 260 },
+        {
+          kind: 'donut',
+          title: 'Share',
+          categories: ['Rent', 'Food', 'Travel', 'Other'],
+          series: [{ name: 'Spend', values: [45, 30, 15, 10] }],
+        },
+      ),
+    ],
+    scatter: () => [
+      chart(
+        's',
+        { x: 10, y: 10, w: 480, h: 320 },
+        {
+          kind: 'scatter',
+          title: 'Height and weight',
+          xLabel: 'Height (cm)',
+          yLabel: 'Weight (kg)',
+          categories: [],
+          series: [
+            {
+              name: 'Group A',
+              values: [52, 58, 63, 70, 77],
+              xs: [150, 158, 165, 172, 180],
+            },
+            {
+              name: 'Group B',
+              values: [48, 55, 60, 66, 71],
+              xs: [148, 155, 162, 170, 178],
+            },
+          ],
+        },
+      ),
+    ],
+  }
+  const view = {
+    bar: [500, 340],
+    'line-area': [630, 260],
+    'pie-donut': [630, 280],
+    scatter: [500, 340],
+  } as const
+  for (const [name, els] of Object.entries(kinds)) {
+    const [w, h] = view[name as keyof typeof view]
+    it(`matches the ${name} golden at zoom 1 and zoom 2`, async () => {
+      const cache = new RenderCache()
+      const a = canvas(w, h)
+      render(
+        a.ctx,
+        createScene(els()),
+        cam,
+        { width: w, height: h, dpr: 1 },
+        platform,
+        { cache },
+      )
+      await matchesGolden(a.c, `chart-${name}`, TIGHT)
+      const b = canvas(w * 2, h * 2)
+      render(
+        b.ctx,
+        createScene(els()),
+        { x: 0, y: 0, zoom: 2 },
+        { width: w * 2, height: h * 2, dpr: 1 },
+        platform,
+        { cache },
+      )
+      await matchesGolden(b.c, `chart-${name}-zoom2`, TIGHT)
+      cache.dispose()
+    })
+  }
 })

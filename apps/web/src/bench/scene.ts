@@ -289,6 +289,48 @@ export function makeTextScene(
   })
 }
 
+const CHART_KINDS = ['bar', 'line', 'area', 'pie', 'donut', 'scatter'] as const
+
+/** The M6 chart baseline: n small charts (all six kinds, titled, two series where the kind takes them) in text200's grid. */
+export function makeChartScene(n: number, world: World): Element[] {
+  let z: string | null = null
+  const categories = ['Q1', 'Q2', 'Q3', 'Q4']
+  return grid(n, world).map((at, i): Element => {
+    z = zBetween(z, null)
+    const kind = CHART_KINDS[
+      i % CHART_KINDS.length
+    ] as (typeof CHART_KINDS)[number]
+    const values = (k: number) =>
+      categories.map((_, j) => ((i * 7 + j * 13 + k * 5) % 17) + 1)
+    const one = kind === 'pie' || kind === 'donut'
+    return {
+      ...frame(`c${i}`, z, { ...at, w: 160, h: 110 }),
+      type: 'chart',
+      data:
+        kind === 'scatter'
+          ? {
+              kind,
+              title: `Chart ${i}`,
+              categories: [],
+              series: [0, 1].map((k) => ({
+                name: `s${k}`,
+                values: values(k),
+                xs: [1, 2, 3, 4],
+              })),
+            }
+          : {
+              kind,
+              title: `Chart ${i}`,
+              categories,
+              series: (one ? [0] : [0, 1]).map((k) => ({
+                name: `s${k}`,
+                values: values(k),
+              })),
+            },
+    }
+  })
+}
+
 export function makeImageScene(
   n: number,
   world: World,

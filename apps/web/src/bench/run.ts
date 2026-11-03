@@ -6,6 +6,7 @@ import type { Tool } from '../editor/tools'
 import {
   type BenchImage,
   describeScene,
+  makeChartScene,
   makeImageScene,
   makeInkScene,
   makeMathScene,
@@ -97,6 +98,7 @@ export type BenchKind =
   | 'images50'
   | 'mixed5000'
   | 'ink'
+  | 'chart200'
 
 type InkSample = { lat: number; wait: number; work: number }
 
@@ -201,6 +203,7 @@ export async function runBench(
   else if (kind === 'images50')
     els = makeImageScene(50, world, await importBenchImages(editor))
   else if (kind === 'ink') els = makeInkScene(world)
+  else if (kind === 'chart200') els = makeChartScene(200, world)
   else
     els = makeMixedScene(
       5000,

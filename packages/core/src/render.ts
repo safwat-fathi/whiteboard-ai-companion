@@ -1,3 +1,4 @@
+import { type ChartLayout, layoutChart } from './chart'
 import { bounds, type Point, type Rect, routeArrow } from './geometry'
 import type { SpatialIndex } from './index'
 import { inkReach, strokeOutline } from './ink'
@@ -189,6 +190,37 @@ function drawLines(
   }
 }
 
+/** Paints into a new bitmap of pw x ph pixels at `bucket` times world scale, ready for the cache. */
+function bake(
+  platform: Platform,
+  pw: number,
+  ph: number,
+  bucket: number,
+  paint: (c: CanvasRenderingContext2D) => void,
+): TextBitmap {
+  const canvas = platform.createCanvas(pw, ph)
+  const c = canvas.getContext('2d') as CanvasRenderingContext2D
+  c.scale(bucket, bucket)
+  paint(c)
+  // Browser: freeze the pixels into an ImageBitmap (what S1 measured). It draws faster than an OffscreenCanvas
+  // source; Node canvases have no such method and are drawn as they are.
+  const frozen = (
+    canvas as { transferToImageBitmap?: () => ImageBitmap }
+  ).transferToImageBitmap?.()
+  return {
+    canvas: frozen ?? canvas,
+    pw,
+    ph,
+    close() {
+      if (frozen) frozen.close()
+      else {
+        canvas.width = 0
+        canvas.height = 0
+      }
+    },
+  }
+}
+
 /** Draws a text element at its origin (the caller has set the world transform, alpha and rotation). */
 function drawText(
   ctx: CanvasRenderingContext2D,
@@ -211,27 +243,9 @@ function drawText(
       ctx.restore()
       return
     }
-    const canvas = platform.createCanvas(pw, ph)
-    const c = canvas.getContext('2d') as CanvasRenderingContext2D
-    c.scale(bucket, bucket)
-    drawLines(c, el, lines, platform)
-    // Browser: freeze the pixels into an ImageBitmap (what S1 measured). It draws faster than an OffscreenCanvas
-    // source; Node canvases have no such method and are drawn as they are.
-    const frozen = (
-      canvas as { transferToImageBitmap?: () => ImageBitmap }
-    ).transferToImageBitmap?.()
-    bmp = {
-      canvas: frozen ?? canvas,
-      pw,
-      ph,
-      close() {
-        if (frozen) frozen.close()
-        else {
-          canvas.width = 0
-          canvas.height = 0
-        }
-      },
-    }
+    bmp = bake(platform, pw, ph, bucket, (c) =>
+      drawLines(c, el, lines, platform),
+    )
     const byteSize = pw * ph * 4
     cache.set(bucket, el.id, el.v, bmp, byteSize)
     ctx.drawImage(
@@ -257,6 +271,153 @@ type TextBitmap = {
   pw: number
   ph: number
   close(): void
+}
+
+type ChartEl = Element & { type: 'chart' }
+
+const chartMeasure = (platform: Platform) => (text: string, size: number) =>
+  platform.measureText(`${size}px ${FONT_STACK}`, text)
+
+/** Paints a chart layout with the chart's top-left at the origin. */
+function paintChart(
+  ctx: CanvasRenderingContext2D,
+  el: ChartEl,
+  layout: ChartLayout,
+  platform: Platform,
+) {
+  if (el.style.fill) {
+    ctx.fillStyle = el.style.fill
+    ctx.fillRect(0, 0, el.w, el.h)
+  }
+  ctx.lineJoin = 'round'
+  for (const p of layout.prims) {
+    switch (p.k) {
+      case 'rect':
+        ctx.fillStyle = p.fill
+        ctx.fillRect(p.x, p.y, p.w, p.h)
+        break
+      case 'line':
+        ctx.strokeStyle = p.stroke
+        ctx.lineWidth = p.width
+        ctx.beginPath()
+        ctx.moveTo(p.x1, p.y1)
+        ctx.lineTo(p.x2, p.y2)
+        ctx.stroke()
+        break
+      case 'poly': {
+        const [first, ...rest] = p.pts
+        if (!first) break
+        ctx.beginPath()
+        ctx.moveTo(first[0], first[1])
+        for (const [x, y] of rest) ctx.lineTo(x, y)
+        if (p.closed) ctx.closePath()
+        if (p.fill) {
+          ctx.fillStyle = p.fill
+          ctx.fill()
+        }
+        if (p.stroke) {
+          ctx.strokeStyle = p.stroke
+          ctx.lineWidth = p.width ?? 1
+          ctx.stroke()
+        }
+        break
+      }
+      case 'arc': {
+        if (p.a1 - p.a0 < 1e-9) break
+        ctx.beginPath()
+        if (p.r0 > 0) {
+          ctx.arc(p.cx, p.cy, p.r1, p.a0, p.a1)
+          ctx.arc(p.cx, p.cy, p.r0, p.a1, p.a0, true)
+        } else {
+          ctx.moveTo(p.cx, p.cy)
+          ctx.arc(p.cx, p.cy, p.r1, p.a0, p.a1)
+        }
+        ctx.closePath()
+        ctx.fillStyle = p.fill
+        ctx.fill()
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+        break
+      }
+      case 'dot':
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, p.r, 0, 2 * Math.PI)
+        ctx.fillStyle = p.fill
+        ctx.fill()
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 1
+        ctx.stroke()
+        break
+      case 'text': {
+        const font = `${p.size}px ${FONT_STACK}`
+        const fm = fontMetrics(platform, font)
+        ctx.font = font
+        ctx.fillStyle = p.fill
+        ctx.textAlign = p.align
+        ctx.direction = 'ltr'
+        // p.y is the text's vertical centre: same baseline rule as drawLines
+        ctx.textBaseline = fm ? 'alphabetic' : 'middle'
+        const dy = fm ? (fm.ascent - fm.descent) / 2 : 0
+        if (p.rotate) {
+          ctx.save()
+          ctx.translate(p.x, p.y)
+          ctx.rotate(p.rotate)
+          ctx.fillText(p.text, 0, dy)
+          ctx.restore()
+        } else ctx.fillText(p.text, p.x, p.y + dy)
+        break
+      }
+    }
+  }
+}
+
+/** Draws a chart at its origin (the caller has set the world transform, alpha and rotation), from a bitmap per zoom bucket. */
+function drawChart(
+  ctx: CanvasRenderingContext2D,
+  el: ChartEl,
+  platform: Platform,
+  scale: number,
+  cache?: RenderCache,
+) {
+  const bucket = zoomBucket(scale)
+  let bmp = cache?.get<TextBitmap>(bucket, el.id, el.v)
+  if (!bmp) {
+    const layout = layoutChart(el.data, el.w, el.h, {
+      measure: chartMeasure(platform),
+      ink: el.style.stroke,
+    })
+    const pw = Math.ceil(el.w * bucket)
+    const ph = Math.ceil(el.h * bucket)
+    if (pw < 1 || ph < 1 || pw > MAX_BITMAP || ph > MAX_BITMAP || !cache) {
+      ctx.save()
+      ctx.translate(el.x, el.y)
+      paintChart(ctx, el, layout, platform)
+      ctx.restore()
+      return
+    }
+    bmp = bake(platform, pw, ph, bucket, (c) =>
+      paintChart(c, el, layout, platform),
+    )
+    const byteSize = pw * ph * 4
+    cache.set(bucket, el.id, el.v, bmp, byteSize)
+    ctx.drawImage(
+      bmp.canvas as unknown as CanvasImageSource,
+      el.x,
+      el.y,
+      bmp.pw / bucket,
+      bmp.ph / bucket,
+    )
+    if (byteSize > cache.cap) bmp.close()
+    return
+  }
+  ctx.drawImage(
+    bmp.canvas as unknown as CanvasImageSource,
+    el.x,
+    el.y,
+    bmp.pw / bucket,
+    bmp.ph / bucket,
+  )
 }
 
 type MathEl = Element & { type: 'math' }
@@ -769,7 +930,12 @@ export function render(
   for (const el of visible) {
     // save/restore (and the dash array) only for elements that change alpha, dash or transform: at 5,000 elements
     // they cost about a third of a frame's JS time (task 12). Plain elements set every style they use.
-    if (el.type === 'text' || el.type === 'math' || el.type === 'image') {
+    if (
+      el.type === 'text' ||
+      el.type === 'math' ||
+      el.type === 'image' ||
+      el.type === 'chart'
+    ) {
       const state = el.rotation !== 0 || el.style.opacity !== 1
       if (state) {
         ctx.save()
@@ -778,6 +944,7 @@ export function render(
       }
       if (el.type === 'text') drawText(ctx, el, platform, s, opts.cache)
       else if (el.type === 'math') drawMath(ctx, el, platform, s, opts.cache)
+      else if (el.type === 'chart') drawChart(ctx, el, platform, s, opts.cache)
       else drawImage(ctx, el, platform, s, opts.cache)
       if (state) ctx.restore()
       drawn++
