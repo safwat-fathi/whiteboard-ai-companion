@@ -1,5 +1,12 @@
 import { type Element, fitMath } from '@whiteboard/core'
 import type { Editor } from './editor'
+import {
+  applyInsert,
+  createMathSymbolToolbar,
+  findPlaceholderTarget,
+  type MathSymbolToolbarHandle,
+  replaceRange,
+} from './MathSymbols'
 
 type MathEl = Element & { type: 'math' }
 
@@ -16,6 +23,7 @@ export type MathEditorState = {
 export type MathEditorHandle = {
   readonly root: HTMLDivElement
   readonly textarea: HTMLTextAreaElement
+  readonly symbols: MathSymbolToolbarHandle
   state(): MathEditorState
   sync(x: number, y: number): void
   destroy(): void
@@ -44,7 +52,7 @@ export function createMathEditor(
   const root = document.createElement('div')
   root.setAttribute('data-testid', 'math-editor')
   root.style.cssText =
-    'position:absolute;z-index:3;display:flex;flex-direction:column;gap:6px;padding:8px;min-width:240px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 4px 12px rgba(15,23,42,0.12);font:12px system-ui,sans-serif;color:#0f172a'
+    'position:absolute;z-index:3;display:flex;flex-direction:column;gap:6px;padding:8px;width:440px;box-sizing:border-box;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 4px 12px rgba(15,23,42,0.12);font:12px system-ui,sans-serif;color:#0f172a'
 
   const stop = (e: Event) => e.stopPropagation()
   for (const evt of ['pointerdown', 'mousedown', 'dblclick', 'wheel']) {
@@ -52,7 +60,8 @@ export function createMathEditor(
   }
 
   const controls = document.createElement('div')
-  controls.style.cssText = 'display:flex;align-items:center;gap:6px'
+  controls.style.cssText =
+    'display:flex;align-items:center;gap:6px;width:100%;box-sizing:border-box'
 
   const displayBtn = document.createElement('button')
   displayBtn.type = 'button'
@@ -91,13 +100,23 @@ export function createMathEditor(
   ta.maxLength = 4000
   ta.rows = 3
   ta.value = el.data.latex
-  ta.style.cssText = `margin:0;padding:6px;border:1px solid #cbd5e1;border-radius:4px;outline:0;resize:vertical;font:13px/1.4 ${MONO_STACK};direction:ltr;unicode-bidi:normal`
+  ta.style.cssText = `margin:0;padding:6px;border:1px solid #cbd5e1;border-radius:4px;outline:0;resize:vertical;font:13px/1.4 ${MONO_STACK};direction:ltr;unicode-bidi:normal;box-sizing:border-box;width:100%`
   ta.style.color = el.style.stroke
   ta.style.caretColor = el.style.stroke
 
+  const symbolToolbar = createMathSymbolToolbar({
+    onInsert: (sym) => {
+      const start = ta.selectionStart ?? ta.value.length
+      const end = ta.selectionEnd ?? start
+      const { text, cursor } = applyInsert(sym, ta.value, start, end)
+      // fires `input`, which schedules the preview and calls onChange
+      replaceRange(ta, start, end, text, cursor)
+    },
+  })
+
   const previewWrap = document.createElement('div')
   previewWrap.style.cssText =
-    'min-height:36px;display:flex;align-items:center;justify-content:center;padding:4px;background:#f8fafc;border-radius:4px;overflow:auto'
+    'min-height:36px;display:flex;align-items:center;justify-content:center;padding:4px;background:#f8fafc;border-radius:4px;overflow:auto;box-sizing:border-box;width:100%'
 
   const previewCanvas = document.createElement('canvas')
   previewCanvas.setAttribute('data-testid', 'math-preview')
@@ -109,7 +128,7 @@ export function createMathEditor(
   errBox.setAttribute('role', 'alert')
   errBox.style.cssText = `display:none;color:#dc2626;font:12px/1.35 ${MONO_STACK};white-space:pre-wrap;word-break:break-word`
 
-  root.append(controls, ta, previewWrap, errBox)
+  root.append(controls, symbolToolbar.root, ta, previewWrap, errBox)
   ed.host.append(root)
 
   const applyEntry = (
@@ -222,7 +241,18 @@ export function createMathEditor(
   )
   root.addEventListener('keydown', (e) => {
     if (composing || e.isComposing || e.keyCode === 229) return
-    if (e.key === 'Escape') {
+    if (e.key === 'Tab') {
+      // only inside the textarea: Tab on the toolbar/Size must keep moving focus
+      if (e.target !== ta) return
+      const start = ta.selectionStart ?? 0
+      const end = ta.selectionEnd ?? start
+      const target = findPlaceholderTarget(ta.value, start, end, e.shiftKey)
+      if (target !== null) {
+        e.preventDefault()
+        e.stopPropagation()
+        ta.setSelectionRange(target.start, target.end)
+      }
+    } else if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
       callbacks.onEscape()
@@ -250,6 +280,7 @@ export function createMathEditor(
   return {
     root,
     textarea: ta,
+    symbols: symbolToolbar,
     state: () => ({
       latex: ta.value,
       display,

@@ -3,6 +3,14 @@
 import type { ContextDescriptor } from '@whiteboard/core'
 import { useEffect, useRef, useState } from 'react'
 import {
+  applyInsert,
+  findPlaceholderTarget,
+  isInsideMathDelimiter,
+  MATH_SYMBOLS,
+  type MathSymbolDef,
+  replaceRange,
+} from '../editor/MathSymbols'
+import {
   CloseIcon,
   EyeIcon,
   SendIcon,
@@ -120,6 +128,7 @@ export function ChatTab(o: {
     | null
   >(null)
   const hasSelection = sel.length > 0
+  const [showSymbols, setShowSymbols] = useState(false)
   const [undoing, setUndoing] = useState<
     Record<string, { busy: boolean; note?: string }>
   >({})
@@ -191,6 +200,16 @@ export function ChatTab(o: {
         e instanceof Error ? e.message : 'Could not attach the picture.',
       )
     }
+  }
+  const insertSymbol = (sym: MathSymbolDef) => {
+    const el = box.current
+    if (!el) return
+    const start = el.selectionStart ?? el.value.length
+    const end = el.selectionEnd ?? start
+    const prose = !isInsideMathDelimiter(el.value, start)
+    const { text, cursor } = applyInsert(sym, el.value, start, end, prose)
+    // fires `input`, which runs onChange -> setText
+    replaceRange(el, start, end, text, cursor)
   }
   const end = useRef<HTMLDivElement>(null)
   const streaming = chat.status === 'streaming'
@@ -536,6 +555,28 @@ export function ChatTab(o: {
           </p>
         )}
         <div className="flex flex-col rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xs transition-all focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
+          {showSymbols && (
+            <div
+              data-testid="chat-math-symbols"
+              className="mb-2 p-1.5 bg-slate-50 border border-slate-200 rounded-xl overflow-x-auto"
+            >
+              <div className="grid grid-cols-12 gap-1 w-full min-w-[340px]">
+                {MATH_SYMBOLS.map((sym) => (
+                  <button
+                    key={sym.id}
+                    type="button"
+                    data-testid={`chat-sym-${sym.id}`}
+                    title={sym.label}
+                    aria-label={sym.label}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => insertSymbol(sym)}
+                    className="flex h-7 min-w-0 w-full items-center justify-center rounded border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 hover:border-slate-400 transition-colors cursor-pointer [&>svg]:w-full [&>svg]:h-full [&>svg]:max-w-[24px] [&>svg]:max-h-[20px] [&>svg]:pointer-events-none"
+                    dangerouslySetInnerHTML={{ __html: sym.svg }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
           <textarea
             ref={box}
             onPaste={(e) => {
@@ -562,6 +603,22 @@ export function ChatTab(o: {
             disabled={dailyOut}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === 'Tab') {
+                const el = box.current
+                if (el) {
+                  const start = el.selectionStart ?? 0
+                  const end = el.selectionEnd ?? start
+                  // only inside $…$: Tab in prose must keep moving focus
+                  const target = isInsideMathDelimiter(el.value, start)
+                    ? findPlaceholderTarget(el.value, start, end, e.shiftKey)
+                    : null
+                  if (target !== null) {
+                    e.preventDefault()
+                    el.setSelectionRange(target.start, target.end)
+                    return
+                  }
+                }
+              }
               if (
                 e.key === 'Enter' &&
                 !e.shiftKey &&
@@ -574,15 +631,32 @@ export function ChatTab(o: {
             className="w-full resize-none border-none bg-transparent p-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none font-sans leading-relaxed min-h-[52px]"
           />
           <div className="flex items-center justify-between pt-1">
-            <button
-              type="button"
-              disabled={streaming || chat.messages.length === 0}
-              onClick={() => void chat.newChat()}
-              title="Start a new chat. The board stays; the AI forgets this conversation."
-              className="rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
-            >
-              New chat
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={streaming || chat.messages.length === 0}
+                onClick={() => void chat.newChat()}
+                title="Start a new chat. The board stays; the AI forgets this conversation."
+                className="rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+              >
+                New chat
+              </button>
+              <button
+                type="button"
+                disabled={dailyOut}
+                onClick={() => setShowSymbols((s) => !s)}
+                aria-label="Toggle math symbols"
+                aria-expanded={showSymbols}
+                title="Toggle math symbols"
+                className={`flex items-center justify-center rounded-full px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showSymbols
+                    ? 'bg-blue-50 text-blue-700 font-semibold border border-blue-200'
+                    : 'text-slate-500 hover:bg-slate-100'
+                } disabled:opacity-40`}
+              >
+                <span className="font-serif italic font-bold">fx</span>
+              </button>
+            </div>
             {streaming ? (
               <button
                 type="button"

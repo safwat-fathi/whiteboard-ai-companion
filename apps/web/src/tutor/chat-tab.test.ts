@@ -797,5 +797,124 @@ describe('ChatTab', () => {
         host.remove()
       }
     })
+
+    it('toggles math symbols and inserts auto-delimited LaTeX and supports Tab placeholder navigation', async () => {
+      const w = world(() => sse(turn(...text('m1', 'hello'))))
+      host = document.createElement('div')
+      document.body.append(host)
+      const root = createRoot(host)
+      await act(async () =>
+        root.render(
+          createElement(ChatTab, {
+            apiBase: 'http://srv',
+            boardId: 'b1',
+            connected: true,
+            fetch: w.fetch,
+          }),
+        ),
+      )
+      await act(async () => {})
+
+      const toggleBtn = host.querySelector(
+        'button[aria-label="Toggle math symbols"]',
+      ) as HTMLButtonElement
+      expect(toggleBtn).not.toBeNull()
+
+      // Initially closed
+      expect(host.querySelector('[data-testid="chat-math-symbols"]')).toBeNull()
+
+      // Toggle open
+      await act(async () => {
+        toggleBtn.click()
+      })
+      const symbolBar = host.querySelector(
+        '[data-testid="chat-math-symbols"]',
+      ) as HTMLElement
+      expect(symbolBar).not.toBeNull()
+
+      const ta = host.querySelector(
+        'textarea[aria-label="Message the tutor"]',
+      ) as HTMLTextAreaElement
+      expect(ta).not.toBeNull()
+
+      // Click sqrt symbol when textarea is empty -> auto-wraps in $...$
+      const sqrtBtn = host.querySelector(
+        '[data-testid="chat-sym-sqrt"]',
+      ) as HTMLButtonElement
+      expect(sqrtBtn).not.toBeNull()
+      await act(async () => {
+        sqrtBtn.click()
+      })
+      expect(ta.value).toBe('$\\sqrt{}$')
+
+      // Click fraction button when inside $ -> raw LaTeX inserted
+      const fracBtn = host.querySelector(
+        '[data-testid="chat-sym-frac"]',
+      ) as HTMLButtonElement
+      expect(fracBtn).not.toBeNull()
+      // Position cursor inside the $...$
+      ta.selectionStart = 7
+      ta.selectionEnd = 7
+      await act(async () => {
+        fracBtn.click()
+      })
+      expect(ta.value).toBe('$\\sqrt{\\frac{}{}}$')
+
+      // Press Tab -> jumps to denominator slot
+      await act(async () => {
+        ta.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }),
+        )
+      })
+      expect(ta.selectionStart).toBe(15)
+
+      // Outside $…$ Tab is never hijacked, even if the prose has braces
+      const typeIn = async (v: string) => {
+        await act(async () => {
+          const set = Object.getOwnPropertyDescriptor(
+            HTMLTextAreaElement.prototype,
+            'value',
+          )?.set
+          set?.call(ta, v)
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+        })
+      }
+      await typeIn('use {braces} here')
+      ta.setSelectionRange(0, 0)
+      const tab = new KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true,
+      })
+      await act(async () => {
+        ta.dispatchEvent(tab)
+      })
+      expect(tab.defaultPrevented).toBe(false)
+
+      // x^2 after prose gets a base; a symbol after a closed $x$ is not glued
+      const x2 = host.querySelector(
+        '[data-testid="chat-sym-x_squared"]',
+      ) as HTMLButtonElement
+      await typeIn('Solve ')
+      ta.setSelectionRange(6, 6)
+      await act(async () => {
+        x2.click()
+      })
+      expect(ta.value).toBe('Solve $x^2$')
+      const pi = host.querySelector(
+        '[data-testid="chat-sym-pi"]',
+      ) as HTMLButtonElement
+      await typeIn('$x$')
+      ta.setSelectionRange(3, 3)
+      await act(async () => {
+        pi.click()
+      })
+      expect(ta.value).toBe('$x$ $\\pi $')
+
+      unmount = async () => {
+        await act(async () => root.unmount())
+        host.remove()
+      }
+    })
   })
 })

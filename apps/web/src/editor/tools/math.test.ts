@@ -392,6 +392,124 @@ describe('math tool', () => {
     expect(back.data).toEqual(m.data)
     expect([back.w, back.h]).toEqual([m.w, m.h])
   })
+
+  it('renders symbol toolbar with 24 buttons and clicking symbols inserts at cursor', async () => {
+    start()
+    const toolbar = ed.host.querySelector('[data-testid="math-symbol-toolbar"]')
+    expect(toolbar).not.toBeNull()
+
+    const btns = toolbar?.querySelectorAll('[data-testid^="math-sym-"]')
+    expect(btns?.length).toBe(24)
+
+    // Click square root button
+    const sqrtBtn = toolbar?.querySelector(
+      '[data-testid="math-sym-sqrt"]',
+    ) as HTMLButtonElement
+    expect(sqrtBtn).not.toBeNull()
+    sqrtBtn.click()
+
+    expect(area().value).toBe('\\sqrt{}')
+    // Cursor should be inside the braces at offset 6
+    expect(area().selectionStart).toBe(6)
+    expect(area().selectionEnd).toBe(6)
+
+    // Now type '4'
+    type('\\sqrt{4}')
+    // Click pi button
+    const piBtn = toolbar?.querySelector(
+      '[data-testid="math-sym-pi"]',
+    ) as HTMLButtonElement
+    piBtn.click()
+
+    expect(area().value).toBe('\\sqrt{4}\\pi ')
+  })
+
+  it('wrapping selected text when clicking template symbol', () => {
+    start()
+    type('x+1')
+    area().setSelectionRange(0, 3) // Select 'x+1'
+
+    const sqrtBtn = ed.host.querySelector(
+      '[data-testid="math-sym-sqrt"]',
+    ) as HTMLButtonElement
+    sqrtBtn.click()
+
+    expect(area().value).toBe('\\sqrt{x+1}')
+  })
+
+  it('selection survives a symbol that ignores it, and Tab is not trapped', () => {
+    start()
+    type('a+b')
+    area().setSelectionRange(0, 3)
+    ;(
+      ed.host.querySelector('[data-testid="math-sym-pi"]') as HTMLButtonElement
+    ).click()
+    expect(area().value).toBe('a+b\\pi ')
+
+    // no placeholder slot -> Tab is left alone
+    area().setSelectionRange(0, 0)
+    const ev = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    })
+    area().dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(false)
+
+    // Tab from a toolbar button is never hijacked, even with slots in the text
+    type('\\frac{a}{b}')
+    const btn = ed.host.querySelector(
+      '[data-testid="math-sym-pi"]',
+    ) as HTMLButtonElement
+    const ev2 = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    })
+    btn.dispatchEvent(ev2)
+    expect(ev2.defaultPrevented).toBe(false)
+  })
+
+  it('navigates between argument placeholders using Tab key', () => {
+    start()
+    const fracBtn = ed.host.querySelector(
+      '[data-testid="math-sym-frac"]',
+    ) as HTMLButtonElement
+    fracBtn.click()
+
+    expect(area().value).toBe('\\frac{}{}')
+    expect(area().selectionStart).toBe(6) // numerator slot
+
+    // Type numerator
+    area().value = '\\frac{a}{}'
+    area().setSelectionRange(7, 7)
+
+    // Press Tab -> jumps to denominator slot
+    press('Tab')
+    expect(area().selectionStart).toBe(9)
+    expect(area().selectionEnd).toBe(9)
+  })
+
+  it('collapses and expands the symbol toolbar via the chevron toggle', () => {
+    localStorage.clear()
+    start()
+    const grid = ed.host.querySelector(
+      '[data-testid="math-symbol-grid"]',
+    ) as HTMLElement
+    const toggle = ed.host.querySelector(
+      '[data-testid="math-symbol-toggle"]',
+    ) as HTMLButtonElement
+
+    expect(grid.style.display).toBe('grid')
+
+    // Click toggle to collapse
+    toggle.click()
+    expect(grid.style.display).toBe('none')
+
+    // Click toggle to re-expand
+    toggle.click()
+    expect(grid.style.display).toBe('grid')
+  })
 })
 
 describe('author', () => {

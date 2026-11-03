@@ -231,7 +231,7 @@ export const addText = defineTool({
 export const addMath = defineTool({
   name: 'add_math',
   description:
-    'Add a LaTeX formula to the board (no $ delimiters). A formula that does not compile comes back as an error with the MathJax message so you can fix it.',
+    'Add a LaTeX formula to the board (no $ delimiters). Canonical templates: fractions (\\frac{a}{b}), roots (\\sqrt{x}, \\sqrt[n]{x}), exponents (x^2, x^{n}), calculus (\\frac{d}{dx}, \\frac{\\partial}{\\partial x}, \\int_{a}^{b}, \\lim_{x \\to a}, \\sum_{i=1}^{n}), matrices (\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}), functions (f(x), (f \\circ g)), relations (\\le, \\ge) and symbols (\\cdot, \\div, \\pi, \\theta, \\infty). A formula that does not compile comes back as an error with the MathJax message so you can fix it.',
   input: z.object({
     latex: z.string().min(1).max(4000),
     display: z.boolean().optional().describe('Display style (default true).'),
