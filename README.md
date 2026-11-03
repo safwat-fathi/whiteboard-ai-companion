@@ -7,6 +7,7 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 <img width="1248" height="522" alt="Screenshot 2026-11-03 at 8 58 14 PM" src="https://github.com/user-attachments/assets/452043f5-eae2-4fbc-95ee-2c639e6eb8d7" />
 <img width="1916" height="964" alt="Screenshot 2026-11-03 at 9 03 51 PM" src="https://github.com/user-attachments/assets/19397897-204e-46b6-ac51-a1abf8182946" />
 <img width="1916" height="964" alt="Screenshot 2026-11-03 at 9 07 17 PM" src="https://github.com/user-attachments/assets/fde57b62-8068-4ed3-bc23-890d023b4988" />
+<img width="1916" height="964" alt="Screenshot 2026-11-03 at 9 24 53 PM" src="https://github.com/user-attachments/assets/6f580414-702c-452d-a2d9-dfecbb32f9e5" />
 
 ## What it does (v1)
 
