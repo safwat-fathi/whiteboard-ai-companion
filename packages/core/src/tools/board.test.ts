@@ -4,7 +4,7 @@ import { nodePlatform, registerBundledFonts } from '../node'
 import type { MathEntry, Platform } from '../platform'
 import { applyBatch, createScene } from '../scene'
 import { DEFAULT_STYLE, type Element } from '../schema'
-import { stroke } from '../test-utils'
+import { chart, stroke } from '../test-utils'
 import { boardTools } from './board'
 import {
   ELEMENT_BUDGET,
@@ -624,5 +624,26 @@ describe('the soft element budget', () => {
     expect(
       (await written('add_text', { text: 'fine' }, ctxOf())).warnings,
     ).toEqual([])
+  })
+})
+
+describe('charts', () => {
+  it('get_elements finds charts by type and by their title', async () => {
+    const ctx = ctxOf([
+      chart('c', { x: 0, y: 0 }, { title: 'Sales by quarter' }),
+      human('box'),
+    ])
+    const get = async (input: unknown) =>
+      (
+        (await tool('get_elements').execute(
+          tool('get_elements').input.parse(input),
+          ctx,
+        )) as { data: { elements: { id: string; detail: string }[] } }
+      ).data.elements
+    expect(await get({ type: 'chart' })).toMatchObject([
+      { id: 'c', detail: 'bar chart "Sales by quarter"' },
+    ])
+    expect((await get({ text: 'quarter' })).map((e) => e.id)).toEqual(['c'])
+    expect((await get({ text: 'revenue' })).map((e) => e.id)).toEqual([])
   })
 })

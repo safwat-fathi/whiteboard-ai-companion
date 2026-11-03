@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildDigest, buildSelectionDetail } from './digest'
 import { DEFAULT_STYLE, type Element } from './schema'
-import { stroke } from './test-utils'
+import { chart, stroke } from './test-utils'
 import { describeElement } from './tools/describe'
 
 const OWNER = { kind: 'human' as const, id: 'owner' }
@@ -232,6 +232,37 @@ describe('freehand in the digest', () => {
     expect(JSON.parse(out)).toMatchObject({
       type: 'freehand',
       data: { points: '5000 points', pressure: '5000 values' },
+    })
+  })
+})
+
+describe('chart in the digest', () => {
+  it('describes a chart by kind and title', () => {
+    expect(
+      describeElement(chart('c', {}, { title: 'Sales by quarter' })),
+    ).toMatchObject({
+      type: 'chart',
+      detail: 'bar chart "Sales by quarter"',
+    })
+    expect(describeElement(chart('c', {}, { kind: 'donut' })).detail).toBe(
+      'donut chart',
+    )
+  })
+  it('counts charts in the header and lists them as rows', () => {
+    const d = buildDigest({
+      title: 'Charts',
+      seq: 1,
+      elements: [chart('c1', { x: 10, y: 20 }, { title: 'Sales' })],
+      selection: [],
+    })
+    expect(d.split('\n')[0]).toContain('(chart 1)')
+    expect(d).toContain('c1 | chart | 10,20,480,320 | you | bar chart "Sales"')
+  })
+  it('shows the data of a selected chart', () => {
+    const out = buildSelectionDetail([chart('c')], ['c'])
+    expect(JSON.parse(out)).toMatchObject({
+      type: 'chart',
+      data: { categories: ['A', 'B', 'C'], series: [{ values: [3, 5, 2] }] },
     })
   })
 })

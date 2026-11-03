@@ -10,7 +10,7 @@ const DIGEST_TOKENS = 3000
 const DETAIL_TOKENS = 4000
 const DETAIL_TEXT = 500
 const FOOTER_RESERVE = 80
-const TYPES = ['text', 'shape', 'math', 'image', 'freehand'] as const
+const TYPES = ['text', 'shape', 'math', 'image', 'freehand', 'chart'] as const
 
 type View = { x: number; y: number; w: number; h: number; zoom?: number }
 const r = Math.round

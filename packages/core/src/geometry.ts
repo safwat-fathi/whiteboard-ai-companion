@@ -66,7 +66,7 @@ export function bounds(el: Element): Rect {
 export const boundsOf = bounds
 
 export function lockedAspect(el: Element): number | null {
-  if (el.type === 'math' || el.type === 'image')
+  if (el.type === 'math' || el.type === 'image' || el.type === 'chart')
     return el.w > 0 && el.h > 0 ? el.w / el.h : 1
   return null
 }
@@ -168,7 +168,12 @@ export function hitTest(el: Element, p: Point, tolWorld: number): boolean {
       ) <=
       tolWorld + inkReach(el)
     )
-  if (el.type === 'text' || el.type === 'math' || el.type === 'image')
+  if (
+    el.type === 'text' ||
+    el.type === 'math' ||
+    el.type === 'image' ||
+    el.type === 'chart'
+  )
     return (
       q.x >= el.x - tolWorld &&
       q.x <= el.x + el.w + tolWorld &&

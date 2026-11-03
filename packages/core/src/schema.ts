@@ -136,6 +136,54 @@ export const FreehandDataSchema = z
   })
 export type FreehandData = z.infer<typeof FreehandDataSchema>
 
+// R7: Basic Latin to Latin Extended-B, general punctuation, currency, letterlike, arrows, math operators. One font, one layout,
+// identical in the browser and on the server; Arabic text and math stay on the board around the chart.
+const CHART_LABEL =
+  /^[\u0020-\u007E\u00A0-\u024F\u2000-\u206F\u20A0-\u20CF\u2100-\u214F\u2190-\u21FF\u2200-\u22FF]*$/
+const chartLabel = (max: number) =>
+  z
+    .string()
+    .max(max, `must be at most ${max} characters`)
+    .regex(CHART_LABEL, 'chart labels support Latin letters and digits only')
+const ChartSeriesSchema = z.object({
+  name: chartLabel(40),
+  values: z.array(num).max(200, 'must have at most 200 values'),
+  /** Scatter only: the x of each value. */
+  xs: z.array(num).max(200, 'must have at most 200 values').optional(),
+})
+
+/** A data-driven chart (R6). Whole `categories` and `series` leaves are replaced on edit, never patched by index. */
+export const ChartDataSchema = z
+  .object({
+    kind: z.enum(['bar', 'line', 'area', 'pie', 'donut', 'scatter']),
+    title: chartLabel(120).optional(),
+    categories: z
+      .array(chartLabel(40))
+      .max(50, 'must have at most 50 categories'),
+    series: z.array(ChartSeriesSchema).max(8, 'must have at most 8 series'),
+    stacked: z.boolean().optional(),
+    xLabel: chartLabel(40).optional(),
+    yLabel: chartLabel(40).optional(),
+    palette: z
+      .array(z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be a #rrggbb colour'))
+      .max(8, 'must have at most 8 colours')
+      .optional(),
+  })
+  .superRefine((d, ctx) => {
+    const bad = (message: string) =>
+      ctx.addIssue({ code: 'custom', message, path: ['series'] })
+    if (d.kind === 'scatter') {
+      if (d.series.some((s) => s.xs?.length !== s.values.length))
+        bad('a scatter series needs xs, one per value')
+    } else {
+      if (d.series.some((s) => s.values.length !== d.categories.length))
+        bad('must have one value per category')
+      if ((d.kind === 'pie' || d.kind === 'donut') && d.series.length !== 1)
+        bad('a pie or donut chart takes exactly one series')
+    }
+  })
+export type ChartData = z.infer<typeof ChartDataSchema>
+
 export const BaseShape = {
   id,
   x: num,
@@ -176,12 +224,18 @@ export const FreehandElementSchema = z.object({
   type: z.literal('freehand'),
   data: FreehandDataSchema,
 })
+export const ChartElementSchema = z.object({
+  ...BaseShape,
+  type: z.literal('chart'),
+  data: ChartDataSchema,
+})
 export const ElementSchema = z.discriminatedUnion('type', [
   ShapeElementSchema,
   TextElementSchema,
   MathElementSchema,
   ImageElementSchema,
   FreehandElementSchema,
+  ChartElementSchema,
 ])
 export type Element = z.infer<typeof ElementSchema>
 

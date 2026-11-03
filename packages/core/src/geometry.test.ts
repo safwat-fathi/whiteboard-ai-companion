@@ -13,7 +13,7 @@ import {
 } from './geometry'
 import { applyBatch, createScene } from './scene'
 import { DEFAULT_STYLE, type Element } from './schema'
-import { mk, stroke } from './test-utils'
+import { chart, mk, stroke } from './test-utils'
 
 const R45 = Math.PI / 4
 
@@ -566,5 +566,37 @@ describe('freehand', () => {
     }
     expect(corner(after).x).toBeCloseTo(corner(turned).x)
     expect(corner(after).y).toBeCloseTo(corner(turned).y)
+  })
+})
+
+describe('chart', () => {
+  it('is a box: bounds are the rotated box, hits are inside it or within tolerance of it', () => {
+    const el = chart('c', { x: 100, y: 100, w: 480, h: 320 })
+    expect(bounds(el)).toEqual({ minX: 100, minY: 100, maxX: 580, maxY: 420 })
+    expect(hitTest(el, { x: 300, y: 250 }, 3)).toBe(true) // the middle of the plot, no ink there
+    expect(hitTest(el, { x: 99, y: 250 }, 3)).toBe(true)
+    expect(hitTest(el, { x: 120, y: 250 }, 3)).toBe(true)
+    expect(hitTest(el, { x: 50, y: 250 }, 3)).toBe(false)
+    expect(hitTest(el, { x: 300, y: 450 }, 3)).toBe(false)
+    const turned = chart('t', {
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 20,
+      rotation: Math.PI / 2,
+    })
+    // turned about (50, 10) it is the vertical bar x 40..60, y -40..60
+    expect(hitTest(turned, { x: 50, y: -30 }, 1)).toBe(true)
+    expect(hitTest(turned, { x: 10, y: 10 }, 1)).toBe(false)
+  })
+  it('keeps its aspect ratio on resize, like a picture', () => {
+    const el = chart('c', { x: 0, y: 0, w: 480, h: 320 })
+    expect(lockedAspect(el)).toBeCloseTo(1.5)
+    const corner = resizeBox(el, 'se', { x: 960, y: 500 }, false)
+    expect(corner.w).toBeCloseTo(960)
+    expect(corner.h).toBeCloseTo(640)
+    const edge = resizeBox(el, 'e', { x: 240, y: 160 }, false)
+    expect(edge.w).toBeCloseTo(240)
+    expect(edge.h).toBeCloseTo(160)
   })
 })

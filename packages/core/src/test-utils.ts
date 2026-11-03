@@ -1,5 +1,6 @@
 import { quantiseStroke } from './ink'
 import {
+  type ChartData,
   DEFAULT_STYLE,
   type Element,
   type FreehandData,
@@ -70,3 +71,21 @@ export const scribble = (
     },
   )
 }
+
+/** A chart: a bar chart of three categories and one series in a 480 x 320 box unless `data` says otherwise. */
+export const chart = (
+  id: string,
+  p: Partial<Element> = {},
+  data: Partial<ChartData> = {},
+): Element =>
+  ({
+    ...mk(id, { w: 480, h: 320 }),
+    type: 'chart',
+    data: {
+      kind: 'bar',
+      categories: ['A', 'B', 'C'],
+      series: [{ name: 'Sales', values: [3, 5, 2] }],
+      ...data,
+    },
+    ...p,
+  }) as Element

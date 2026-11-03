@@ -2,6 +2,7 @@ import { generateKeyBetween } from 'fractional-indexing'
 import { leaf, OpError, validateBatch } from './ops'
 import {
   type Batch,
+  ChartElementSchema,
   type Element,
   ElementSchema,
   FreehandElementSchema,
@@ -33,6 +34,7 @@ const SCHEMA = {
   math: MathElementSchema,
   image: ImageElementSchema,
   freehand: FreehandElementSchema,
+  chart: ChartElementSchema,
 }
 
 // Current value at a dotted path, or null if absent (absent only happens on optional leaves).

@@ -201,4 +201,160 @@ describe('ElementSchema', () => {
   it('newId returns distinct ids', () => {
     expect(newId()).not.toBe(newId())
   })
+
+  describe('chart', () => {
+    const chart = {
+      ...base,
+      w: 480,
+      h: 320,
+      type: 'chart',
+      data: {
+        kind: 'bar',
+        title: 'Sales by quarter',
+        categories: ['Q1', 'Q2', 'Q3'],
+        series: [{ name: 'North', values: [3, 5, 2] }],
+      },
+    }
+    const parse = (data: object) =>
+      ElementSchema.safeParse({
+        ...chart,
+        data: { ...chart.data, ...data },
+      })
+    const message = (data: object) => parse(data).error?.issues[0]?.message
+
+    it('parses all six kinds', () => {
+      for (const kind of ['bar', 'line', 'area'])
+        expect(parse({ kind }).success).toBe(true)
+      for (const kind of ['pie', 'donut'])
+        expect(parse({ kind }).success).toBe(true) // one series
+      expect(
+        parse({
+          kind: 'scatter',
+          categories: [],
+          series: [{ name: 'obs', values: [1, 2, 4], xs: [10, 20, 30] }],
+        }).success,
+      ).toBe(true)
+    })
+    it('takes the edges that must still draw: one category, no data, negatives, zeros, 1e12', () => {
+      expect(
+        parse({ categories: ['A'], series: [{ name: 's', values: [1e12] }] })
+          .success,
+      ).toBe(true)
+      expect(parse({ categories: [], series: [] }).success).toBe(true)
+      expect(
+        parse({
+          categories: ['A', 'B'],
+          series: [{ name: 's', values: [-4, 0] }],
+        }).success,
+      ).toBe(true)
+      expect(
+        parse({ stacked: true, xLabel: 'Quarter', yLabel: 'Units' }).success,
+      ).toBe(true)
+    })
+    it('rejects a series that does not match the categories, naming the field', () => {
+      const r = parse({ series: [{ name: 's', values: [1, 2] }] })
+      expect(r.success).toBe(false)
+      expect(r.error?.issues[0]).toMatchObject({
+        path: ['data', 'series'],
+        message: 'must have one value per category',
+      })
+    })
+    it('rejects a pie or donut with two series and a scatter without matching xs', () => {
+      const two = [
+        { name: 'a', values: [1, 2, 3] },
+        { name: 'b', values: [1, 2, 3] },
+      ]
+      expect(message({ kind: 'pie', series: two })).toBe(
+        'a pie or donut chart takes exactly one series',
+      )
+      expect(message({ kind: 'donut', series: two })).toBe(
+        'a pie or donut chart takes exactly one series',
+      )
+      expect(
+        message({
+          kind: 'scatter',
+          categories: [],
+          series: [{ name: 's', values: [1, 2] }],
+        }),
+      ).toBe('a scatter series needs xs, one per value')
+      expect(
+        message({
+          kind: 'scatter',
+          categories: [],
+          series: [{ name: 's', values: [1, 2], xs: [1] }],
+        }),
+      ).toBe('a scatter series needs xs, one per value')
+    })
+    it('caps categories, series, values and label lengths', () => {
+      const cats = (n: number) => Array.from({ length: n }, (_, i) => `c${i}`)
+      expect(
+        parse({
+          categories: cats(50),
+          series: [{ name: 's', values: Array(50).fill(1) }],
+        }).success,
+      ).toBe(true)
+      expect(
+        message({
+          categories: cats(51),
+          series: [{ name: 's', values: Array(51).fill(1) }],
+        }),
+      ).toBe('must have at most 50 categories')
+      const nine = Array.from({ length: 9 }, (_, i) => ({
+        name: `s${i}`,
+        values: [1, 2, 3],
+      }))
+      expect(message({ series: nine })).toBe('must have at most 8 series')
+      expect(
+        message({
+          kind: 'scatter',
+          categories: [],
+          series: [
+            {
+              name: 's',
+              values: Array(201).fill(1),
+              xs: Array(201).fill(1),
+            },
+          ],
+        }),
+      ).toBe('must have at most 200 values')
+      expect(parse({ categories: ['x'.repeat(40), 'B', 'C'] }).success).toBe(
+        true,
+      )
+      expect(message({ categories: ['x'.repeat(41), 'B', 'C'] })).toBe(
+        'must be at most 40 characters',
+      )
+      expect(message({ title: 'x'.repeat(121) })).toBe(
+        'must be at most 120 characters',
+      )
+      expect(message({ xLabel: 'x'.repeat(41) })).toBe(
+        'must be at most 40 characters',
+      )
+      expect(
+        message({
+          series: [{ name: 'x'.repeat(41), values: [1, 2, 3] }],
+        }),
+      ).toBe('must be at most 40 characters')
+    })
+    it('rejects NaN and a non-Latin label with the stated message, in every place a label goes', () => {
+      expect(
+        parse({ series: [{ name: 's', values: [1, Number.NaN, 3] }] }).success,
+      ).toBe(false)
+      const latin = 'chart labels support Latin letters and digits only'
+      expect(message({ title: 'المبيعات' })).toBe(latin)
+      expect(message({ categories: ['أ', 'B', 'C'] })).toBe(latin)
+      expect(message({ series: [{ name: 'شمال', values: [1, 2, 3] }] })).toBe(
+        latin,
+      )
+      expect(message({ yLabel: '数量' })).toBe(latin)
+      // accented Latin, currency, arrows and math operators stay
+      expect(parse({ title: 'Café sales €5 → 10 ≤ 20, 100%' }).success).toBe(
+        true,
+      )
+    })
+    it('takes only hex palette colours, up to eight', () => {
+      expect(parse({ palette: ['#e69f00', '#56b4e9'] }).success).toBe(true)
+      expect(parse({ palette: ['red'] }).success).toBe(false)
+      expect(parse({ palette: Array(9).fill('#000000') }).success).toBe(false)
+    })
+  })
 })

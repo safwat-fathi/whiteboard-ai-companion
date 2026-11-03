@@ -2,6 +2,7 @@ import type { z } from 'zod'
 import {
   type Batch,
   BatchSchema,
+  ChartElementSchema,
   FreehandElementSchema,
   ImageElementSchema,
   MathElementSchema,
@@ -36,22 +37,34 @@ export function leaf(root: z.ZodType, path: string[]): z.ZodType | undefined {
   return s
 }
 
+const ELEMENT_SCHEMAS = [
+  ShapeElementSchema,
+  TextElementSchema,
+  MathElementSchema,
+  ImageElementSchema,
+  FreehandElementSchema,
+  ChartElementSchema,
+]
+
+// A patch names no element type, so a path such as `data.kind` may mean different things on different types (a shape's
+// kind and a chart's). The value passes if any type that has the path takes it; applyBatch then validates the patched
+// element against its own type, which has the last word.
 function checkPatch(set: Record<string, unknown>) {
   for (const [key, value] of Object.entries(set)) {
     const path = key.split('.')
-    const schema = NOT_PATCHABLE.has(path[0] ?? '')
-      ? undefined
-      : (leaf(ShapeElementSchema, path) ??
-        leaf(TextElementSchema, path) ??
-        leaf(MathElementSchema, path) ??
-        leaf(ImageElementSchema, path) ??
-        leaf(FreehandElementSchema, path))
-    if (!schema) throw new OpError(key, 'is not a patchable field')
+    const schemas = NOT_PATCHABLE.has(path[0] ?? '')
+      ? []
+      : ELEMENT_SCHEMAS.flatMap((e) => leaf(e, path) ?? [])
+    if (!schemas.length) throw new OpError(key, 'is not a patchable field')
     // Convention: null on an optional field means "unset it"; required fields reject null.
-    if (value === null && schema.def.type === 'optional') continue
-    const r = schema.safeParse(value)
-    if (!r.success)
-      throw new OpError(key, r.error.issues[0]?.message ?? 'is invalid')
+    if (value === null && schemas.some((s) => s.def.type === 'optional'))
+      continue
+    const results = schemas.map((s) => s.safeParse(value))
+    if (!results.some((r) => r.success))
+      throw new OpError(
+        key,
+        results[0]?.error?.issues[0]?.message ?? 'is invalid',
+      )
   }
 }
 

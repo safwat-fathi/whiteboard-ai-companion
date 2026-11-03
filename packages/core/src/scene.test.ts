@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { OpError } from './ops'
 import { applyBatch, createScene, ordered, zBetween } from './scene'
 import { type Batch, DEFAULT_STYLE, type Element, type Op } from './schema'
+import { chart } from './test-utils'
 
 const shape = (id: string, z: string): Element => ({
   id,
@@ -300,5 +301,92 @@ describe('freehand ops', () => {
       applyBatch(scene, patch({ 'data.pressure': [0.1, Number.NaN] })),
     ).toThrow('data.pressure')
     expect(scene.els.get('p')).toEqual(pen())
+  })
+})
+
+describe('chart ops', () => {
+  const patch = (set: Record<string, unknown>): Batch => ({
+    batchId: 'b',
+    label: 'Edit chart',
+    ops: [{ op: 'patch', id: 'c', set }],
+  })
+  const data = (scene: ReturnType<typeof createScene>) =>
+    (scene.els.get('c') as { data: Record<string, unknown> }).data
+
+  it('replaces whole leaves of data and undoes them', () => {
+    const scene = createScene([chart('c')])
+    const before = structuredClone(data(scene))
+    const { inverse } = applyBatch(
+      scene,
+      patch({
+        'data.categories': ['A', 'B', 'C', 'D'],
+        'data.series': [{ name: 'Sales', values: [3, 5, 2, 9] }],
+        'data.title': 'Q',
+        'data.kind': 'line',
+      }),
+    )
+    expect(data(scene)).toMatchObject({
+      kind: 'line',
+      title: 'Q',
+      categories: ['A', 'B', 'C', 'D'],
+      series: [{ name: 'Sales', values: [3, 5, 2, 9] }],
+    })
+    applyBatch(scene, inverse)
+    expect(data(scene)).toEqual(before)
+  })
+  it('validates the result as a whole: categories alone cannot leave the series short', () => {
+    const scene = createScene([chart('c')])
+    expect(() =>
+      applyBatch(scene, patch({ 'data.categories': ['A', 'B'] })),
+    ).toThrow(OpError)
+    expect(data(scene).categories).toEqual(['A', 'B', 'C'])
+  })
+  it('rejects a bad leaf before anything changes', () => {
+    const scene = createScene([chart('c')])
+    expect(() =>
+      applyBatch(
+        scene,
+        patch({
+          'data.series': [{ name: 'Sales', values: [1, Number.NaN, 3] }],
+        }),
+      ),
+    ).toThrow(OpError)
+    expect(() =>
+      applyBatch(scene, patch({ 'data.title': 'المبيعات' })),
+    ).toThrow(/Latin letters and digits only/)
+    expect(() => applyBatch(scene, patch({ 'data.nope': 1 }))).toThrow(
+      /not a patchable field/,
+    )
+    expect(data(scene).series).toEqual([{ name: 'Sales', values: [3, 5, 2] }])
+  })
+  it('unsets an optional leaf with null', () => {
+    const scene = createScene([chart('c', {}, { title: 'T', stacked: true })])
+    applyBatch(scene, patch({ 'data.title': null, 'data.stacked': null }))
+    expect(data(scene)).not.toHaveProperty('title')
+    expect(data(scene)).not.toHaveProperty('stacked')
+  })
+  it('a path two types share means each type\'s own thing: a chart takes kind "pie", a shape still refuses it', () => {
+    const scene = createScene([
+      chart('c', {}, { kind: 'line' }),
+      shape('r', 'a1'),
+    ])
+    applyBatch(
+      scene,
+      patch({
+        'data.kind': 'pie',
+        'data.series': [{ name: 'Sales', values: [3, 5, 2] }],
+      }),
+    )
+    expect(data(scene).kind).toBe('pie')
+    expect(() =>
+      applyBatch(scene, {
+        batchId: 'b2',
+        label: 'T',
+        ops: [{ op: 'patch', id: 'r', set: { 'data.kind': 'pie' } }],
+      }),
+    ).toThrow(OpError)
+    expect((scene.els.get('r') as { data: { kind: string } }).data.kind).toBe(
+      'rect',
+    )
   })
 })
