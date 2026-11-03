@@ -64,6 +64,8 @@ export const ui = {
     backdropFilter: 'blur(8px)',
     display: 'grid',
     placeItems: 'center',
+    padding: 16,
+    overflowY: 'auto',
     zIndex: 50,
   },
   dialog: {
@@ -74,6 +76,7 @@ export const ui = {
     width: 'min(92vw, 720px)',
     maxHeight: '86vh',
     overflow: 'auto',
+    margin: 'auto',
     boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)',
   },
   fieldset: {

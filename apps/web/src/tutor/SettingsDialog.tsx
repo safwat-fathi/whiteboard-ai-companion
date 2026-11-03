@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ui } from '../../app/library/ui'
 import type { LibraryApi, UsageSummary } from '../library/api'
 
@@ -68,7 +69,9 @@ export function SettingsDialog({
     }
   }
 
-  return (
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div style={ui.backdrop}>
       <div
         role="dialog"
@@ -203,6 +206,7 @@ export function SettingsDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

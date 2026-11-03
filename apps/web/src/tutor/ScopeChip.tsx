@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Outline } from '../../app/library/Outline'
 import { ui } from '../../app/library/ui'
 import type { Book, LibraryApi, Section } from '../library/api'
@@ -129,7 +130,9 @@ function ScopePicker({
     }
   }
 
-  return (
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div style={ui.backdrop}>
       <div
         role="dialog"
@@ -137,70 +140,81 @@ function ScopePicker({
         aria-label="Choose what this board studies"
         style={{
           ...ui.dialog,
-          maxHeight: '80vh',
-          overflow: 'auto',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
           minWidth: 320,
         }}
       >
-        <h2
-          style={{ marginTop: 0, fontSize: 18 }}
-          className="font-bold text-slate-900"
-        >
-          What does this board study?
-        </h2>
-        {error && (
-          <p role="alert" style={ui.alert}>
-            {error}
-          </p>
-        )}
-        {books === null ? (
-          <p className="text-sm text-slate-500">Loading your books…</p>
-        ) : books.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            No indexed books yet. Add one in the library.
-          </p>
-        ) : (
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-700">
-            Book
-            <select
-              value={bookId}
-              onChange={(e) => {
-                setBookId(e.target.value)
-                setTicked(new Set())
-              }}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all font-sans"
-            >
-              <option value="">Choose a book…</option>
-              {books.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.title}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <div className="shrink-0">
+          <h2
+            style={{ marginTop: 0, fontSize: 18 }}
+            className="font-bold text-slate-900"
+          >
+            What does this board study?
+          </h2>
+          {error && (
+            <p role="alert" style={ui.alert}>
+              {error}
+            </p>
+          )}
+          {books === null ? (
+            <p className="text-sm text-slate-500">Loading your books…</p>
+          ) : books.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No indexed books yet. Add one in the library.
+            </p>
+          ) : (
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-700">
+              Book
+              <select
+                value={bookId}
+                onChange={(e) => {
+                  setBookId(e.target.value)
+                  setTicked(new Set())
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all font-sans"
+              >
+                <option value="">Choose a book…</option>
+                {books.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
         {bookId && sections.length > 0 && (
-          <div className="mt-3">
-            <p style={ui.muted} className="mb-2">
+          <div className="mt-3 flex-1 min-h-0 flex flex-col">
+            <p style={ui.muted} className="mb-2 shrink-0">
               {ticked.size === 0
                 ? 'The whole book'
                 : `${ticked.size} section${ticked.size === 1 ? '' : 's'} chosen`}
               . Tick sections to focus on them.
             </p>
-            <ul style={{ listStyle: 'none', padding: 0 }} className="space-y-1">
-              {buildTree(sections).map((n) => (
-                <Outline
-                  key={n.section.id}
-                  node={n}
-                  ticked={ticked}
-                  onTick={(id) => setTicked((t) => toggle(t, id))}
-                  onOpen={() => {}}
-                />
-              ))}
-            </ul>
+            <div className="overflow-y-auto pr-1 flex-1 min-h-0">
+              <ul
+                style={{ listStyle: 'none', padding: 0 }}
+                className="space-y-1"
+              >
+                {buildTree(sections).map((n) => (
+                  <Outline
+                    key={n.section.id}
+                    node={n}
+                    ticked={ticked}
+                    onTick={(id) => setTicked((t) => toggle(t, id))}
+                    onOpen={() => {}}
+                  />
+                ))}
+              </ul>
+            </div>
           </div>
         )}
-        <div style={ui.actions} className="mt-6 flex gap-2 justify-end">
+        <div
+          style={ui.actions}
+          className="mt-6 flex gap-2 justify-end shrink-0"
+        >
           <button
             type="button"
             className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
@@ -226,6 +240,7 @@ function ScopePicker({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
