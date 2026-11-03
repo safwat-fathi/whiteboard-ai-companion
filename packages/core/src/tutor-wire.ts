@@ -93,6 +93,8 @@ export const DataPartSchemas = {
   }),
   usage: UsageSchema,
   status: z.object({ state: z.enum(TURN_STATES), text: z.string().optional() }),
+  /** The tutor pointed at something without changing it (focus_region). */
+  focus: z.object({ bounds: BoundsSchema, note: z.string().optional() }),
   /** A page range the model was shown: the only pages a `cite:` link may name. */
   source: z.object({
     bookId: z.string(),

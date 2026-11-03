@@ -52,6 +52,12 @@ function setup() {
   return ready
 }
 
+let full: Promise<Platform> | undefined
+/** The Node platform with MathJax attached, one shared object (text layout is memoised per platform). */
+export const serverPlatform = (): Promise<Platform> =>
+  // biome-ignore lint/suspicious/noAssignInExpressions: lazy singleton
+  (full ??= setup().then(({ platform, math }) => ({ ...platform, math })))
+
 const finite = (n: number) => typeof n === 'number' && Number.isFinite(n)
 
 /** The default rect of an export: the scene's bounds plus padding (an empty board gets a small blank page). */

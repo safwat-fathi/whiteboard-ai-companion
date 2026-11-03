@@ -407,10 +407,16 @@ function rerouteOps(ctx: ToolCtx, moved: Map<string, Record<string, unknown>>) {
       } as Element)
   }
   const ops: import('../schema').Op[] = []
+  let skipped = 0
   for (const a of ctx.scene.els.values()) {
     if (a.type !== 'shape' || !isLinear(a) || moved.has(a.id)) continue
     const bound = [a.data.start?.id, a.data.end?.id]
     if (!bound.some((b) => b && moved.has(b))) continue
+    // a side effect obeys the same edit rights as the request: the student's arrows are left where they are
+    if (agentMayEdit(a, ctx.grantedIds) !== null) {
+      skipped++
+      continue
+    }
     const abs = routeArrow(a, view).map(([px, py]) => ({
       x: a.x + px,
       y: a.y + py,
@@ -422,8 +428,11 @@ function rerouteOps(ctx: ToolCtx, moved: Map<string, Record<string, unknown>>) {
       set: { x: g.x, y: g.y, w: g.w, h: g.h, 'data.points': g.points },
     })
   }
-  return ops
+  return { ops, skipped }
 }
+
+const arrowsNote = (n: number, what: string) =>
+  `${n} attached arrow${n === 1 ? '' : 's'} ${n === 1 ? 'belongs' : 'belong'} to the student and ${what}.`
 
 export const updateElements = defineTool({
   name: 'update_elements',
@@ -496,15 +505,19 @@ export const updateElements = defineTool({
       ops.push({ op: 'patch', id: u.id, set })
       if (GEOMETRY.some((k) => k in set)) moved.set(u.id, set)
     }
-    ops.push(...rerouteOps(ctx, moved))
+    const rerouted = rerouteOps(ctx, moved)
+    ops.push(...rerouted.ops)
     const touched = i.updates.flatMap((u) => ctx.scene.els.get(u.id) ?? [])
-    return write(
+    const out = write(
       `Update ${i.updates.length} element${i.updates.length === 1 ? '' : 's'}`,
       ops,
       touched,
       ctx,
       false,
     )
+    if (out.kind === 'write' && rerouted.skipped)
+      out.warnings = [arrowsNote(rerouted.skipped, 'was not moved')]
+    return out
   },
 })
 
@@ -528,20 +541,27 @@ export const deleteElements = defineTool({
       op: 'remove',
       id: e.id,
     }))
+    let skipped = 0
     for (const a of ctx.scene.els.values()) {
       if (a.type !== 'shape' || gone.has(a.id)) continue
       const set: Record<string, unknown> = {}
       if (a.data.start && gone.has(a.data.start.id)) set['data.start'] = null
       if (a.data.end && gone.has(a.data.end.id)) set['data.end'] = null
-      if (Object.keys(set).length) ops.push({ op: 'patch', id: a.id, set })
+      if (Object.keys(set).length === 0) continue
+      // unbinding is a change to the arrow: only the tutor's own (or selected) arrows are touched
+      if (agentMayEdit(a, ctx.grantedIds) !== null) skipped++
+      else ops.push({ op: 'patch', id: a.id, set })
     }
-    return write(
+    const out = write(
       `Delete ${els.length} element${els.length === 1 ? '' : 's'}`,
       ops,
       els,
       ctx,
       false,
     )
+    if (out.kind === 'write' && skipped)
+      out.warnings = [arrowsNote(skipped, 'was left as it was')]
+    return out
   },
 })
 

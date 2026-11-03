@@ -8,6 +8,7 @@ import {
   createUIMessageStream,
   isStepCount,
   type ModelMessage,
+  type PrepareStepFunction,
   type StopCondition,
   streamText,
   type ToolSet,
@@ -32,7 +33,13 @@ import { type StubFixture, stubModel } from './stub'
 
 const DAY_MS = 86_400_000
 
-export type TurnCtx = { boardId: string; turnId: string; request: ChatRequest }
+export type TurnCtx = {
+  boardId: string
+  turnId: string
+  request: ChatRequest
+  /** Writes a part to the chat stream (and into the stored message). */
+  emit: (c: UIMessageChunk) => void
+}
 
 export type TutorDeps = {
   config: Config
@@ -45,8 +52,11 @@ export type TutorDeps = {
   llm: Llm | null
   /** Present = TUTOR_STUB: a scripted model replaces the provider and nothing else changes. */
   stub?: StubFixture[]
-  /** The tools of a turn (T8 supplies the board and book tools). */
-  tools?: (ctx: TurnCtx) => ToolSet
+  /** The tools of a turn and, optionally, a hook that adds pictures to the next step. */
+  tools?: (ctx: TurnCtx) => {
+    tools: ToolSet
+    prepareStep?: PrepareStepFunction<ToolSet>
+  }
   now?: () => number
 }
 
@@ -55,15 +65,17 @@ export type RecordedCall = { prompt: unknown[]; tools: string[] }
 
 type Part = { type: string; [k: string]: unknown }
 
+const sizeOf = (d: unknown): number => {
+  if (typeof d === 'string') return d.length
+  if (d instanceof Uint8Array) return d.length
+  const inner = (d as { data?: unknown } | null)?.data
+  return inner === undefined ? 0 : sizeOf(inner)
+}
 const plain = (content: unknown): unknown =>
   Array.isArray(content)
     ? content.map((p: { type?: string; data?: unknown; mediaType?: string }) =>
         p.type === 'file'
-          ? {
-              type: 'file',
-              mediaType: p.mediaType,
-              bytes: (p.data as { length?: number } | undefined)?.length ?? 0,
-            }
+          ? { type: 'file', mediaType: p.mediaType, bytes: sizeOf(p.data) }
           : p,
       )
     : content
@@ -196,11 +208,15 @@ export function createTutor(deps: TutorDeps) {
               t.price,
               steps.reduce((a, s) => addUsage(a, usageOf(s.usage)), noUsage()),
             ) ?? 0) >= t.maxTurnCostUsd
+          const toolset = deps.tools?.({ boardId, turnId, request: req, emit })
           const result = streamText({
             model,
             instructions: systemPrefix({ profile: settings.get('profile') }),
             messages: [...history, { role: 'user', content: req.message.text }],
-            tools: deps.tools?.({ boardId, turnId, request: req }) ?? {},
+            tools: toolset?.tools ?? {},
+            ...(toolset?.prepareStep
+              ? { prepareStep: toolset.prepareStep }
+              : {}),
             stopWhen: [isStepCount(t.maxSteps), overCost],
             abortSignal: ac.signal,
             maxRetries: 2,

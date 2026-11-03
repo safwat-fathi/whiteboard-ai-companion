@@ -24,11 +24,13 @@ const fixtures: StubFixture[] = [
   },
 ]
 const ping = () => ({
-  ping: tool({
-    description: 'ping',
-    inputSchema: z.object({}),
-    execute: async () => 'pong',
-  }),
+  tools: {
+    ping: tool({
+      description: 'ping',
+      inputSchema: z.object({}),
+      execute: async () => 'pong',
+    }),
+  },
 })
 
 async function setup(o: Parameters<typeof boot>[0] = {}) {

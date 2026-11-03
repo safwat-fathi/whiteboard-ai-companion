@@ -17,12 +17,14 @@ import {
   openDatabase,
   schemaVersion,
 } from './db'
+import { serverPlatform } from './export'
 import { createHttpServer } from './http'
 import { runIngest } from './library/ingest'
 import { type Providers, stubProviders } from './library/providers'
 import { createQueue } from './library/queue'
 import { createVectorCache } from './library/search'
 import type { StubFixture } from './tutor/stub'
+import { boardToolSet } from './tutor/tools/board-tools'
 import { createTutor, type TutorDeps } from './tutor/turn'
 
 // Shared by the HTTP test files: a real server on a random port over a temp database, and a raw client.
@@ -43,7 +45,12 @@ export async function boot(
     /** Extra environment for loadConfig (MAX_STEPS, TUTOR_PRICE_IN_PER_M ...). */
     env?: Record<string, string>
     /** Mounts the tutor routes. `fixtures` is the scripted model (omit for "no stub, no key"). */
-    tutor?: { fixtures?: StubFixture[]; tools?: TutorDeps['tools'] }
+    tutor?: {
+      fixtures?: StubFixture[]
+      tools?: TutorDeps['tools']
+      /** The real board tools (the ones main.ts wires) instead of `tools`. */
+      realTools?: boolean
+    }
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), 'wb-http-'))
@@ -89,7 +96,10 @@ export async function boot(
         books: booksDb,
         llm: null,
         stub: o.tutor.fixtures,
-        tools: o.tutor.tools,
+        tools: o.tutor.realTools
+          ? (ctx) =>
+              boardToolSet({ boards, blobs, platform: serverPlatform }, ctx)
+          : o.tutor.tools,
       })
     : undefined
   const server = createHttpServer({

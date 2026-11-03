@@ -1,6 +1,9 @@
-export { boardTools, linearGeometry } from './board'
+import { boardTools } from './board'
+import { addDiagram } from './diagram'
+
+export { linearGeometry } from './board'
 export { byOf, describeElement, detailOf } from './describe'
-export { addDiagram, layout } from './diagram'
+export { layout } from './diagram'
 export { type Placement, PlacementSchema, resolvePlacement } from './place'
 export {
   agentMayEdit,
@@ -11,3 +14,6 @@ export {
   ToolError,
   type ToolOutput,
 } from './registry'
+
+/** Every tool that needs only the board (the book tools live on the server). */
+export const coreTools = [...boardTools, addDiagram]

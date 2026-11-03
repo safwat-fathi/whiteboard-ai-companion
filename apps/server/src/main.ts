@@ -11,6 +11,7 @@ import {
   openDatabase,
   schemaVersion,
 } from './db'
+import { serverPlatform } from './export'
 import { attachGateway } from './gateway'
 import { createHttpServer } from './http'
 import { createProviders, stubProviders } from './library/providers'
@@ -19,6 +20,7 @@ import { createVectorCache } from './library/search'
 import { runInWorker } from './library/worker'
 import { createLlm } from './tutor/llm'
 import { loadFixtures } from './tutor/stub'
+import { boardToolSet } from './tutor/tools/board-tools'
 import { createTutor } from './tutor/turn'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
@@ -68,6 +70,8 @@ const tutor = createTutor({
       })
     : null,
   stub: tutorStub,
+  tools: (ctx) =>
+    boardToolSet({ boards, blobs, platform: serverPlatform }, ctx),
 })
 const server = createHttpServer({
   config,

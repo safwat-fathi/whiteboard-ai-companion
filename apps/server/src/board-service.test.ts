@@ -510,3 +510,106 @@ describe('join', () => {
     )
   })
 })
+
+describe('agent edit rights (R4): the one choke point', () => {
+  const TUTOR: Author = { kind: 'agent', id: 'tutor:t1' }
+  const world = () => {
+    const b = setup()
+    const board = b.svc.createBoard('B')
+    b.svc.submit(board.id, add('mine'), OWNER)
+    b.svc.submit(board.id, add('other', { x: 300 }), OWNER)
+    b.svc.submit(board.id, add('locked', { x: 600, locked: true }), OWNER)
+    b.svc.submit(board.id, add('ai-made', { x: 900 }), TUTOR, 't0') // the add re-stamps its author
+    return { ...b, id: board.id }
+  }
+  const x = (b: ReturnType<typeof world>, id: string) =>
+    b.svc.scene(b.id).elements.find((e) => e.id === id)?.x
+
+  it('rejects a patch or removal of a student element that was not selected, and changes nothing', () => {
+    const b = world()
+    for (const input of [
+      patch('other', { x: 5 }),
+      { batchId: 'rm', label: 'Del', ops: [{ op: 'remove', id: 'other' }] },
+    ])
+      expect(() => b.svc.submit(b.id, input, TUTOR, 't1')).toThrow(
+        /belongs to the student and was not selected/,
+      )
+    expect(() =>
+      b.svc.submit(b.id, patch('other', { x: 5 }), TUTOR, 't1'),
+    ).toThrowError(expect.objectContaining({ code: 'validation_failed' }))
+    expect(x(b, 'other')).toBe(300)
+  })
+
+  it("allows what the student selected when the turn began, the tutor's own elements, and any add", () => {
+    const b = world()
+    const granted = new Set(['mine'])
+    b.svc.submit(b.id, patch('mine', { x: 11 }), TUTOR, 't1', {
+      grantedIds: granted,
+    })
+    b.svc.submit(b.id, patch('ai-made', { x: 901 }), TUTOR, 't1')
+    b.svc.submit(b.id, add('fresh', { x: 1200 }), TUTOR, 't1')
+    expect([x(b, 'mine'), x(b, 'ai-made'), x(b, 'fresh')]).toEqual([
+      11, 901, 1200,
+    ])
+  })
+
+  it('never changes a locked element, even a granted one', () => {
+    const b = world()
+    expect(() =>
+      b.svc.submit(b.id, patch('locked', { x: 1 }), TUTOR, 't1', {
+        grantedIds: new Set(['locked']),
+      }),
+    ).toThrow(/locked/)
+  })
+
+  it('does not apply to the student, and a refused batch is not stored', () => {
+    const b = world()
+    const before = b.svc.scene(b.id).headSeq
+    b.svc.submit(b.id, patch('other', { x: 7 }), OWNER)
+    expect(x(b, 'other')).toBe(7)
+    expect(() =>
+      b.svc.submit(b.id, patch('other', { x: 9 }), TUTOR, 't1'),
+    ).toThrow()
+    expect(b.svc.scene(b.id).headSeq).toBe(before + 1)
+  })
+
+  it('stores the inverse of an agent batch only, so a response can be undone after a restart', () => {
+    const b = world()
+    b.svc.submit(b.id, patch('ai-made', { x: 950 }), TUTOR, 't1')
+    const rows = b.boardsDb.opsAfter(b.id, 0)
+    expect(rows[0]?.inverse).toBeUndefined() // the student's own batch
+    const last = rows.at(-1)
+    expect(last?.inverse).toMatchObject({
+      ops: [{ op: 'patch', id: 'ai-made', set: { x: 900 } }],
+    })
+  })
+
+  it('preserveAuthor keeps the original author of a re-added element (used by turn undo)', () => {
+    const b = world()
+    const original = {
+      ...rect('back'),
+      author: { kind: 'agent', id: 'tutor:t0' },
+    } as Element
+    const input = {
+      batchId: 'undo-1',
+      label: 'Undo',
+      ops: [{ op: 'add', el: original }],
+    }
+    b.svc.submit(b.id, input, OWNER, undefined, { preserveAuthor: true })
+    expect(
+      b.svc.scene(b.id).elements.find((e) => e.id === 'back')?.author,
+    ).toEqual({ kind: 'agent', id: 'tutor:t0' })
+    b.svc.submit(
+      b.id,
+      {
+        ...input,
+        batchId: 'undo-2',
+        ops: [{ op: 'add', el: { ...original, id: 'plain' } }],
+      },
+      OWNER,
+    )
+    expect(
+      b.svc.scene(b.id).elements.find((e) => e.id === 'plain')?.author,
+    ).toEqual(OWNER)
+  })
+})

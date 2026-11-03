@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  agentMayEdit,
   applyBatch,
   type Batch,
   bounds as boundsOfElement,
@@ -111,11 +112,17 @@ export class BoardService {
     return { headSeq: l.headSeq, elements: [...l.scene.els.values()] }
   }
 
+  /**
+   * `opts.grantedIds`: the student's elements an agent author may change this turn (what was selected when it began).
+   * `opts.preserveAuthor`: keep each added element's own author; only server-side undo sets it, so a re-added tutor
+   * element is still the tutor's.
+   */
   submit(
     boardId: string,
     input: unknown,
     author: Author,
     turnId?: string,
+    opts: { grantedIds?: ReadonlySet<string>; preserveAuthor?: boolean } = {},
   ): SubmitResult {
     const l = this.load(boardId)
     let batch: Batch
@@ -125,13 +132,28 @@ export class BoardService {
       throw this.invalid(e)
     }
     checkLimits(batch, l.scene.els.size)
-    // The author of a new element is the channel's, never the client's.
-    batch = {
-      ...batch,
-      ops: batch.ops.map((op) =>
-        op.op === 'add' ? { ...op, el: { ...op.el, author } } : op,
-      ),
+    if (author.kind === 'agent') {
+      // Edit rights: the tutor may add anything but change only its own work and what the student selected.
+      const granted = opts.grantedIds ?? new Set<string>()
+      for (const op of batch.ops) {
+        if (op.op === 'add') continue
+        const el = l.scene.els.get(op.id)
+        const why = el && agentMayEdit(el, granted)
+        if (why)
+          throw new ApiError('validation_failed', why, {
+            field: 'ops',
+            id: op.id,
+          })
+      }
     }
+    // The author of a new element is the channel's, never the client's.
+    if (!opts.preserveAuthor)
+      batch = {
+        ...batch,
+        ops: batch.ops.map((op) =>
+          op.op === 'add' ? { ...op, el: { ...op.el, author } } : op,
+        ),
+      }
     const rects = batch.ops.flatMap((op) => {
       const cur = op.op === 'remove' ? l.scene.els.get(op.id) : undefined
       return cur ? [boundsOfElement(cur)] : []
@@ -167,6 +189,7 @@ export class BoardService {
           bounds,
           touchedIds: effective,
           ops: batch.ops,
+          ...(author.kind === 'agent' ? { inverse: applied.inverse } : {}),
         },
         this.now(),
       )

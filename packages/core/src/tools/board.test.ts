@@ -424,6 +424,63 @@ describe('delete_elements', () => {
   })
 })
 
+describe('arrows the tutor may not edit are left alone (side-effect patches obey edit rights)', () => {
+  const studentArrow = () =>
+    human('sa', {
+      type: 'shape',
+      x: 100,
+      y: 30,
+      w: 200,
+      h: 0,
+      data: {
+        kind: 'arrow',
+        points: [
+          [0, 0],
+          [200, 0],
+        ],
+        start: { id: 'a', fx: 1, fy: 0.5 },
+        end: { id: 'b', fx: 0, fy: 0.5 },
+      },
+    } as Partial<Element>)
+  const patched = (out: ToolOutput) =>
+    out.kind === 'write'
+      ? out.batch.ops.flatMap((o) => (o.op === 'patch' ? [o.id] : []))
+      : []
+
+  it('moving a box the tutor may edit does not touch a student arrow attached to it, and says so', async () => {
+    const ctx = ctxOf([human('a'), human('b', { x: 300 }), studentArrow()], {
+      grantedIds: new Set(['b']),
+    })
+    const out = await written(
+      'update_elements',
+      { updates: [{ id: 'b', set: { x: 500 } }] },
+      ctx,
+    )
+    expect(patched(out)).toEqual(['b'])
+    expect(out.warnings?.join(' ')).toMatch(/1 attached arrow.*not moved/)
+  })
+  it("deleting a box the tutor may edit leaves a student arrow's binding alone", async () => {
+    const ctx = ctxOf([human('a'), human('b', { x: 300 }), studentArrow()], {
+      grantedIds: new Set(['b']),
+    })
+    const out = await written('delete_elements', { ids: ['b'] }, ctx)
+    expect(patched(out)).toEqual([])
+    expect(out.warnings?.join(' ')).toMatch(/1 attached arrow/)
+  })
+  it("the tutor's own arrows are still re-routed", async () => {
+    const ctx = ctxOf([human('a'), human('b', { x: 300 })], {
+      grantedIds: new Set(['b']),
+    })
+    const arrow = await written('connect', { from: 'a', to: 'b' }, ctx)
+    const out = await written(
+      'update_elements',
+      { updates: [{ id: 'b', set: { x: 500 } }] },
+      ctx,
+    )
+    expect(patched(out)).toEqual(['b', arrow.ids[0]])
+  })
+})
+
 describe('reading and pointing', () => {
   it('get_elements filters by type, author, text and region and says how many more there are', async () => {
     const els = [
