@@ -1,0 +1,76 @@
+[
+  {
+    "match": "far one",
+    "steps": [
+      {
+        "toolCalls": [
+          {
+            "name": "add_shape",
+            "input": {
+              "kind": "rect",
+              "label": "Far one",
+              "w": 200,
+              "h": 100,
+              "placement": {
+                "x": 6000,
+                "y": 4000
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+        "chunkDelayMs": 60
+      }
+    ]
+  },
+  {
+    "match": "follow me",
+    "steps": [
+      {
+        "toolCalls": [
+          {
+            "name": "add_shape",
+            "input": {
+              "kind": "ellipse",
+              "label": "Followed",
+              "w": 200,
+              "h": 100,
+              "placement": {
+                "x": -5000,
+                "y": 300
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+        "chunkDelayMs": 60
+      }
+    ]
+  },
+  {
+    "match": "quick note",
+    "steps": [
+      {
+        "toolCalls": [
+          {
+            "name": "add_text",
+            "input": {
+              "text": "A quick note",
+              "placement": {
+                "x": 200,
+                "y": 200
+              }
+            }
+          }
+        ]
+      },
+      {
+        "text": "Noted."
+      }
+    ]
+  }
+]
