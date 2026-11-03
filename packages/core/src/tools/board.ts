@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { bounds, fitMath, type Rect, resolveEnd, routeArrow } from '../geometry'
+import type { Scene } from '../scene'
 import { type Binding, type Element, newId } from '../schema'
 import { layoutText, resolveDir } from '../text'
 import type { WireBounds } from '../tutor-wire'
@@ -399,9 +400,16 @@ const EDITABLE = new RegExp(
 const SET_HELP =
   'Allowed keys: x, y, w, h, rotation, style.stroke, style.fill, style.strokeWidth, style.opacity, style.dash, data.text, data.size, data.align, data.maxWidth, data.latex, data.display, data.label. A handwritten stroke takes only x, y and style.*.'
 
-/** Re-route every arrow attached to an element that moved or resized, so arrows follow their boxes. */
-function rerouteOps(ctx: ToolCtx, moved: Map<string, Record<string, unknown>>) {
-  const view = { els: new Map(ctx.scene.els) }
+/**
+ * Re-route every arrow attached to an element that moved or resized, so arrows follow their boxes. `mayEdit` says whose
+ * arrows may be touched as a side effect (the tutor: its own and the student's selected ones; a person: any unlocked).
+ */
+export function rerouteArrows(
+  scene: Scene,
+  moved: Map<string, Record<string, unknown>>,
+  mayEdit: (el: Element) => boolean = (el) => !el.locked,
+) {
+  const view = { els: new Map(scene.els) }
   for (const [elId, set] of moved) {
     const el = view.els.get(elId)
     if (el)
@@ -414,12 +422,12 @@ function rerouteOps(ctx: ToolCtx, moved: Map<string, Record<string, unknown>>) {
   }
   const ops: import('../schema').Op[] = []
   let skipped = 0
-  for (const a of ctx.scene.els.values()) {
+  for (const a of scene.els.values()) {
     if (a.type !== 'shape' || !isLinear(a) || moved.has(a.id)) continue
     const bound = [a.data.start?.id, a.data.end?.id]
     if (!bound.some((b) => b && moved.has(b))) continue
-    // a side effect obeys the same edit rights as the request: the student's arrows are left where they are
-    if (agentMayEdit(a, ctx.grantedIds) !== null) {
+    // a side effect obeys the same edit rights as the request: what may not be edited is left where it is
+    if (!mayEdit(a)) {
       skipped++
       continue
     }
@@ -436,6 +444,17 @@ function rerouteOps(ctx: ToolCtx, moved: Map<string, Record<string, unknown>>) {
   }
   return { ops, skipped }
 }
+
+/** The tutor's version: the student's arrows are left where they are unless the student selected them. */
+const rerouteOps = (
+  ctx: ToolCtx,
+  moved: Map<string, Record<string, unknown>>,
+) =>
+  rerouteArrows(
+    ctx.scene,
+    moved,
+    (a) => agentMayEdit(a, ctx.grantedIds) === null,
+  )
 
 const arrowsNote = (n: number, what: string) =>
   `${n} attached arrow${n === 1 ? '' : 's'} ${n === 1 ? 'belongs' : 'belong'} to the student and ${what}.`

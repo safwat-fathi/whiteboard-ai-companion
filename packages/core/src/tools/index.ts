@@ -1,3 +1,4 @@
+import { arrange } from './arrange'
 import { boardTools } from './board'
 import { addChart } from './chart'
 import { addDiagram } from './diagram'
@@ -19,4 +20,10 @@ export {
 } from './registry'
 
 /** Every tool that needs only the board (the book tools live on the server). */
-export const coreTools = [...boardTools, addDiagram, addChart, drawStroke]
+export const coreTools = [
+  ...boardTools,
+  addDiagram,
+  addChart,
+  drawStroke,
+  arrange,
+]

@@ -393,4 +393,68 @@ describe('the board tools inside a turn', () => {
       'points: give 2 to 500 points',
     )
   })
+
+  it('arranges what the student selected as one batch by the turn, shown as drawing, and leaves the rest of their work where it is', async () => {
+    const t = await setup([
+      {
+        match: 'line them up',
+        steps: [
+          {
+            toolCalls: [
+              {
+                name: 'arrange',
+                input: { action: 'align', ids: ['one', 'two'], to: 'top' },
+              },
+            ],
+          },
+          { text: 'Done.' },
+        ],
+      },
+      {
+        match: 'and the third',
+        steps: [
+          {
+            toolCalls: [
+              {
+                name: 'arrange',
+                input: { action: 'align', ids: ['one', 'three'], to: 'top' },
+              },
+            ],
+          },
+          { text: 'No.' },
+        ],
+      },
+    ])
+    const put = (id: string, x: number, y: number) =>
+      t.boards.submit(
+        t.board.id,
+        {
+          ...stuShape(id, x),
+          ops: stuShape(id, x).ops.map((o) => ({
+            ...o,
+            el: { ...o.el, y },
+          })),
+        },
+        OWNER,
+      )
+    put('one', 0, 100)
+    put('two', 300, 40)
+    put('three', 600, 200)
+    const r = await t.chat('line them up', ['one', 'two'])
+    const chunks = sseChunks(r.text)
+    expect(
+      chunks.filter((c) => c.type === 'data-batch').map((c) => c.data.label),
+    ).toEqual(['Align top'])
+    expect(
+      chunks.filter((c) => c.type === 'data-status').map((c) => c.data.state),
+    ).toContain('drawing')
+    const y = (id: string) => (t.scene().find((e) => e.id === id) as Element).y
+    expect([y('one'), y('two'), y('three')]).toEqual([40, 40, 200])
+    // the student did not select the third: the model is told so and it stays put
+    await t.chat('and the third', ['one'])
+    expect(y('three')).toBe(200)
+    expect(JSON.stringify((await t.recorded()).at(-1)?.prompt)).toContain(
+      'belongs to the student and was not selected',
+    )
+  })
 })
