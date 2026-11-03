@@ -110,6 +110,15 @@ export function Workspace({ boardId }: { boardId?: string }) {
       )
   }, [apiBase])
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [])
+
   // A verified citation opens the page it names in the Source tab.
   const openSource = (c: SourceRef) => {
     setSource(c)
