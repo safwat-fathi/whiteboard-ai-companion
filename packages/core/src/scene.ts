@@ -6,6 +6,7 @@ import {
   type Element,
   ElementSchema,
   FreehandElementSchema,
+  GroupElementSchema,
   type Id,
   ImageElementSchema,
   MathElementSchema,
@@ -35,6 +36,7 @@ const SCHEMA = {
   image: ImageElementSchema,
   freehand: FreehandElementSchema,
   chart: ChartElementSchema,
+  group: GroupElementSchema,
 }
 
 // Current value at a dotted path, or null if absent (absent only happens on optional leaves).

@@ -121,7 +121,7 @@ export const getElements = defineTool({
   input: z.object({
     ids: z.array(id).max(100).optional(),
     type: z
-      .enum(['text', 'math', 'shape', 'image', 'freehand', 'chart'])
+      .enum(['text', 'math', 'shape', 'image', 'freehand', 'chart', 'group'])
       .optional(),
     region: z
       .object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })
@@ -487,6 +487,11 @@ export const updateElements = defineTool({
             `updates.set: "${k}" is not editable. ${SET_HELP}`,
             'updates.set',
           )
+      if (el.type === 'group')
+        throw new ToolError(
+          `updates: ${u.id} is a group; change or arrange its members instead`,
+          'updates',
+        )
       // a stroke's box and points move together: it can be moved and restyled, not resized, turned or rewritten
       if (el.type === 'freehand')
         for (const k of Object.keys(set))

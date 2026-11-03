@@ -647,3 +647,29 @@ describe('charts', () => {
     expect((await get({ text: 'revenue' })).map((e) => e.id)).toEqual([])
   })
 })
+
+describe('groups', () => {
+  it('update_elements refuses a group element: its members are what move', async () => {
+    const g = {
+      ...human('g'),
+      type: 'group',
+      data: {},
+      author: { kind: 'agent', id: 'tutor:t1' },
+    } as unknown as Element
+    const ctx = ctxOf([g, human('m', { parentId: 'g' } as Partial<Element>)], {
+      grantedIds: new Set(['m']),
+    })
+    await expect(
+      tool('update_elements').execute(
+        tool('update_elements').input.parse({
+          updates: [{ id: 'g', set: { x: 50 } }],
+        }),
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      name: 'ToolError',
+      field: 'updates',
+      message: /group/,
+    })
+  })
+})

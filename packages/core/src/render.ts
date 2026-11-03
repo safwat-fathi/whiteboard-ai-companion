@@ -903,7 +903,7 @@ export function render(
   const closed: Element[] = []
   for (const f of found) {
     const el = opts.index ? scene.els.get(f.id) : f
-    if (!el || isLinear(el)) continue
+    if (!el || isLinear(el) || el.type === 'group') continue // a group draws nothing
     // Unrotated boxes (almost all of them) skip bounds(), which allocates four rotated corners.
     const box = el.rotation
       ? bounds(el)

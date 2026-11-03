@@ -1675,3 +1675,23 @@ describe('chart rendering', () => {
     })
   }
 })
+
+describe('group rendering', () => {
+  it('draws nothing for the group itself, whatever its style, and its members as usual', () => {
+    const group = {
+      ...mk('g', { x: 10, y: 10, w: 80, h: 60, fill: '#ff0000' }),
+      type: 'group',
+      data: {},
+    } as unknown as Element
+    const { ctx } = canvas(100, 80)
+    render(
+      ctx,
+      createScene([group]),
+      cam,
+      { width: 100, height: 80, dpr: 1 },
+      platform,
+    )
+    const d = ctx.getImageData(0, 0, 100, 80).data
+    for (let i = 0; i < d.length; i += 4) expect(d[i + 1]).toBe(255) // all white: no red
+  })
+})

@@ -20,6 +20,10 @@ export function detailOf(el: Element): string {
       return el.data.label
         ? `${el.data.kind} ${JSON.stringify(clip(el.data.label, 40))}`
         : el.data.kind
+    case 'group':
+      return el.data.name
+        ? `group ${JSON.stringify(clip(el.data.name, 40))}`
+        : 'group'
     case 'chart':
       return `${el.data.kind} chart${el.data.title ? ` ${JSON.stringify(clip(el.data.title, 40))}` : ''}`
     case 'freehand':

@@ -228,6 +228,16 @@ export const FreehandElementSchema = z.object({
   type: z.literal('freehand'),
   data: FreehandDataSchema,
 })
+export const GroupDataSchema = z.object({
+  name: z.string().max(100, 'must be at most 100 characters').optional(),
+})
+export type GroupData = z.infer<typeof GroupDataSchema>
+/** Draws nothing and is never hit: its children carry `parentId`, and its box is the union of theirs when it was made. */
+export const GroupElementSchema = z.object({
+  ...BaseShape,
+  type: z.literal('group'),
+  data: GroupDataSchema,
+})
 export const ChartElementSchema = z.object({
   ...BaseShape,
   type: z.literal('chart'),
@@ -240,6 +250,7 @@ export const ElementSchema = z.discriminatedUnion('type', [
   ImageElementSchema,
   FreehandElementSchema,
   ChartElementSchema,
+  GroupElementSchema,
 ])
 export type Element = z.infer<typeof ElementSchema>
 

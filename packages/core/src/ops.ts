@@ -4,6 +4,7 @@ import {
   BatchSchema,
   ChartElementSchema,
   FreehandElementSchema,
+  GroupElementSchema,
   ImageElementSchema,
   MathElementSchema,
   ShapeElementSchema,
@@ -44,6 +45,7 @@ const ELEMENT_SCHEMAS = [
   ImageElementSchema,
   FreehandElementSchema,
   ChartElementSchema,
+  GroupElementSchema,
 ]
 
 // A patch names no element type, so a path such as `data.kind` may mean different things on different types (a shape's

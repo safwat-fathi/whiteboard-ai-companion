@@ -153,6 +153,7 @@ export function outline(el: Element): Point[] {
 
 /** `tolWorld` is in world units (callers pass 6 / zoom). Text uses its stored box, not a layout. */
 export function hitTest(el: Element, p: Point, tolWorld: number): boolean {
+  if (el.type === 'group') return false // a group draws nothing: its members are what is picked
   if (isLinear(el)) {
     const d = polyDist(p, worldPoints(el), false)
     return d <= tolWorld + el.style.strokeWidth / 2
