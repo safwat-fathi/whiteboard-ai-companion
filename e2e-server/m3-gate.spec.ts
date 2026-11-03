@@ -64,6 +64,15 @@ async function drag(page: Page, from: [number, number], to: [number, number]) {
   await page.mouse.up()
 }
 
+/** Press, drag through `pts`, release (real mouse input: pointerType 'mouse', no pressure). */
+async function stroke(page: Page, pts: [number, number][]) {
+  const [first, ...rest] = pts as [[number, number], ...[number, number][]]
+  await page.mouse.move(...first)
+  await page.mouse.down()
+  for (const p of rest) await page.mouse.move(...p, { steps: 4 })
+  await page.mouse.up()
+}
+
 async function typeText(page: Page, at: [number, number], text: string) {
   await page.keyboard.press('t')
   await page.mouse.click(...at)
@@ -408,12 +417,40 @@ test.describe
       await typeText(pageA, [250, 300], 'Hello')
       await typeMath(pageA, [400, 300], 'x^2 + y^2 = z^2')
 
+      // Ink: a pen stroke below the text and a highlight across the Latin word (the camera is still at the origin at zoom 1,
+      // so world and screen coordinates agree), so the picture compares freehand and the highlighter's multiply too
+      const hello = (await elements(pageA)).find(
+        (e) => e.data.text === 'Hello',
+      ) as El
+      const mid = hello.y + hello.h / 2
+      await pageA.keyboard.press('p')
+      await stroke(pageA, [
+        [100, 400],
+        [190, 360],
+        [280, 430],
+        [370, 370],
+        [460, 420],
+      ])
+      await pageA.keyboard.press('Shift+P')
+      await stroke(pageA, [
+        [hello.x - 15, mid],
+        [hello.x + hello.w / 2, mid + 2],
+        [hello.x + hello.w + 15, mid],
+      ])
+      await pageA.keyboard.press('v')
+
       await expect
         .poll(
           async () =>
             (await elements(pageB)).filter((e) => e.type === 'math').length,
         )
         .toBe(1)
+      await expect
+        .poll(
+          async () =>
+            (await elements(pageB)).filter((e) => e.type === 'freehand').length,
+        )
+        .toBe(2)
       // Settle rendering
       await pageA.waitForTimeout(500)
 
@@ -479,6 +516,10 @@ test.describe
       const serverExport = Buffer.from(await exportRes.arrayBuffer())
 
       const diffResult = comparePngBuffers(browserScreenshot, serverExport, 24)
+      test.info().annotations.push({
+        type: 'parity',
+        description: `${(diffResult.ratio * 100).toFixed(3)}% of ${diffResult.total} px differ`,
+      })
       if (diffResult.ratio > 0.015) {
         const outDir = resolve(process.cwd(), 'test-results')
         mkdirSync(outDir, { recursive: true })
