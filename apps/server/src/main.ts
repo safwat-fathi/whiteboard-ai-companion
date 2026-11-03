@@ -6,6 +6,8 @@ import {
   createBlobsDb,
   createBoardsDb,
   createBooksDb,
+  createMessagesDb,
+  createSettingsDb,
   openDatabase,
   schemaVersion,
 } from './db'
@@ -15,6 +17,9 @@ import { createProviders, stubProviders } from './library/providers'
 import { createQueue } from './library/queue'
 import { createVectorCache } from './library/search'
 import { runInWorker } from './library/worker'
+import { createLlm } from './tutor/llm'
+import { loadFixtures } from './tutor/stub'
+import { createTutor } from './tutor/turn'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const config = loadConfig(process.env, repoRoot)
@@ -42,11 +47,34 @@ const queue = createQueue(
       ),
   },
 )
+// The tutor: the Meta Model API behind one adapter; TUTOR_STUB=1 swaps in a scripted model (tests, e2e) and nothing else.
+const messagesDb = createMessagesDb(db)
+const tutorStub =
+  process.env.TUTOR_STUB === '1'
+    ? loadFixtures(
+        fileURLToPath(new URL('../test/fixtures/tutor/', import.meta.url)),
+      )
+    : undefined
+const tutor = createTutor({
+  config,
+  boards,
+  messages: messagesDb,
+  settings: createSettingsDb(db),
+  books: booksDb,
+  llm: process.env.META_API_KEY
+    ? createLlm({
+        baseUrl: config.metaBaseUrl,
+        apiKey: process.env.META_API_KEY,
+      })
+    : null,
+  stub: tutorStub,
+})
 const server = createHttpServer({
   config,
   boards,
   blobs,
   schemaVersion: () => schemaVersion(db),
+  tutor: { tutor, boards, messages: messagesDb, stub: !!tutorStub },
   library: {
     books: booksDb,
     blobs: blobsDb,

@@ -1,0 +1,91 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { ChatRequestSchema } from '@whiteboard/core'
+import { pipeUIMessageStreamToResponse } from 'ai'
+import type { BoardService } from './board-service'
+import type { MessagesDb } from './db'
+import { apiError } from './errors'
+import { parse, readJson, send } from './http-util'
+import type { Tutor } from './tutor/turn'
+
+export type TutorRoutesDeps = {
+  tutor: Tutor
+  boards: BoardService
+  messages: MessagesDb
+  /** TUTOR_STUB: also serve the recorded model requests to the specs. */
+  stub: boolean
+}
+
+const decode = (raw: string): string => {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    throw apiError('not_found', 'no such board')
+  }
+}
+
+/** Chat, history, models. Returns true when it answered; the caller has already checked Host and Origin. */
+export function createTutorRoutes(d: TutorRoutesDeps) {
+  return async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    seg: string[],
+    method: string,
+  ): Promise<boolean> => {
+    if (seg[1] === 'chat' && seg.length === 2 && method === 'POST') {
+      const body = parse(ChatRequestSchema, await readJson(req))
+      const ac = new AbortController()
+      // Stop = the browser closes the fetch; that aborts the model call and releases the board's turn lock.
+      res.on('close', () => {
+        if (!res.writableEnded) ac.abort()
+      })
+      const { stream } = d.tutor.start(body, ac.signal) // throws a plain error before any header is written
+      await pipeUIMessageStreamToResponse({ response: res, stream })
+      return true
+    }
+    if (seg[1] === 'models' && seg.length === 2 && method === 'GET') {
+      send(res, 200, d.tutor.models())
+      return true
+    }
+    if (
+      seg[1] === 'boards' &&
+      seg[3] === 'messages' &&
+      seg.length === 4 &&
+      method === 'GET'
+    ) {
+      const id = decode(seg[2] as string)
+      if (!d.boards.getBoard(id))
+        throw apiError('not_found', `unknown board ${id}`)
+      const q = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const limit = q.has('limit') ? Number(q.get('limit')) : undefined
+      if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1))
+        throw apiError(
+          'validation_failed',
+          'limit must be a positive integer',
+          { field: 'limit' },
+        )
+      const page = d.messages.page(id, {
+        before: q.get('before') ?? undefined,
+        limit,
+      })
+      send(res, 200, {
+        messages: page.messages.map(d.tutor.toDto),
+        ...(page.next ? { next: page.next } : {}),
+      })
+      return true
+    }
+    if (
+      d.stub &&
+      seg[1] === '_test' &&
+      seg[2] === 'last-request' &&
+      method === 'GET'
+    ) {
+      const id =
+        new URL(req.url ?? '/', 'http://localhost').searchParams.get(
+          'boardId',
+        ) ?? ''
+      send(res, 200, { calls: d.tutor.lastRequest(id) ?? [] })
+      return true
+    }
+    return false
+  }
+}

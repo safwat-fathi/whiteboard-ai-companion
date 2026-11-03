@@ -1,0 +1,11 @@
+[
+  {
+    "match": "*",
+    "steps": [
+      {
+        "text": "This is the stub tutor. Ask me anything.",
+        "usage": { "in": 120, "cached": 0, "out": 12 }
+      }
+    ]
+  }
+]

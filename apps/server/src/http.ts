@@ -17,6 +17,7 @@ import { ScopeSchema } from './db'
 import { apiError } from './errors'
 import { defaultRect, renderBoardPng } from './export'
 import { createLibraryRoutes, type LibraryDeps } from './http-books'
+import { createTutorRoutes, type TutorRoutesDeps } from './http-tutor'
 
 import {
   MAX_JSON_BYTES,
@@ -76,6 +77,8 @@ export type HttpDeps = {
   schemaVersion: () => number
   /** The book library routes (/api/books, /api/search); without it they are unknown paths. */
   library?: LibraryDeps
+  /** The tutor routes (/api/chat, messages, models); without it they are unknown paths. */
+  tutor?: TutorRoutesDeps
 }
 
 /** Image bytes with every header that stops a browser from treating them as anything but an image. */
@@ -121,6 +124,7 @@ const PatchBoard = z
 export function createHttpServer(deps: HttpDeps): http.Server {
   const { config, boards } = deps
   const library = deps.library && createLibraryRoutes(deps.library)
+  const tutor = deps.tutor && createTutorRoutes(deps.tutor)
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
     if (!checkHost(req.headers.host, config))
@@ -265,6 +269,7 @@ export function createHttpServer(deps: HttpDeps): http.Server {
         return sendBlob(res, blob.bytes, blob.mime, method === 'HEAD')
       }
     }
+    if (tutor && (await tutor(req, res, seg, method))) return
     if (
       library &&
       (seg[1] === 'books' || seg[1] === 'search') &&

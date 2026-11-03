@@ -12,6 +12,8 @@ import {
   createBlobsDb,
   createBoardsDb,
   createBooksDb,
+  createMessagesDb,
+  createSettingsDb,
   openDatabase,
   schemaVersion,
 } from './db'
@@ -20,6 +22,8 @@ import { runIngest } from './library/ingest'
 import { type Providers, stubProviders } from './library/providers'
 import { createQueue } from './library/queue'
 import { createVectorCache } from './library/search'
+import type { StubFixture } from './tutor/stub'
+import { createTutor, type TutorDeps } from './tutor/turn'
 
 // Shared by the HTTP test files: a real server on a random port over a temp database, and a raw client.
 export const ORIGIN = 'http://localhost:3000'
@@ -36,6 +40,10 @@ export async function boot(
     providers?: Partial<Providers>
     dailyBudget?: string
     maxPdfBytes?: number
+    /** Extra environment for loadConfig (MAX_STEPS, TUTOR_PRICE_IN_PER_M ...). */
+    env?: Record<string, string>
+    /** Mounts the tutor routes. `fixtures` is the scripted model (omit for "no stub, no key"). */
+    tutor?: { fixtures?: StubFixture[]; tools?: TutorDeps['tools'] }
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), 'wb-http-'))
@@ -49,6 +57,7 @@ export async function boot(
     META_API_KEY: 'sk-secret-meta-value',
     EMBED_DIMS: '16',
     DAILY_BUDGET_USD: o.dailyBudget ?? '5',
+    ...o.env,
   })
   const blobsDb = createBlobsDb(db)
   const blobs = createDiskBlobStore({ dataDir, db: blobsDb })
@@ -70,11 +79,30 @@ export async function boot(
       }),
     { onDone: (id) => cache.invalidate(id), onError: () => {} },
   )
+  const messagesDb = createMessagesDb(db)
+  const tutor = o.tutor
+    ? createTutor({
+        config,
+        boards,
+        messages: messagesDb,
+        settings: createSettingsDb(db),
+        books: booksDb,
+        llm: null,
+        stub: o.tutor.fixtures,
+        tools: o.tutor.tools,
+      })
+    : undefined
   const server = createHttpServer({
     config,
     boards,
     blobs,
     schemaVersion: () => schemaVersion(db),
+    tutor: tutor && {
+      tutor,
+      boards,
+      messages: messagesDb,
+      stub: !!o.tutor?.fixtures,
+    },
     library: {
       books: booksDb,
       blobs: blobsDb,
@@ -156,5 +184,16 @@ export async function boot(
     booksDb,
     queue,
     dataDir,
+    messagesDb,
   }
 }
+
+/** The JSON chunks of a UI message stream body (`data: {...}` lines). */
+export const sseChunks = (
+  text: string,
+  // biome-ignore lint/suspicious/noExplicitAny: a test helper that reads arbitrary JSON
+): { type: string; data: any; [k: string]: unknown }[] =>
+  text
+    .split('\n')
+    .filter((l) => l.startsWith('data: ') && !l.includes('[DONE]'))
+    .map((l) => JSON.parse(l.slice(6)))
