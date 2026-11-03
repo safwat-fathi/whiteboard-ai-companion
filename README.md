@@ -19,14 +19,6 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 
 Whiteboard AI Companion is built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)** (October 26 – November 4, 2026), hosted by **Meta** and **Cerebral Valley** (see full guidelines and eligibility on the [official details page](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)).
 
-### Hackathon Eligibility & Alignment
-
-- **Tracks:** Eligible for either the **Indie Developer Track** (individual builders, students, small teams ≤ 4; judged on creativity, technical ambition, and functionality) or the **Startup Track** (judged on technical execution and production readiness).
-- **Themes:** Aligned with **Theme 1: Build for Your World** (bringing Meta's models into education and technical textbook study) and **Theme 2: Push the Frontier** (multimodal 2D canvas co-working with AI models).
-- **Required Stack:** Integrates Meta's foundation models via the **Meta Model API** (`https://api.meta.ai/v1`) using Meta Muse models (`muse-spark-1.3`, `muse-wonder-1.0`), alongside support for Meta open-weights Llama models.
-- **Cookbook Alignment:** Architected around the official [Meta Model Cookbook](https://github.com/meta-models/meta-model-cookbook) ([`01_api_fundamentals`](https://github.com/meta-models/meta-model-cookbook/tree/main/01_api_fundamentals) and [`02_agent_patterns`](https://github.com/meta-models/meta-model-cookbook/tree/main/02_agent_patterns)): streaming SSE with usage metrics, multi-step tool loops, reasoning tokens, prefix prompt caching, and rolling conversation memory.
-- **Deliverables:** Fully functioning local-first study platform with automated verification test suite, live video demo capability, and reproducible codebase.
-
 The project re-imagines how learners interact with textbooks and technical subjects by uniting Meta foundation models with an interactive visual workspace via the **Meta Model API**:
 
 - **AI Tutor with Visual Explanations:** Powered directly by the **Meta Model API** (`https://api.meta.ai/v1`) using Meta's **Muse** series (`muse-spark-1.3`, `muse-wonder-1.0`) for real-time tool orchestration, mathematical reasoning, and textbook diagram/page transcription (with open-weights Llama 4 supported via OpenRouter `meta-llama/llama-4-maverick`).
@@ -131,23 +123,23 @@ Deploying to a VPS (Node + systemd + Caddy, no Docker): [`docs/plans/deployment.
 
 The server reads its configuration from `apps/server/.env` (see [`apps/server/.env.example`](apps/server/.env.example) and [`docs/plans/deployment.md`](docs/plans/deployment.md)):
 
-| Key                                                            | Purpose                                                                                                                               |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `MODEL_API_KEY`                                                | Meta Model API secret (chat, tool loop, vision, summaries, page OCR). Server-side only                                                |
-| `META_API_BASE_URL`                                            | Meta OpenAI-compatible base URL (`https://api.meta.ai/v1` by default)                                                                 |
-| `OPENROUTER_API_KEY`                                           | Used exclusively for `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and historical M0 spike scripts. Server-side only           |
+| Key                                                               | Purpose                                                                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `MODEL_API_KEY`                                                   | Meta Model API secret (chat, tool loop, vision, summaries, page OCR). Server-side only                                               |
+| `META_API_BASE_URL`                                               | Meta OpenAI-compatible base URL (`https://api.meta.ai/v1` by default)                                                                |
+| `OPENROUTER_API_KEY`                                              | Used exclusively for `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and historical M0 spike scripts. Server-side only          |
 | `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `CHEAP_MODEL` · `VISION_MODEL` | Meta model IDs (default `muse-spark-1.3`; `REVIEWER_MODEL=muse-wonder-1.0`; open-weights Llama 4 via OpenRouter)                     |
-| `SNAPSHOT_ADAPTER`                                             | Canvas snapshot delivery adapter (`follow-up-user` required for Meta Model API; `tool-result-image` supported on OpenRouter)          |
-| `EMBED_MODEL` · `EMBED_DIMS`                                   | Embedding model ID (`baai/bge-m3`, 1024-d via OpenRouter embeddings endpoint)                                                         |
-| `DATA_DIR`                                                     | Where the SQLite file and blobs live (`./data` by default)                                                                            |
-| `PORT` · `HOST`                                                | Server port and binding address (`4000` / `127.0.0.1` by default)                                                                      |
-| `PUBLIC_ORIGIN`                                                | Allowed Origin for CORS and WebSocket validation (`http://localhost:3000` by default)                                                  |
-| `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD`         | Spending and loop caps                                                                                                                |
-| `TURN_TIMEOUT_MS`                                              | Wall clock for one tutor turn (default 120000); raise it if long answers are cut off                                                  |
-| `TUTOR_PRICE_IN_PER_M` · `TUTOR_PRICE_OUT_PER_M`               | USD per million tokens. Unset = turns are unpriced (tokens are still counted); `MAX_TURN_COST_USD` and the spend ledger need a price   |
-| `TUTOR_REASONING_EFFORT`                                       | `low` · `medium` · `high`, sent as `reasoning_effort` (optional; default: the model's own)                                            |
-| `TUTOR_STUB`                                                   | `1` = a scripted model replaces the real one (tests and e2e only)                                                                      |
-| `INGEST_STUB`                                                  | `1` = offline stand-in providers for library ingestion (no external API calls; tests and e2e only)                                     |
+| `SNAPSHOT_ADAPTER`                                                | Canvas snapshot delivery adapter (`follow-up-user` required for Meta Model API; `tool-result-image` supported on OpenRouter)         |
+| `EMBED_MODEL` · `EMBED_DIMS`                                      | Embedding model ID (`baai/bge-m3`, 1024-d via OpenRouter embeddings endpoint)                                                        |
+| `DATA_DIR`                                                        | Where the SQLite file and blobs live (`./data` by default)                                                                           |
+| `PORT` · `HOST`                                                   | Server port and binding address (`4000` / `127.0.0.1` by default)                                                                    |
+| `PUBLIC_ORIGIN`                                                   | Allowed Origin for CORS and WebSocket validation (`http://localhost:3000` by default)                                                |
+| `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD`            | Spending and loop caps                                                                                                               |
+| `TURN_TIMEOUT_MS`                                                 | Wall clock for one tutor turn (default 120000); raise it if long answers are cut off                                                 |
+| `TUTOR_PRICE_IN_PER_M` · `TUTOR_PRICE_OUT_PER_M`                  | USD per million tokens. Unset = turns are unpriced (tokens are still counted); `MAX_TURN_COST_USD` and the spend ledger need a price |
+| `TUTOR_REASONING_EFFORT`                                          | `low` · `medium` · `high`, sent as `reasoning_effort` (optional; default: the model's own)                                           |
+| `TUTOR_STUB`                                                      | `1` = a scripted model replaces the real one (tests and e2e only)                                                                    |
+| `INGEST_STUB`                                                     | `1` = offline stand-in providers for library ingestion (no external API calls; tests and e2e only)                                   |
 
 ### Web App (`apps/web/.env.local`)
 
@@ -171,15 +163,15 @@ docs/            PLAN.md and docs/plans/*.md
 
 ## Roadmap
 
-| Milestone | What                                                                                             | Status        |
-| --------- | ------------------------------------------------------------------------------------------------ | ------------- |
-| M0        | Spikes: canvas performance, ingestion on real books, OpenRouter loop, embeddings, deploy dry-run | ✔ Done        |
-| M1–M2     | Core editor, math and images                                                                     | ✔ Done        |
-| M3        | Server, sync, persistence, access gate, deploy scripts                                           | ✔ Done        |
-| M4        | Library: upload, extraction ladder, hybrid search                                                | ✔ Done        |
-| M5        | Tutor slice: in-app chat, board context, citations, jump-to-AI (first usable tutor)               | ✔ Done        |
-| M6        | Ink, charts, polish: pen, highlighter, eraser, charts, arrange/group/snap                        | ✔ Done        |
-| M7        | Hardening: performance pass, security review, a11y outline, backup drill, optional MCP adapter   | ☐ Planned     |
+| Milestone | What                                                                                             | Status    |
+| --------- | ------------------------------------------------------------------------------------------------ | --------- |
+| M0        | Spikes: canvas performance, ingestion on real books, OpenRouter loop, embeddings, deploy dry-run | ✔ Done    |
+| M1–M2     | Core editor, math and images                                                                     | ✔ Done    |
+| M3        | Server, sync, persistence, access gate, deploy scripts                                           | ✔ Done    |
+| M4        | Library: upload, extraction ladder, hybrid search                                                | ✔ Done    |
+| M5        | Tutor slice: in-app chat, board context, citations, jump-to-AI (first usable tutor)              | ✔ Done    |
+| M6        | Ink, charts, polish: pen, highlighter, eraser, charts, arrange/group/snap                        | ✔ Done    |
+| M7        | Hardening: performance pass, security review, a11y outline, backup drill, optional MCP adapter   | ☐ Planned |
 
 M7 (hardening) is next. Scope, gates and status per phase, ordered by dependency: [`ROADMAP.md`](docs/ROADMAP.md).
 
