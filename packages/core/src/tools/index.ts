@@ -4,6 +4,7 @@ import { addDiagram } from './diagram'
 export { linearGeometry } from './board'
 export { byOf, describeElement, detailOf } from './describe'
 export { layout } from './diagram'
+export { baseFields, stackAbove } from './make'
 export { type Placement, PlacementSchema, resolvePlacement } from './place'
 export {
   agentMayEdit,

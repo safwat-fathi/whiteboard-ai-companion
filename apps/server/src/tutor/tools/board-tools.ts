@@ -69,7 +69,12 @@ const WRITES = new Set([
  * `tutor:<turnId>`; the student's selection when the turn began is the edit grant. A snapshot goes to the model as a
  * follow-up user message, because the Meta Model API rejects images inside tool results (SNAPSHOT_ADAPTER).
  */
-export function boardToolSet(deps: BoardToolDeps, ctx: TurnCtx) {
+export function boardToolSet(
+  deps: BoardToolDeps,
+  ctx: TurnCtx,
+  /** Board-writing tools that live outside core because they need the server (book figures). */
+  extra: ToolDef[] = [],
+) {
   const author = { kind: 'agent' as const, id: `tutor:${ctx.turnId}` }
   const { selection, viewport } = ctx.request.context
   const granted = new Set(selection)
@@ -215,7 +220,9 @@ export function boardToolSet(deps: BoardToolDeps, ctx: TurnCtx) {
   })
 
   const tools: ToolSet = {
-    ...Object.fromEntries(coreTools.map((d) => [d.name, adapt(d as ToolDef)])),
+    ...Object.fromEntries(
+      [...coreTools, ...extra].map((d) => [d.name, adapt(d as ToolDef)]),
+    ),
     get_snapshot: snapshotTool,
   }
   const prepareStep: PrepareStepFunction<ToolSet> = ({ messages }) =>

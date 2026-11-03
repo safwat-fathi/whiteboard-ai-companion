@@ -20,6 +20,7 @@ import { ApiError, apiError } from './errors'
 import { drain, MAX_JSON_BYTES, parse, readBody, send } from './http-util'
 import { createSearcher } from './library/embed-search'
 import { MAX_PDF_BYTES, putPdf } from './library/files'
+import { pageRaster } from './library/page-image'
 import { type OpenPdf, openPdf } from './library/pdf'
 import type { Providers } from './library/providers'
 import {
@@ -399,21 +400,7 @@ export function createLibraryRoutes(lib: LibraryDeps) {
       Number.isFinite(q) && q > 0
         ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(q)))
         : DEFAULT_WIDTH
-    const cached = join(lib.dataDir, 'cache', 'pages', book.id, `${n}@${w}.png`)
-    if (!existsSync(cached)) {
-      const pdf = await openBook(book)
-      try {
-        if (n > pdf.numPages) throw notFound('page')
-        const png = await pdf.renderPage(n, w)
-        mkdirSync(dirname(cached), { recursive: true })
-        const tmp = `${cached}.${randomUUID()}.tmp`
-        writeFileSync(tmp, png)
-        renameSync(tmp, cached) // atomic: a reader sees all of the image or none of it
-      } finally {
-        await pdf.close()
-      }
-    }
-    const bytes = readFileSync(cached)
+    const bytes = await pageRaster({ dataDir: lib.dataDir, book, n, width: w })
     sendBytes(res, 200, bytes, {
       'Content-Type': 'image/png',
       'Content-Length': bytes.length,

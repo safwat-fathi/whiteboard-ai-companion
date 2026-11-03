@@ -102,6 +102,7 @@ export async function boot(
               tutorToolSet(
                 {
                   board: { boards, blobs, platform: serverPlatform },
+                  figure: { books: booksDb, dataDir, blobs },
                   book: {
                     books: booksDb,
                     boards,

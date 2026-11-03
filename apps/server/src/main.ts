@@ -85,6 +85,7 @@ const tutor = createTutor({
       {
         board: { boards, blobs, platform: serverPlatform },
         book: { books: booksDb, boards, search: tutorSearch },
+        figure: { books: booksDb, dataDir: config.dataDir, blobs },
       },
       ctx,
     ),
