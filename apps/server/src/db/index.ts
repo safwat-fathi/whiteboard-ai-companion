@@ -32,3 +32,4 @@ export {
 export { migrate } from './migrate'
 export { openDatabase, schemaVersion } from './open'
 export { createSettingsDb, type SettingsDb } from './settings'
+export { createUsageDb, type UsageDb } from './usage'

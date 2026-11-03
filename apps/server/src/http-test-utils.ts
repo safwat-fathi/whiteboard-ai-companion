@@ -14,6 +14,7 @@ import {
   createBooksDb,
   createMessagesDb,
   createSettingsDb,
+  createUsageDb,
   openDatabase,
   schemaVersion,
 } from './db'
@@ -24,6 +25,7 @@ import { runIngest } from './library/ingest'
 import { type Providers, stubProviders } from './library/providers'
 import { createQueue } from './library/queue'
 import { createVectorCache } from './library/search'
+import { dailyCap } from './tutor/settings'
 import type { StubFixture } from './tutor/stub'
 import { tutorToolSet } from './tutor/tools'
 import { createTutor, type TutorDeps } from './tutor/turn'
@@ -89,12 +91,13 @@ export async function boot(
     { onDone: (id) => cache.invalidate(id), onError: () => {} },
   )
   const messagesDb = createMessagesDb(db)
+  const settingsDb = createSettingsDb(db)
   const tutor = o.tutor
     ? createTutor({
         config,
         boards,
         messages: messagesDb,
-        settings: createSettingsDb(db),
+        settings: settingsDb,
         books: booksDb,
         llm: null,
         stub: o.tutor.fixtures,
@@ -130,7 +133,10 @@ export async function boot(
       tutor,
       boards,
       messages: messagesDb,
-      undo: createUndo({ boards, settings: createSettingsDb(db) }),
+      settings: settingsDb,
+      usage: createUsageDb(db),
+      config,
+      undo: createUndo({ boards, settings: settingsDb }),
       stub: !!o.tutor?.fixtures,
     },
     library: {
@@ -141,6 +147,7 @@ export async function boot(
       providers,
       cache,
       enqueue: queue.enqueue,
+      dailyCap: () => dailyCap(settingsDb, config),
       maxPdfBytes: o.maxPdfBytes,
     },
   })
@@ -215,6 +222,7 @@ export async function boot(
     queue,
     dataDir,
     messagesDb,
+    settingsDb,
     tutor,
   }
 }

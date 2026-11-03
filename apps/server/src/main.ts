@@ -8,6 +8,7 @@ import {
   createBooksDb,
   createMessagesDb,
   createSettingsDb,
+  createUsageDb,
   openDatabase,
   schemaVersion,
 } from './db'
@@ -20,6 +21,7 @@ import { createQueue } from './library/queue'
 import { createVectorCache } from './library/search'
 import { runInWorker } from './library/worker'
 import { createLlm } from './tutor/llm'
+import { dailyCap } from './tutor/settings'
 import { loadFixtures } from './tutor/stub'
 import { tutorToolSet } from './tutor/tools'
 import { createTutor } from './tutor/turn'
@@ -53,6 +55,7 @@ const queue = createQueue(
 )
 // The tutor: the Meta Model API behind one adapter; TUTOR_STUB=1 swaps in a scripted model (tests, e2e) and nothing else.
 const messagesDb = createMessagesDb(db)
+const settingsDb = createSettingsDb(db)
 const tutorStub =
   process.env.TUTOR_STUB === '1'
     ? loadFixtures(
@@ -72,7 +75,7 @@ const tutor = createTutor({
   config,
   boards,
   messages: messagesDb,
-  settings: createSettingsDb(db),
+  settings: settingsDb,
   books: booksDb,
   llm: process.env.META_API_KEY
     ? createLlm({
@@ -101,7 +104,10 @@ const server = createHttpServer({
     tutor,
     boards,
     messages: messagesDb,
-    undo: createUndo({ boards, settings: createSettingsDb(db) }),
+    settings: settingsDb,
+    usage: createUsageDb(db),
+    config,
+    undo: createUndo({ boards, settings: settingsDb }),
     stub: !!tutorStub,
   },
   library: {
@@ -114,6 +120,7 @@ const server = createHttpServer({
       : createProviders({ config, env: process.env }),
     cache,
     enqueue: queue.enqueue,
+    dailyCap: () => dailyCap(settingsDb, config),
   },
 })
 

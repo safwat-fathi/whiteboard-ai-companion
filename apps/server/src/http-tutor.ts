@@ -1,12 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { ChatRequestSchema, ContextDescriptorSchema } from '@whiteboard/core'
+import {
+  ChatRequestSchema,
+  ContextDescriptorSchema,
+  SettingsSchema,
+} from '@whiteboard/core'
 import { pipeUIMessageStreamToResponse } from 'ai'
 import { z } from 'zod'
 import type { BoardService } from './board-service'
-import type { MessagesDb } from './db'
+import type { Config } from './config'
+import type { MessagesDb, SettingsDb, UsageDb } from './db'
 import { apiError } from './errors'
 import { parse, readJson, send } from './http-util'
 import { createActivity } from './tutor/activity'
+import {
+  dailyCap,
+  loadSettings,
+  saveSettings,
+  usageSummary,
+} from './tutor/settings'
 import type { Tutor } from './tutor/turn'
 import type { TutorUndo } from './tutor/undo'
 
@@ -19,6 +30,9 @@ export type TutorRoutesDeps = {
   tutor: Tutor
   boards: BoardService
   messages: MessagesDb
+  settings: SettingsDb
+  usage: UsageDb
+  config: Config
   undo: TutorUndo
   /** TUTOR_STUB: also serve the recorded model requests to the specs. */
   stub: boolean
@@ -54,6 +68,46 @@ export function createTutorRoutes(d: TutorRoutesDeps) {
       })
       const { stream } = await d.tutor.start(body, ac.signal) // throws a plain error before any header is written
       await pipeUIMessageStreamToResponse({ response: res, stream })
+      return true
+    }
+    if (seg[1] === 'settings' && seg.length === 2) {
+      if (method === 'GET') {
+        send(res, 200, loadSettings(d.settings))
+        return true
+      }
+      if (method === 'PUT') {
+        const next = parse(SettingsSchema, await readJson(req))
+        saveSettings(d.settings, next)
+        send(res, 200, loadSettings(d.settings))
+        return true
+      }
+    }
+    if (seg[1] === 'usage' && seg.length === 2 && method === 'GET') {
+      const q = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const num = (k: string, dflt: number) => {
+        const v = q.get(k)
+        if (v === null) return dflt
+        const n = Number(v)
+        if (v.trim() === '' || !Number.isFinite(n))
+          throw apiError(
+            'validation_failed',
+            `${k} must be a number (epoch milliseconds)`,
+            { field: k },
+          )
+        return n
+      }
+      const now = Date.now()
+      const dayStart = now - (now % 86_400_000)
+      send(
+        res,
+        200,
+        usageSummary(d.usage, {
+          from: num('from', dayStart - 13 * 86_400_000),
+          to: num('to', dayStart + 86_400_000),
+          now,
+          cap: dailyCap(d.settings, d.config),
+        }),
+      )
       return true
     }
     if (seg[1] === 'models' && seg.length === 2 && method === 'GET') {

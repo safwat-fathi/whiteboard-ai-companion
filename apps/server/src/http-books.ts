@@ -38,6 +38,8 @@ export type LibraryDeps = {
   enqueue: (bookId: string) => boolean
   maxPdfBytes?: number
   now?: () => number
+  /** Today's cap on paid calls; the student's override if set. Defaults to DAILY_BUDGET_USD. */
+  dailyCap?: () => number
 }
 
 const ID = /^[A-Za-z0-9-]{1,64}$/
@@ -133,6 +135,7 @@ export function createLibraryRoutes(lib: LibraryDeps) {
   const { books, config } = lib
   const now = lib.now ?? Date.now
   const estimates = new Map<string, Estimate>()
+  const cap = () => lib.dailyCap?.() ?? config.dailyBudgetUsd
   const searcher = createSearcher({
     books,
     cache: lib.cache,
@@ -173,7 +176,7 @@ export function createLibraryRoutes(lib: LibraryDeps) {
   }
   const remaining = () => {
     const dayStart = now() - (now() % DAY_MS)
-    return Math.max(0, config.dailyBudgetUsd - books.spentSince(dayStart))
+    return Math.max(0, cap() - books.spentSince(dayStart))
   }
   const estimateOf = async (b: BookRow): Promise<Estimate> => {
     const known = estimates.get(b.id)
@@ -321,7 +324,7 @@ export function createLibraryRoutes(lib: LibraryDeps) {
       if (need > remaining())
         throw apiError(
           'budget_exceeded',
-          `this would cost about $${need.toFixed(4)} and $${remaining().toFixed(4)} is left of today's $${config.dailyBudgetUsd}`,
+          `this would cost about $${need.toFixed(4)} and $${remaining().toFixed(4)} is left of today's $${cap()}`,
           { cap: 'daily' },
         )
     }

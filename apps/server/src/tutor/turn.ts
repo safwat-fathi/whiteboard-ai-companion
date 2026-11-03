@@ -33,6 +33,7 @@ import {
 } from './llm'
 import { systemPrefix } from './prompts'
 import { buildScopePack } from './scope'
+import { dailyCap } from './settings'
 import { type StubFixture, stubModel } from './stub'
 
 const DAY_MS = 86_400_000
@@ -137,10 +138,11 @@ export function createTutor(deps: TutorDeps) {
     if (active.has(board.id))
       throw new ApiError('turn_busy', 'The AI is still working on this board.')
     const dayStart = now() - (now() % DAY_MS)
-    if (books.spentSince(dayStart) >= config.dailyBudgetUsd)
+    const cap = dailyCap(settings, config)
+    if (books.spentSince(dayStart) >= cap)
       throw new ApiError('budget_exceeded', 'The daily budget is used up.', {
         cap: 'daily',
-        limitUsd: config.dailyBudgetUsd,
+        limitUsd: cap,
       })
     if (!deps.stub && !deps.llm)
       throw new ApiError(
