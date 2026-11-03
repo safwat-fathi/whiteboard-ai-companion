@@ -11,9 +11,10 @@ const SCENES: Record<string, BenchKind> = {
   text200: 'text200',
   images50: 'images50',
   mixed5000: 'mixed5000',
+  ink: 'ink',
 }
 
-// /bench?n=5000|20000 (the M1 scene) or /bench?scene=math200|text200|images50|mixed5000, plus &dpr=<recorded only>: runs
+// /bench?n=5000|20000 (the M1 scene) or /bench?scene=math200|text200|images50|mixed5000|ink, plus &dpr=<recorded only>: runs
 // the S1 method against a real Editor and prints one JSON block; the result is also window.__benchResult (an { error }
 // object if the run failed).
 export default function Bench() {

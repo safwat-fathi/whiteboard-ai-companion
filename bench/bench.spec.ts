@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs'
-import { type BrowserContext, test } from '@playwright/test'
+import { type BrowserContext, type Page, test } from '@playwright/test'
 
 type Frame = {
   phase: string
@@ -19,6 +19,8 @@ type Result = {
   // Only the M1 `n=` scenes measure first ink and opening a 20,000-element board.
   firstInk?: {
     p95Ms: number
+    maxMs: number
+    deliveryP95Ms?: number // the ink scene's real-input measure only
     waitP95Ms: number
     workP95Ms: number
     sceneRepaints: number
@@ -32,11 +34,15 @@ const median = (a: number[]) =>
 const frame = (r: Result, phase: string) =>
   r.frames.find((f) => f.phase === phase) as Frame
 
-/** Loads `/bench?<query>` in a fresh page RUNS times and returns each run's `window.__benchResult`. */
+/**
+ * Loads `/bench?<query>` in a fresh page RUNS times and returns each run's `window.__benchResult`. `drive` runs beside
+ * the page while it measures (the ink scene needs real mouse input from here).
+ */
 async function collect(
   context: BrowserContext,
   query: string,
   dpr: string,
+  drive?: (page: Page) => Promise<void>,
 ): Promise<Result[]> {
   const runs: Result[] = []
   for (let i = 0; i < RUNS; i++) {
@@ -44,11 +50,14 @@ async function collect(
     await page.bringToFront()
     await page.goto(`/bench?${query}&dpr=${dpr}`)
     await page.bringToFront()
-    await page.waitForFunction(
-      () => (window as unknown as { __benchResult?: unknown }).__benchResult,
-      null,
-      { timeout: 180_000 },
-    )
+    await Promise.all([
+      page.waitForFunction(
+        () => (window as unknown as { __benchResult?: unknown }).__benchResult,
+        null,
+        { timeout: 180_000 },
+      ),
+      drive?.(page),
+    ])
     const r = (await page.evaluate(
       () => (window as unknown as { __benchResult: unknown }).__benchResult,
     )) as Result
@@ -139,3 +148,63 @@ for (const scene of ['text200', 'math200', 'images50', 'mixed5000']) {
     )
   })
 }
+
+// M6 ink scene (Task 5): 1,000 shapes and 500 strokes of 100 points (every tenth a highlighter), and the real first-ink
+// measure. The page switches to the pen tool, publishes `__inkTarget` and times each press it sees; this presses the mouse
+// there 20 times (Playwright's CDP mouse events are real pointer events), then Escape cancels the stroke and the button comes up.
+type InkWindow = {
+  __inkTarget?: { x: number; y: number }
+  __inkSamples?: number
+}
+async function pressMouse(page: Page) {
+  await page.waitForFunction(
+    () => (window as unknown as InkWindow).__inkTarget,
+    null,
+    { timeout: 180_000 },
+  )
+  const at = await page.evaluate(
+    () =>
+      (window as unknown as InkWindow).__inkTarget as { x: number; y: number },
+  )
+  for (let i = 0; i < 20; i++) {
+    await page.mouse.move(at.x + i * 50, at.y)
+    await page.waitForTimeout(50 + Math.random() * 50)
+    await page.mouse.down()
+    await page.waitForFunction(
+      (n) => ((window as unknown as InkWindow).__inkSamples ?? 0) >= n,
+      i + 1,
+      { polling: 20, timeout: 10_000 }, // not rAF polling: it would add a callback to the very frame being timed
+    )
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+  }
+}
+
+test('bench scene=ink', async ({ context, browser }, testInfo) => {
+  const runs = await collect(
+    context,
+    'scene=ink',
+    testInfo.project.name,
+    pressMouse,
+  )
+  writeFileSync(
+    testInfo.outputPath(`runs-${testInfo.project.name}-ink.json`),
+    JSON.stringify(runs, null, 1),
+  )
+  const ink =
+    (f: (r: NonNullable<Result['firstInk']>) => number) => (r: Result) =>
+      f(r.firstInk as NonNullable<Result['firstInk']>)
+  report(
+    `${testInfo.project.name} scene=ink chrome ${browser.version()}`,
+    runs,
+    [
+      ...common,
+      ['firstInkP95Ms', ink((i) => i.p95Ms)],
+      ['firstInk maxMs', ink((i) => i.maxMs)],
+      ['firstInk deliveryP95Ms', ink((i) => i.deliveryP95Ms ?? Number.NaN)],
+      ['firstInk waitP95Ms', ink((i) => i.waitP95Ms)],
+      ['firstInk workP95Ms', ink((i) => i.workP95Ms)],
+      ['firstInk sceneRepaints', ink((i) => i.sceneRepaints)],
+    ],
+  )
+})

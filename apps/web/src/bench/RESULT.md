@@ -131,3 +131,37 @@ needs-user-decision: open-20k at DPR 1 is 15.5% over M1's median (bar 10%); acce
 ### Not verified / limits
 
 The first DPR 1 `n=5000` run (pan 40.1, zoom 40.1, open-20k 2,117.9 ms) overlapped with light background commands (a three-package `pnpm` auto-install, Biome and file writes); it was re-run on an idle machine and the numbers above are the re-run. The per-run JSON of the first full run was overwritten by that re-run, so only the printed medians of the full run (this section) survive. One machine, one Chrome build. `images50` cold frames are short because bucket copies are built lazily on the first draw at each zoom; its cache MB is dominated by the 50 decoded originals.
+
+## M6: ink (Task 5, 2026-11-03)
+
+Same method and machine as M1 and M2 (headed real Chrome 156.0.8078.48, Playwright 1.64.0, MacBook Air M1 on AC power at 98% and charging, DPR 2 is the Mac's own Retina window, DPR 1 is emulated, the page draws on a fixed 1440x900 CSS px host, 5 runs per row, medians, one worker). Background load as before (wallpaper decoding, WindowServer, a Brave and a Claude CLI running; load average 2.4 at the start). Built with `pnpm build` and run as `playwright test -c playwright.bench.config.ts -g "scene=ink"`, which is what `pnpm bench` does without a second build; a one-run smoke on DPR 1 came first and is not in the table. Scene: `/bench?scene=ink` (`makeInkScene`): 1,000 shapes (25% rotated, half filled) and 500 freehand strokes of 100 points each in the same 1000x600 world as the 5,000 mix, shuffled into one z order so ink lies above and below shapes. Every tenth stroke (50) is a highlighter (width 18, opacity 0.45, multiply); of the 450 pens (width 3) the 200 at odd stroke indexes carry pressure, the other 250 do not (the simulated-pressure path, a mouse's). The mix was fixed before any number was seen; `scene.test.ts` asserts the counts, validity, bounds inside the world and determinism.
+
+bench.ink.firstInk.method: the real-input measure. The page switches to the pen tool and publishes where to press; Playwright (`bench/bench.spec.ts`, `pressMouse`) moves the mouse to the empty 150 px band above the board, waits 50 to 100 ms, and presses with `page.mouse.down()` (a real pointer event from CDP), 20 times, 50 px apart; each press is cancelled with Escape (the pen commits nothing, so the scene stays as it was) and the button released. The page times each `pointerdown` from the event's own timestamp (when the browser received it, so delivery from the browser process is included, 0.7 to 1.1 ms here) to the end of the next painting rAF, and requires the pen's overlay to have drawn in that frame (the run fails otherwise). Also recorded: wait (event to frame start, the vsync alignment), work (frame start to frame end), and how many of the 20 frames repainted the scene. This replaces the select tool's empty marquee that M1 and M2 used; the pen draws the stroke's first sample (a dot) on the overlay.
+
+### Numbers (medians of five runs, runs min to max in brackets)
+
+| | DPR 2 (real window) | DPR 1 (emulated) |
+|---|---|---|
+| pan fps | 60 [60 to 60], p95 frame 16.8 ms | 60 [60 to 60], p95 frame 18.6 ms |
+| zoom fps | 60 [60 to 60], p95 frame 16.8 ms | 60 [60 to 60], p95 frame 18.6 ms |
+| draw time per frame (pan / zoom) | 1.59 / 1.61 ms | 1.64 / 1.66 ms |
+| elements drawn per frame | 1,500 of 1,500 (min) | 1,500 of 1,500 (min) |
+| cold frame at zoom 1 | 31.6 ms | 30.9 ms |
+| bitmap cache | 0 MB (ink is drawn from cached paths, not bitmaps) | 0 MB |
+| first ink p95 (event to end of frame) | **16.1 ms** [15.5 to 16.8], max 17.6 | **16.0 ms** [15.4 to 16.3], max 16.4 |
+| first ink: delivery p95 / wait p95 / work p95 | 0.8 / 15.7 / 0.3 ms | 1.0 / 15.9 / 0.2 ms |
+| scene repainted by the press | 0 of 20 | 0 of 20 |
+| idle rAF | 60 fps | 60 fps |
+
+### Acceptance
+
+Bars: the roadmap's engine targets, 60 fps pan and zoom, and first ink within one frame (p95 <= 16 ms), as M1 and M2 applied them.
+
+bench.accept.ink.pan-zoom: PASS at both DPRs. 60.0 fps pan and 60.0 fps zoom in every run (the 58 fps floor of S1's method has 2 fps of headroom); every one of the 1,500 elements is drawn in every frame, at 1.6 ms of `render()` per frame.
+bench.accept.ink.first-ink-dpr2: FAIL on the literal metric by 0.1 ms: p95 16.1 ms against 16 (runs 15.5 to 16.8). Not hidden. It is the display, as in M1 and M2: the wait for the 60 Hz vsync is 15.7 ms at p95 (uniform from 0 to 16.7) and the Editor's own frame takes 0.3 ms at p95 with no scene repaint, the pen's overlay frame included. Judged on frame work it passes by a factor of 50.
+bench.accept.ink.first-ink-dpr1: AT THE BAR: p95 16.0 ms against 16 (runs 15.4 to 16.3), the same vsync wait (15.9 ms), work 0.2 ms.
+bench.accept.ink.verdict: ink costs nothing measurable on a 1,500-element board; the first-ink miss is 0.1 ms of vsync alignment and the frame itself is 0.2 to 0.3 ms. The definition of the bar (with or without the vsync wait) is still the open call from M1; it now has a measure taken with real input and a pen stroke that agrees with the synthetic one (M1: 16.5 ms DPR 2, M2: 15.7 ms).
+
+### Not verified / limits
+
+One machine, one Chrome build, a mouse (CDP) and not a pen: pressure, coalesced samples and predicted points are not exercised by this measure, and the press is a stationary dot, not a moving stroke (the live outline of a long stroke is recomputed from all its samples on every frame; its cost is not measured here, S1 puts `getStroke` at 0.12 to 0.71 ms from 1,000 to 5,000 points). Pan and zoom run through the select tool's frame hook, as for every other scene, so the pen is not the active tool while frames are timed. A 5,000-element board with 500 strokes (S1's 36x coverage scene) was not measured; this scene is 1,500 elements.

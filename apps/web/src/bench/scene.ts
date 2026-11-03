@@ -1,8 +1,10 @@
 import {
   bounds,
+  DEFAULT_STYLE,
   type Element,
   layoutText,
   type Platform,
+  quantiseStroke,
   type Rect,
   zBetween,
 } from '@whiteboard/core'
@@ -330,6 +332,117 @@ export function makeMixedScene(
   return out
 }
 
+export const INK_STROKES = 500
+export const INK_SHAPES = 1000
+export const INK_POINTS = 100
+/**
+ * The M6 ink scene: 1,000 shapes and 500 freehand strokes of 100 points each, shuffled into one z order so ink lies both
+ * under and over the shapes. Every tenth stroke is a highlighter (multiply); of the 450 pens, the 200 at odd stroke indexes carry pressure (a pen's), the rest none (a mouse's).
+ * Strokes are wavy lines (a sine across a straight run, plus hand jitter), 40 to 160 units long, quantised the way the
+ * pen tool commits them. Every bounding box (ink reach included) lies inside `world`.
+ */
+export function makeInkScene(world: World, seed = 1): Element[] {
+  const r = rng(seed)
+  const between = (lo: number, hi: number) => lo + r() * (hi - lo)
+  const pick = <T>(a: readonly T[]): T => a[Math.floor(r() * a.length)] as T
+
+  const kinds = [
+    ...Array<'shape'>(INK_SHAPES).fill('shape'),
+    ...Array<'stroke'>(INK_STROKES).fill('stroke'),
+  ]
+  for (let i = kinds.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1))
+    const t = kinds[i] as 'shape' | 'stroke'
+    kinds[i] = kinds[j] as 'shape' | 'stroke'
+    kinds[j] = t
+  }
+
+  let z: string | null = null
+  let shapes = 0
+  let strokes = 0
+  return kinds.map((kind, i): Element => {
+    z = zBetween(z, null)
+    const base = {
+      id: `k${i}`,
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      rotation: 0,
+      z,
+      locked: false,
+      author: { kind: 'human' as const, id: 'bench' },
+      v: 0,
+    }
+    let el: Element
+    if (kind === 'shape') {
+      el = {
+        ...base,
+        type: 'shape',
+        w: between(10, 60),
+        h: between(10, 60),
+        rotation: shapes++ % 4 === 0 ? between(0.1, 2 * Math.PI - 0.1) : 0, // exactly 25% rotated
+        style: {
+          ...DEFAULT_STYLE,
+          stroke: pick(INK),
+          fill: r() < 0.5 ? pick(FILL) : null,
+          strokeWidth: 1 + Math.floor(r() * 3),
+        },
+        data: { kind: pick(KINDS) },
+      }
+    } else {
+      const k = strokes++
+      const highlighter = k % 10 === 9
+      const len = between(40, 160)
+      const angle = between(0, 2 * Math.PI)
+      const amp = between(3, 25)
+      const freq = between(0.5, 3)
+      const phase = between(0, 2 * Math.PI)
+      const abs = Array.from({ length: INK_POINTS }, (_, j) => {
+        const t = j / (INK_POINTS - 1)
+        const off =
+          amp * Math.sin(2 * Math.PI * freq * t + phase) + (r() - 0.5) * 0.6
+        const along = len * t
+        return [
+          along * Math.cos(angle) - off * Math.sin(angle),
+          along * Math.sin(angle) + off * Math.cos(angle),
+        ] as [number, number]
+      })
+      const pressure =
+        !highlighter && k % 2 === 1
+          ? abs.map(
+              (_, j) => 0.3 + 0.5 * Math.sin((Math.PI * j) / (INK_POINTS - 1)),
+            )
+          : undefined
+      const q = quantiseStroke(abs, pressure)
+      el = {
+        ...base,
+        type: 'freehand',
+        x: q.x,
+        y: q.y,
+        w: q.w,
+        h: q.h,
+        style: {
+          ...DEFAULT_STYLE,
+          ...(highlighter
+            ? { stroke: '#ffd400', strokeWidth: 18, opacity: 0.45 }
+            : { stroke: pick(INK), strokeWidth: 3 }),
+        },
+        data: {
+          points: q.points,
+          ...(q.pressure ? { pressure: q.pressure } : {}),
+          smoothing: 0.5,
+          highlighter,
+        },
+      }
+    }
+    const b = bounds(el) // translate so the whole box, ink reach included, lies inside the world rect
+    el.x += world.x - b.minX + r() * (world.w - (b.maxX - b.minX))
+    el.y += world.y - b.minY + r() * (world.h - (b.maxY - b.minY))
+    return el
+  })
+}
+
 /** Counts for the mix, and how many times the bounding boxes cover the world rect. */
 export function describeScene(els: Element[], world: { w: number; h: number }) {
   const shapes = els.filter(
@@ -337,11 +450,15 @@ export function describeScene(els: Element[], world: { w: number; h: number }) {
       e.type === 'shape' && e.data.kind !== 'line' && e.data.kind !== 'arrow',
   )
   const text = els.filter((e) => e.type === 'text')
+  const ink = els.filter((e) => e.type === 'freehand')
   return {
     total: els.length,
     shapes: shapes.length,
-    lines: els.length - shapes.length - text.length,
+    lines: els.length - shapes.length - text.length - ink.length,
     text: text.length,
+    strokes: ink.length,
+    highlighters: ink.filter((e) => e.type === 'freehand' && e.data.highlighter)
+      .length,
     rotatedShapes: shapes.filter((e) => e.rotation !== 0).length,
     arabicText: text.filter((e) => e.type === 'text' && e.data.dir === 'rtl')
       .length,

@@ -7,6 +7,7 @@ import {
   type BenchImage,
   describeScene,
   makeImageScene,
+  makeInkScene,
   makeMathScene,
   makeMixedScene,
   makeScene,
@@ -89,7 +90,43 @@ const foreground = () =>
 const frameEnd = () =>
   new Promise<number>((r) => requestAnimationFrame(() => r(performance.now())))
 
-export type BenchKind = 'mix' | 'math200' | 'text200' | 'images50' | 'mixed5000'
+export type BenchKind =
+  | 'mix'
+  | 'math200'
+  | 'text200'
+  | 'images50'
+  | 'mixed5000'
+  | 'ink'
+
+type InkSample = { lat: number; wait: number; work: number }
+
+/** lat = wait + work: wait is the time to the frame's start (vsync alignment), work is the frame itself. */
+const firstInkStats = (ink: InkSample[], sceneRepaints: number) => ({
+  p95Ms: round(
+    pct(
+      ink.map((i) => i.lat),
+      0.95,
+    ),
+    2,
+  ),
+  maxMs: round(Math.max(...ink.map((i) => i.lat)), 2),
+  waitP95Ms: round(
+    pct(
+      ink.map((i) => i.wait),
+      0.95,
+    ),
+    2,
+  ),
+  workP95Ms: round(
+    pct(
+      ink.map((i) => i.work),
+      0.95,
+    ),
+    2,
+  ),
+  sceneRepaints,
+  samples: ink.map((i) => round(i.lat, 1)),
+})
 
 /** Ten synthetic images, 1,000 to 4,000 px on the long edge, imported through the real pipeline (limits, hashing). */
 async function importBenchImages(editor: Editor): Promise<BenchImage[]> {
@@ -163,6 +200,7 @@ export async function runBench(
     els = makeMathScene(200, world, await mathMetrics(editor, 200))
   else if (kind === 'images50')
     els = makeImageScene(50, world, await importBenchImages(editor))
+  else if (kind === 'ink') els = makeInkScene(world)
   else
     els = makeMixedScene(
       5000,
@@ -342,36 +380,84 @@ export async function runBench(
       scene: describeScene(els20k, world20k),
     }
     return {
-      firstInk: {
-        p95Ms: round(
-          pct(
-            ink.map((i) => i.lat),
-            0.95,
-          ),
-          2,
-        ),
-        maxMs: round(Math.max(...ink.map((i) => i.lat)), 2),
-        // lat = wait + work: wait is the time to the frame's start (vsync alignment), work is the frame itself
-        waitP95Ms: round(
-          pct(
-            ink.map((i) => i.wait),
-            0.95,
-          ),
-          2,
-        ),
-        workP95Ms: round(
-          pct(
-            ink.map((i) => i.work),
-            0.95,
-          ),
-          2,
-        ),
-        sceneRepaints,
-        samples: ink.map((i) => round(i.lat, 1)),
-      },
+      firstInk: firstInkStats(ink, sceneRepaints),
       open20k,
     }
   } // tail
+
+  // The M6 first-ink measure, with real input. Playwright (bench/bench.spec.ts) presses the mouse where the page says
+  // (`__inkTarget`) with the pen tool active; each pointerdown is timed from the event's own timestamp (when the browser
+  // received it, so delivery is included) to the end of the next painting rAF, and the overlay must have drawn in that
+  // frame. Escape cancels the stroke (the pen commits nothing), so the scene stays as it was. 20 presses, 50 to 100 ms
+  // apart, on the empty band above the board, after 500 ms of idle.
+  const inkTail = async () => {
+    const fz = Math.min(1, W / world.w, (H - 150) / world.h)
+    await repaint({ x: cx - W / 2 / fz, y: -150 / fz, zoom: fz })
+    editor.setTool('pen')
+    await sleep(500)
+    const pen = editor.tools.pen as Tool
+    let overlayFrames = 0
+    let overlayStart = 0
+    const drawOverlay = pen.drawOverlay?.bind(pen)
+    pen.drawOverlay = (ctx) => {
+      overlayStart = performance.now()
+      drawOverlay?.(ctx)
+      overlayFrames++
+    }
+    const ink: (InkSample & { delivery: number })[] = []
+    let sceneRepaints = 0
+    let missed = false
+    const w = window as unknown as {
+      __inkTarget?: { x: number; y: number }
+      __inkSamples?: number
+    }
+    // A window listener runs after the Editor's own (on the overlay), so the rAF it registers runs after the Editor's frame.
+    const onDown = (e: PointerEvent) => {
+      const heard = performance.now()
+      const t0 =
+        heard - e.timeStamp >= 0 && heard - e.timeStamp < 100
+          ? e.timeStamp
+          : heard // not a believable stamp: time from now
+      const frames0 = overlayFrames
+      const scene0 = editor.lastRender
+      frameEnd().then((end) => {
+        if (overlayFrames === frames0) missed = true
+        if (editor.lastRender !== scene0) sceneRepaints++
+        ink.push({
+          lat: end - t0,
+          wait: overlayStart - t0,
+          work: end - overlayStart,
+          delivery: heard - t0,
+        })
+        w.__inkSamples = ink.length
+      })
+    }
+    window.addEventListener('pointerdown', onDown)
+    w.__inkSamples = 0
+    w.__inkTarget = { x: 200, y: 75 }
+    for (let t = 0; ink.length < 20 && t < 120_000; t += 50) {
+      stopIf()
+      await sleep(50)
+    }
+    window.removeEventListener('pointerdown', onDown)
+    pen.drawOverlay = drawOverlay
+    if (ink.length < 20)
+      throw new Error(`first ink: ${ink.length} of 20 presses seen in 2 min`)
+    if (missed)
+      throw new Error('first ink: a pointerdown made no overlay frame')
+    return {
+      firstInk: {
+        ...firstInkStats(ink, sceneRepaints),
+        deliveryP95Ms: round(
+          pct(
+            ink.map((i) => i.delivery),
+            0.95,
+          ),
+          2,
+        ),
+      },
+    }
+  } // inkTail
 
   return {
     n,
@@ -389,6 +475,6 @@ export async function runBench(
     coldFrameMs: cold.map((c) => round(c, 1)),
     cacheMB,
     cacheCapMB: mb(editor.cacheCap),
-    ...(kind === 'mix' ? await tail() : {}),
+    ...(kind === 'mix' ? await tail() : kind === 'ink' ? await inkTail() : {}),
   }
 }
