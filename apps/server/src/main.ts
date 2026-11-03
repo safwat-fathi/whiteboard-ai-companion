@@ -14,13 +14,14 @@ import {
 import { serverPlatform } from './export'
 import { attachGateway } from './gateway'
 import { createHttpServer } from './http'
+import { createSearcher } from './library/embed-search'
 import { createProviders, stubProviders } from './library/providers'
 import { createQueue } from './library/queue'
 import { createVectorCache } from './library/search'
 import { runInWorker } from './library/worker'
 import { createLlm } from './tutor/llm'
 import { loadFixtures } from './tutor/stub'
-import { boardToolSet } from './tutor/tools/board-tools'
+import { tutorToolSet } from './tutor/tools'
 import { createTutor } from './tutor/turn'
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
@@ -57,6 +58,15 @@ const tutorStub =
         fileURLToPath(new URL('../test/fixtures/tutor/', import.meta.url)),
       )
     : undefined
+const tutorProviders = tutorStub
+  ? stubProviders({ dims: config.embedDims })
+  : createProviders({ config, env: process.env })
+const tutorSearch = createSearcher({
+  books: booksDb,
+  cache,
+  providers: tutorProviders,
+  config,
+})
 const tutor = createTutor({
   config,
   boards,
@@ -71,7 +81,13 @@ const tutor = createTutor({
     : null,
   stub: tutorStub,
   tools: (ctx) =>
-    boardToolSet({ boards, blobs, platform: serverPlatform }, ctx),
+    tutorToolSet(
+      {
+        board: { boards, blobs, platform: serverPlatform },
+        book: { books: booksDb, boards, search: tutorSearch },
+      },
+      ctx,
+    ),
 })
 const server = createHttpServer({
   config,

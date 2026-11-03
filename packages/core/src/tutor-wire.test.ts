@@ -44,7 +44,8 @@ describe('tutor wire', () => {
   it('cite hrefs round trip and only accept a hex book id with a positive page', () => {
     expect(parseCite(citeHref(book, 40))).toEqual({ bookId: book, page: 40 })
     for (const bad of [
-      'cite:abc#1',
+      'cite:abc def#1',
+      'cite:#1',
       `cite:${book}#0`,
       `cite:${book}#1.5`,
       `cite:${book}`,

@@ -77,7 +77,10 @@ export const ImageSourceSchema = z.object({
   bookPage: z.object({
     bookId: z
       .string()
-      .regex(/^[0-9a-f]{64}$/, 'must be a 64-char lowercase hex sha256'),
+      .regex(
+        /^[A-Za-z0-9-]{1,64}$/,
+        'must be a book id (letters, digits, dashes)',
+      ),
     page: num
       .int('must be an integer')
       .min(1, 'must be 1..100000')

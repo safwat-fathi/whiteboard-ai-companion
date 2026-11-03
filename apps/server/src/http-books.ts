@@ -18,6 +18,7 @@ import type { Config } from './config'
 import type { BlobsDb, BookRow, BooksDb } from './db'
 import { ApiError, apiError } from './errors'
 import { drain, MAX_JSON_BYTES, parse, readBody, send } from './http-util'
+import { createSearcher } from './library/embed-search'
 import { MAX_PDF_BYTES, putPdf } from './library/files'
 import { type OpenPdf, openPdf } from './library/pdf'
 import type { Providers } from './library/providers'
@@ -27,7 +28,7 @@ import {
   estimate,
   R3_USD_PER_PAGE,
 } from './library/route'
-import { search, type VectorCache } from './library/search'
+import type { VectorCache } from './library/search'
 
 export type LibraryDeps = {
   books: BooksDb
@@ -135,6 +136,13 @@ export function createLibraryRoutes(lib: LibraryDeps) {
   const { books, config } = lib
   const now = lib.now ?? Date.now
   const estimates = new Map<string, Estimate>()
+  const searcher = createSearcher({
+    books,
+    cache: lib.cache,
+    providers: lib.providers,
+    config,
+    now,
+  })
 
   const bookOf = (rawId: string | undefined): BookRow => {
     const id = decode(rawId ?? '')
@@ -437,25 +445,7 @@ export function createLibraryRoutes(lib: LibraryDeps) {
       const body = parse(Search, await readJsonBody(req))
       if (body.bookId !== undefined && !books.getBook(body.bookId))
         throw notFound('book')
-      const result = await search(
-        {
-          books,
-          cache: lib.cache,
-          embedModel: config.embedModel,
-          embed: async (q) => {
-            const r = await lib.providers.embed([q])
-            if (r.costUsd > 0)
-              books.addSpend({
-                at: now(),
-                kind: 'embed',
-                ref: null,
-                costUsd: r.costUsd,
-              })
-            return r.vectors[0] as Float32Array
-          },
-        },
-        body,
-      )
+      const result = await searcher(body)
       send(res, 200, result)
       return true
     }

@@ -18,6 +18,7 @@ import type { BoardService } from '../board-service'
 import type { Config } from '../config'
 import type { BooksDb, MessageRow, MessagesDb, SettingsDb } from '../db'
 import { ApiError } from '../errors'
+import { type SourceRange, sanitizeCites } from './cites'
 import {
   addUsage,
   costOf,
@@ -29,6 +30,7 @@ import {
   usageOf,
 } from './llm'
 import { systemPrefix } from './prompts'
+import { buildScopePack } from './scope'
 import { type StubFixture, stubModel } from './stub'
 
 const DAY_MS = 86_400_000
@@ -46,8 +48,8 @@ export type TutorDeps = {
   boards: BoardService
   messages: MessagesDb
   settings: SettingsDb
-  /** `addSpend` / `spentSince` only: the daily cap and the ledger. */
-  books: Pick<BooksDb, 'addSpend' | 'spentSince'>
+  /** The daily cap and ledger, and the book text behind the scope pack. */
+  books: BooksDb
   /** Null when no Meta key is configured (and not stubbed). */
   llm: Llm | null
   /** Present = TUTOR_STUB: a scripted model replaces the provider and nothing else changes. */
@@ -153,8 +155,11 @@ export function createTutor(deps: TutorDeps) {
       onError: wire,
       execute: async ({ writer }) => {
         const parts: Part[] = []
+        const sources: SourceRange[] = [] // the pages the model was shown: the only ones it may cite
         const textAt = new Map<string, number>()
         const emit = (c: UIMessageChunk) => {
+          if (c.type === 'data-source')
+            sources.push((c as unknown as { data: SourceRange }).data)
           if (c.type === 'text-start')
             textAt.set(c.id, parts.push({ type: 'text', text: '' }) - 1)
           else if (c.type === 'text-delta') {
@@ -193,8 +198,15 @@ export function createTutor(deps: TutorDeps) {
         try {
           emit({ type: 'data-turn', data: { turnId } })
           emit({ type: 'data-status', data: { state: 'thinking' } })
+          const scope = board.scope
+          const pack = buildScopePack(scope, books, t.chapterStuffMaxTokens)
+          for (const src of pack.sources)
+            emit({ type: 'data-source', data: src } as UIMessageChunk)
           if (deps.stub) {
-            stubbed = stubModel(deps.stub, req.message.text, {})
+            stubbed = stubModel(deps.stub, req.message.text, {
+              BOOK_ID: 'bookId' in scope ? (scope.bookId ?? '') : '',
+              PAGE_0: String(pack.sources[0]?.pageStart ?? 1),
+            })
             modelId = 'stub-tutor'
           }
           const model =
@@ -211,7 +223,10 @@ export function createTutor(deps: TutorDeps) {
           const toolset = deps.tools?.({ boardId, turnId, request: req, emit })
           const result = streamText({
             model,
-            instructions: systemPrefix({ profile: settings.get('profile') }),
+            instructions: systemPrefix({
+              profile: settings.get('profile'),
+              scopePack: pack.pack ?? undefined,
+            }),
             messages: [...history, { role: 'user', content: req.message.text }],
             tools: toolset?.tools ?? {},
             ...(toolset?.prepareStep
@@ -257,12 +272,20 @@ export function createTutor(deps: TutorDeps) {
           clearTimeout(timer)
           signal.removeEventListener('abort', onAbort)
         }
+        let unverified = 0
+        for (const p of parts)
+          if (p.type === 'text') {
+            const r = sanitizeCites(p.text as string, sources)
+            p.text = r.text
+            unverified += r.stripped
+          }
         const cost = costOf(t.price, usage)
         const u: Usage = {
           ...usage,
           costUsd: cost,
           model: modelId,
           ...(fellBack ? { fallback: true } : {}),
+          ...(unverified ? { unverifiedCites: unverified } : {}),
         }
         emit({ type: 'data-usage', data: u })
         emit({ type: 'data-status', data: { state: status } })

@@ -62,7 +62,7 @@ describe('ElementSchema', () => {
     const withSource = { ...image, data: { ...image.data, source } }
     expect(ElementSchema.parse(withSource)).toMatchObject({ data: { source } })
     for (const bad of [
-      { bookPage: { bookId: 'nope', page: 1 } },
+      { bookPage: { bookId: 'not a valid id!', page: 1 } },
       { bookPage: { bookId: 'b'.repeat(64), page: 0 } },
       { bookPage: { bookId: 'b'.repeat(64), page: 1.5 } },
     ])

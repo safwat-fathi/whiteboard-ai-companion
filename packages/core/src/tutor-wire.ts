@@ -110,7 +110,7 @@ export const citeHref = (bookId: string, page: number) =>
 export const parseCite = (
   href: string,
 ): { bookId: string; page: number } | null => {
-  const m = /^cite:([0-9a-f]{64})#([1-9]\d{0,5})$/.exec(href)
+  const m = /^cite:([A-Za-z0-9-]{1,64})#([1-9]\d{0,5})$/.exec(href)
   return m ? { bookId: m[1] as string, page: Number(m[2]) } : null
 }
 

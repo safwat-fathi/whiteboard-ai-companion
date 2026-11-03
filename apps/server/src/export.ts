@@ -54,9 +54,10 @@ function setup() {
 
 let full: Promise<Platform> | undefined
 /** The Node platform with MathJax attached, one shared object (text layout is memoised per platform). */
-export const serverPlatform = (): Promise<Platform> =>
-  // biome-ignore lint/suspicious/noAssignInExpressions: lazy singleton
-  (full ??= setup().then(({ platform, math }) => ({ ...platform, math })))
+export function serverPlatform(): Promise<Platform> {
+  full ??= setup().then(({ platform, math }) => ({ ...platform, math }))
+  return full
+}
 
 const finite = (n: number) => typeof n === 'number' && Number.isFinite(n)
 
