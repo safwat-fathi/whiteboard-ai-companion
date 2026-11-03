@@ -1,0 +1,56 @@
+[
+  {
+    "match": "what did i write",
+    "steps": [{ "text": "It looks like a wave and a loop." }]
+  },
+  {
+    "match": "chart the sales numbers",
+    "steps": [
+      {
+        "toolCalls": [
+          {
+            "name": "add_chart",
+            "input": {
+              "kind": "bar",
+              "title": "Sales by quarter",
+              "xLabel": "Quarter",
+              "yLabel": "Units",
+              "categories": ["Q1", "Q2", "Q3", "Q4"],
+              "series": [
+                { "name": "North", "values": [12, 19, 8, 15] },
+                { "name": "South", "values": [9, 4, 14, 20] }
+              ],
+              "placement": { "x": 120, "y": 40 }
+            }
+          },
+          {
+            "name": "draw_stroke",
+            "input": {
+              "points": [[0, 0], [80, 6], [160, 0]],
+              "placement": { "x": 240, "y": 372 }
+            }
+          }
+        ]
+      },
+      { "text": "Here is the chart, with a line under it." }
+    ]
+  },
+  {
+    "match": "tidy up my boxes",
+    "steps": [
+      {
+        "toolCalls": [
+          {
+            "name": "arrange",
+            "input": {
+              "action": "align",
+              "ids": ["tidy-a", "tidy-b"],
+              "to": "top"
+            }
+          }
+        ]
+      },
+      { "text": "Lined up along the top." }
+    ]
+  }
+]
