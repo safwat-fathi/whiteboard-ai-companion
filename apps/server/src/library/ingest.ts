@@ -30,6 +30,9 @@ const R4_WIDTH = 1100 // px, about 130 dpi on a letter page: what S2 transcribed
 const SUMMARY_CONCURRENCY = 4
 const SUMMARY_INPUT_CHARS = 24_000
 const DAY_MS = 86_400_000
+/** A scan has a few blank pages; more than this share of R4 pages empty means the images or the model are wrong. */
+const MAX_EMPTY_SHARE = 0.5
+const MIN_PAGES_FOR_EMPTY_CHECK = 5
 /** Progress shares of the stages, for the bar. */
 const EXTRACT_END = 0.6
 const STRUCTURE_END = 0.65
@@ -172,6 +175,18 @@ export async function runIngest(
           })
       }
     })
+
+    // A vision model shown blank images answers with nothing, and every page would count as done: refuse to carry on.
+    const r4 = books.methodCounts(bookId).R4
+    const empty = books.emptyPages(bookId, 'R4')
+    if (r4 >= MIN_PAGES_FOR_EMPTY_CHECK && empty > r4 * MAX_EMPTY_SHARE) {
+      books.deleteEmptyPages(bookId, 'R4')
+      throw apiError(
+        'ingest_failed',
+        `${empty} of ${r4} pages read by the vision model came back empty (are the page images blank?); they are read again on retry`,
+        { step: 'extracting', empty, pages: r4 },
+      )
+    }
 
     // 2. Sections and chunks (complete once embed_model is set)
     stage = 'structuring'

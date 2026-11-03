@@ -271,6 +271,12 @@ export function createBooksDb(db: Database.Database) {
   const selMethods = db.prepare(
     'SELECT method, count(*) AS n FROM book_pages WHERE book_id = ? GROUP BY method',
   )
+  const countEmpty = db.prepare(
+    "SELECT count(*) AS n FROM book_pages WHERE book_id = ? AND method = ? AND trim(text, char(32, 9, 10, 13)) = ''",
+  )
+  const delEmpty = db.prepare(
+    "DELETE FROM book_pages WHERE book_id = ? AND method = ? AND trim(text, char(32, 9, 10, 13)) = ''",
+  )
   const selChunkCount = db.prepare(
     'SELECT count(*) AS n FROM book_chunks WHERE book_id = ?',
   )
@@ -341,6 +347,12 @@ export function createBooksDb(db: Database.Database) {
         out[r.method] = r.n
       return out
     },
+    /** Pages of one method whose text is empty (a vision model that was shown a blank image says nothing). */
+    emptyPages: (bookId: string, method: Rung): number =>
+      (countEmpty.get(bookId, method) as { n: number }).n,
+    /** Removes those pages so the next run reads them again; returns how many. */
+    deleteEmptyPages: (bookId: string, method: Rung): number =>
+      delEmpty.run(bookId, method).changes,
     chunkCount: (bookId: string): number =>
       (selChunkCount.get(bookId) as { n: number }).n,
     /** Drops sections and chunks (and their FTS rows) but keeps the extracted pages, the expensive part. */

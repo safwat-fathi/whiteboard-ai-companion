@@ -316,4 +316,20 @@ describe('books', () => {
     })
     expect(books.getBook('extracting')?.progress).toBe(0.5) // the bar keeps where it got to
   })
+
+  it('counts and clears the pages of a method that came back empty', () => {
+    const { books, blob } = open()
+    blob(H('a'))
+    books.createBook({ id: 'b', title: 'B', fileBlob: H('a') }, 1)
+    const page = (n: number, text: string, method: 'R1' | 'R4') =>
+      books.upsertPage({ bookId: 'b', pageIndex: n, label: null, text, method })
+    page(1, '', 'R4')
+    page(2, '  \n', 'R4')
+    page(3, 'text', 'R4')
+    page(4, '', 'R1') // an empty R1 page is just a blank page
+    expect(books.emptyPages('b', 'R4')).toBe(2)
+    expect(books.deleteEmptyPages('b', 'R4')).toBe(2)
+    expect(books.pagesDone('b')).toEqual([3, 4])
+    expect(books.emptyPages('b', 'R4')).toBe(0)
+  })
 })

@@ -370,4 +370,45 @@ describe('runIngest', () => {
     expect(err.code).toBe('ingest_failed')
     expect(books.getBook('b')?.error).toMatch(/^extracting: /)
   })
+
+  it('fails a book whose vision-read pages mostly come back empty, and clears them so a retry reads them again', async () => {
+    let blankImages = true
+    const { books, deps } = await setup(
+      { pages: ['', '', '', '', '', ''] },
+      {
+        providers: {
+          async transcribePage() {
+            return { text: blankImages ? '' : 'real text', truncated: false }
+          },
+        },
+      },
+    )
+    const err = await fail(runIngest('b', deps))
+    expect(err.code).toBe('ingest_failed')
+    expect(err.message).toMatch(/empty/)
+    expect(books.getBook('b')).toMatchObject({ status: 'failed' })
+    expect(books.getBook('b')?.error).toMatch(/^extracting: .*empty/)
+    expect(books.pagesDone('b')).toEqual([]) // nothing is kept as done, so the retry asks again
+
+    blankImages = false
+    await runIngest('b', deps)
+    expect(books.getBook('b')?.status).toBe('ready')
+    expect(books.getPage('b', 1)?.text).toBe('real text')
+  })
+
+  it('lets a few empty pages through (a blank page in a scan is normal)', async () => {
+    let n = 0
+    const { books, deps } = await setup(
+      { pages: ['', '', '', '', '', ''] },
+      {
+        providers: {
+          async transcribePage() {
+            return { text: ++n <= 2 ? '' : 'page text', truncated: false }
+          },
+        },
+      },
+    )
+    await runIngest('b', deps)
+    expect(books.getBook('b')?.status).toBe('ready')
+  })
 })

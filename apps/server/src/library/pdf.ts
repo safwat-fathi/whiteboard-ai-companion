@@ -38,6 +38,9 @@ const assets = (() => {
   return {
     standardFontDataUrl: `${pathToFileURL(join(dir, 'standard_fonts')).href}/`,
     cMapUrl: `${pathToFileURL(join(dir, 'cmaps')).href}/`,
+    // JBIG2 and JPEG 2000 scans are decoded by wasm modules pdfjs loads from here; without it such a page renders blank
+    wasmUrl: `${pathToFileURL(join(dir, 'wasm')).href}/`,
+    iccUrl: `${pathToFileURL(join(dir, 'iccs')).href}/`,
   }
 })()
 
