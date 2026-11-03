@@ -3,7 +3,11 @@
 import type { ContextDescriptor } from '@whiteboard/core'
 import { useEffect, useRef, useState } from 'react'
 import { errorNotice, textOf, turnStateOf } from './chat-core'
-import { type MessageActions, MessageView } from './MessageView'
+import {
+  type MessageActions,
+  MessageBoundary,
+  MessageView,
+} from './MessageView'
 import { type Mode, useTutorChat } from './useTutorChat'
 
 const QUICK: {
@@ -112,7 +116,9 @@ export function ChatTab(o: {
           </p>
         )}
         {chat.messages.map((m) => (
-          <MessageView key={m.id} message={m} actions={o.actions ?? {}} />
+          <MessageBoundary key={m.id}>
+            <MessageView message={m} actions={o.actions ?? {}} />
+          </MessageBoundary>
         ))}
         {streaming && last?.role === 'assistant' && (
           <p style={{ color: '#555', fontSize: 13, margin: 0 }}>

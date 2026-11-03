@@ -241,6 +241,25 @@ describe('ChatTab', () => {
     expect(box().value).toBe('')
   })
 
+  it('a malformed link in the reply cannot crash the chat: it renders as plain text', async () => {
+    const w = world(() =>
+      sse(
+        turn(
+          ...text('x', 'See [bad id](board:%E0%A4%A) and [ok](board:el_2).'),
+        ),
+      ),
+    )
+    await mount(w, { actions: { onLocate: vi.fn() } })
+    await type('hello')
+    await press('Enter')
+    await settle()
+    const reply = q('article[aria-label="Tutor"]')
+    expect(reply.textContent).toContain('bad id')
+    expect(
+      [...reply.querySelectorAll('button')].map((b) => b.textContent),
+    ).toEqual(['ok'])
+  })
+
   it('Shift+Enter is a newline, not a send; an empty message is never sent', async () => {
     const w = world(() => sse(turn(...text('x', 'ok'))))
     await mount(w)

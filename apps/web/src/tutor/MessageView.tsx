@@ -1,5 +1,7 @@
 'use client'
 
+import { Component, type ReactNode } from 'react'
+
 import {
   type BatchChip,
   batchesOf,
@@ -115,4 +117,24 @@ export function MessageView({
       )}
     </article>
   )
+}
+
+/** One broken message must not take the whole conversation down with it. */
+export class MessageBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  render() {
+    return this.state.failed ? (
+      <p role="note" style={{ color: '#a33', fontSize: 13, margin: 0 }}>
+        This message could not be shown.
+      </p>
+    ) : (
+      this.props.children
+    )
+  }
 }

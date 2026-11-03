@@ -67,10 +67,14 @@ async function drag(page: Page, from: [number, number], to: [number, number]) {
 async function typeText(page: Page, at: [number, number], text: string) {
   await page.keyboard.press('t')
   await page.mouse.click(...at)
-  await expect(page.locator('textarea')).toBeFocused()
+  await expect(
+    page.locator('textarea:not([aria-label="Message the tutor"])'),
+  ).toBeFocused()
   await page.keyboard.type(text)
   await page.keyboard.press('Escape')
-  await expect(page.locator('textarea')).toHaveCount(0)
+  await expect(
+    page.locator('textarea:not([aria-label="Message the tutor"])'),
+  ).toHaveCount(0)
 }
 
 async function typeMath(page: Page, at: [number, number], latex: string) {
@@ -444,7 +448,7 @@ test.describe
       )
 
       await pageA.setViewportSize({
-        width: Math.max(1000, targetWidth),
+        width: Math.max(1000, targetWidth + 420), // the board is the viewport minus the tutor dock (up to 380 px)
         height: Math.max(800, targetHeight + 100),
       })
 
@@ -460,6 +464,10 @@ test.describe
       )
       await frames(pageA, 5)
 
+      // the top bar floats over the board's top-left corner; the parity check compares the drawing only
+      await pageA.addStyleTag({
+        content: 'header { visibility: hidden !important }',
+      })
       const browserScreenshot = await pageA.screenshot({
         clip: { x: 0, y: 0, width: targetWidth, height: targetHeight },
       })

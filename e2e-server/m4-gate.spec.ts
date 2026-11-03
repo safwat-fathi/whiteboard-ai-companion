@@ -98,11 +98,12 @@ test('a book goes from upload to a cited page, and can be studied', async ({
   // the chosen section becomes the board's scope
   await page.getByRole('checkbox', { name: /Chapter 2/ }).check()
   await page.getByRole('button', { name: 'Study this' }).click()
-  await page.waitForURL(`${WEB}/`)
+  await page.waitForURL(`${WEB}/boards/*`)
   const boardId = await page.evaluate(() =>
     localStorage.getItem('whiteboard:boardId'),
   )
   expect(boardId).toBeTruthy()
+  expect(page.url()).toBe(`${WEB}/boards/${boardId}`)
   const board = await (
     await page.request.get(`${API}/api/boards/${boardId}`)
   ).json()

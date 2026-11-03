@@ -84,6 +84,16 @@ const link: React.CSSProperties = {
   cursor: 'pointer',
 }
 
+/** The element id in a `board:` link, or null: the text is model-written, so a bad escape or a strange id is just not a link. */
+function elementId(raw: string): string | null {
+  try {
+    const id = decodeURIComponent(raw)
+    return /^[\w-]{1,64}$/.test(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
 // Only our own schemes survive; every other link is rendered as plain text (the tutor has no business sending the student away).
 const urlTransform = (url: string) =>
   url.startsWith('cite:') || url.startsWith('board:') ? url : ''
@@ -110,8 +120,8 @@ export function Markdown({
         ) : (
           <span title="This citation could not be verified">{children}</span>
         )
-      if (href?.startsWith('board:') && handlers.onLocate) {
-        const id = decodeURIComponent(href.slice('board:'.length))
+      const id = href?.startsWith('board:') ? elementId(href.slice(6)) : null
+      if (id && handlers.onLocate) {
         return (
           <button
             type="button"
