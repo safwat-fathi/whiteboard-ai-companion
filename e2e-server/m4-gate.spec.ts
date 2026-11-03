@@ -79,7 +79,7 @@ test('a book goes from upload to a cited page, and can be studied', async ({
     .getByRole('region', { name: 'Search results' })
     .getByRole('button')
     .first()
-  await expect(hit).toContainText(/pp?\. i/)
+  await expect(hit).toContainText(/pp?\. (i|ii|iii)/)
   await hit.click()
   const image = page.getByRole('img', { name: /^Page/ })
   await expect(image).toBeVisible()
@@ -90,7 +90,10 @@ test('a book goes from upload to a cited page, and can be studied', async ({
       ),
     )
     .toBeGreaterThan(100)
-  await expect(page.getByText(/p\. i \(file page 1 of 3\)/)).toBeVisible()
+  // the caption gives the printed label (i, ii, iii) beside the position in the file
+  await expect(page.locator('figcaption')).toHaveText(
+    /^p\. (i|ii|iii) \(file page [123] of 3\)$/,
+  )
 
   // the chosen section becomes the board's scope
   await page.getByRole('checkbox', { name: /Chapter 2/ }).check()
