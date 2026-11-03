@@ -9,6 +9,7 @@
     "test": "pnpm -r --if-present test",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/math && tsc --noEmit -p apps/web && tsc --noEmit -p apps/server",
+    "ingest": "pnpm --filter @whiteboard/server ingest",
     "e2e": "playwright test",
     "e2e:server": "playwright test -c playwright.server.config.ts",
     "bench": "pnpm build && playwright test -c playwright.bench.config.ts"
