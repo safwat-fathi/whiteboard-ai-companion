@@ -31,8 +31,8 @@ export async function analyzePdf(pdf: OpenPdf): Promise<PageStats[]> {
 }
 
 const R4_TOKENS_PER_PAGE = 800 // a guess for pages we have not read yet (embedding cost only)
-const EMBED_USD_PER_MTOK = 0.01 // baai/bge-m3 via OpenRouter
-const R3_USD_PER_PAGE = 0.00205 // S2: $0.0205 per 10 pages of mistral-ocr
+export const EMBED_USD_PER_MTOK = 0.01 // baai/bge-m3 via OpenRouter
+export const R3_USD_PER_PAGE = 0.00205 // S2: $0.0205 per 10 pages of mistral-ocr
 
 export type Estimate = {
   pages: number
