@@ -223,6 +223,8 @@ export class BoardService {
     this.db.opsByTurn(boardId, turnId)
   opsOfBatch = (boardId: string, batchId: string) =>
     this.db.opsByBatch(boardId, batchId)
+  turnsBefore = (boardId: string, beforeSeq: number, limit: number) =>
+    this.db.turnsBefore(boardId, beforeSeq, limit)
 
   join(boardId: string, fromSeq: number): JoinResult {
     if (!Number.isInteger(fromSeq) || fromSeq < 0)

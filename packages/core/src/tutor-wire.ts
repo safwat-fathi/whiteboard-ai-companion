@@ -90,6 +90,8 @@ export const DataPartSchemas = {
     label: z.string(),
     bounds: BoundsSchema.nullable(),
     count: z.number().int().min(0),
+    /** The elements the batch touched: Locate follows them if the student moved them since. */
+    touchedIds: z.array(z.string()).max(200).optional(),
   }),
   usage: UsageSchema,
   status: z.object({ state: z.enum(TURN_STATES), text: z.string().optional() }),

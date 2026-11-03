@@ -374,6 +374,7 @@ export function createTutor(deps: TutorDeps) {
     start,
     toDto,
     isBusy: (boardId: string) => active.has(boardId),
+    activeTurn: (boardId: string) => active.get(boardId),
     /** "What the AI sees": the exact context a turn with this descriptor would send. */
     previewContext: (
       boardId: string,

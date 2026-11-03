@@ -6,6 +6,7 @@ import type { BoardService } from './board-service'
 import type { MessagesDb } from './db'
 import { apiError } from './errors'
 import { parse, readJson, send } from './http-util'
+import { createActivity } from './tutor/activity'
 import type { Tutor } from './tutor/turn'
 import type { TutorUndo } from './tutor/undo'
 
@@ -33,6 +34,11 @@ const decode = (raw: string): string => {
 
 /** Chat, history, models. Returns true when it answered; the caller has already checked Host and Origin. */
 export function createTutorRoutes(d: TutorRoutesDeps) {
+  const activity = createActivity({
+    boards: d.boards,
+    messages: d.messages,
+    activeTurn: d.tutor.activeTurn,
+  })
   return async (
     req: IncomingMessage,
     res: ServerResponse,
@@ -79,6 +85,35 @@ export function createTutorRoutes(d: TutorRoutesDeps) {
         messages: page.messages.map(d.tutor.toDto),
         ...(page.next ? { next: page.next } : {}),
       })
+      return true
+    }
+    if (
+      seg[1] === 'boards' &&
+      seg[3] === 'activity' &&
+      seg.length === 4 &&
+      method === 'GET'
+    ) {
+      const id = decode(seg[2] as string)
+      if (!d.boards.getBoard(id))
+        throw apiError('not_found', `unknown board ${id}`)
+      const q = new URL(req.url ?? '/', 'http://localhost').searchParams
+      const limit = q.has('limit') ? Number(q.get('limit')) : undefined
+      if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1))
+        throw apiError(
+          'validation_failed',
+          'limit must be a positive integer',
+          { field: 'limit' },
+        )
+      send(
+        res,
+        200,
+        activity.list(id, {
+          before: q.get('before') ?? undefined,
+          limit,
+          turn: q.get('turn') ?? undefined,
+          batch: q.get('batch') ?? undefined,
+        }),
+      )
       return true
     }
     if (

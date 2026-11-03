@@ -42,8 +42,9 @@ async function snapshot(
   })
 }
 
-const distinctElements = (b: Batch) =>
-  new Set(b.ops.map((o) => (o.op === 'add' ? o.el.id : o.id))).size
+const touchedIds = (b: Batch) => [
+  ...new Set(b.ops.map((o) => (o.op === 'add' ? o.el.id : o.id))),
+]
 
 /** What the model sees when a tool fails: its own mistake, in words. Anything else is ours and stays in the log. */
 function forModel(e: unknown): Error {
@@ -160,7 +161,8 @@ export function boardToolSet(
                 seq: res.seq,
                 label: out.batch.label,
                 bounds: res.broadcast.bounds,
-                count: distinctElements(out.batch),
+                count: touchedIds(out.batch).length,
+                touchedIds: touchedIds(out.batch).slice(0, 200),
               },
             } as UIMessageChunk)
             if (returnSnapshot && out.bounds)

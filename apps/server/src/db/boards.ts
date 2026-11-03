@@ -115,6 +115,11 @@ export function createBoardsDb(db: Database.Database) {
   const selectTurn = db.prepare(
     'SELECT * FROM board_ops WHERE board_id = ? AND turn_id = ? ORDER BY seq',
   )
+  const selectTurns = db.prepare(
+    `SELECT turn_id AS turnId, MIN(seq) AS firstSeq FROM board_ops
+     WHERE board_id = ? AND turn_id IS NOT NULL
+     GROUP BY turn_id HAVING MIN(seq) < ? ORDER BY firstSeq DESC LIMIT ?`,
+  )
   const selectBatch = db.prepare(
     'SELECT * FROM board_ops WHERE board_id = ? AND batch_id = ? ORDER BY seq',
   )
@@ -190,6 +195,16 @@ export function createBoardsDb(db: Database.Database) {
     /** Every batch of one tutor turn, oldest first. */
     opsByTurn: (boardId: string, turnId: string): OpRow[] =>
       (selectTurn.all(boardId, turnId) as RawOp[]).map(toOp),
+    /** Turns that changed the board, newest first: those whose first batch is before `beforeSeq`. */
+    turnsBefore: (
+      boardId: string,
+      beforeSeq: number,
+      limit: number,
+    ): { turnId: string; firstSeq: number }[] =>
+      selectTurns.all(boardId, beforeSeq, limit) as {
+        turnId: string
+        firstSeq: number
+      }[],
     opsByBatch: (boardId: string, batchId: string): OpRow[] =>
       (selectBatch.all(boardId, batchId) as RawOp[]).map(toOp),
     opsAfter: (boardId: string, seq: number, limit = -1): OpRow[] =>
