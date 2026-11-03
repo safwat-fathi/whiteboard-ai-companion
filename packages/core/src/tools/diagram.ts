@@ -49,12 +49,18 @@ export function layout(
   }
   for (const k of keys) depth(k)
   const layers: string[][] = []
-  for (const k of keys) (layers[layerOf.get(k) as number] ??= []).push(k)
+  for (const k of keys) {
+    const li = layerOf.get(k) as number
+    layers[li] = layers[li] ?? []
+    layers[li].push(k)
+  }
 
   const index = new Map<string, number>()
   layers.forEach((l, li) => {
     if (li > 0) l.sort((a, b) => bary(a) - bary(b)) // stable: ties keep input order
-    l.forEach((k, i) => index.set(k, i))
+    l.forEach((k, i) => {
+      index.set(k, i)
+    })
   })
   function bary(k: string): number {
     const ps = preds.get(k) ?? []

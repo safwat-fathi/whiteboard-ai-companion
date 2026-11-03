@@ -81,7 +81,7 @@ async function measureMath(
     await new Promise<void>((r) => m.request(latex, display, color, r))
     e = m.peek(latex, display, color)
   }
-  if (!e || !e.ok)
+  if (!e?.ok)
     throw new ToolError(
       `latex: ${e && !e.ok ? e.error : 'the formula could not be rendered'}`,
       'latex',

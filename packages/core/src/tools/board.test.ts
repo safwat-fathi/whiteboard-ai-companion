@@ -205,18 +205,16 @@ describe('add_shape and connect', () => {
       number,
       number,
     ][]
-    expect([
-      arrow.x + (pts[0] as number[])[0]!,
-      arrow.y + (pts[0] as number[])[1]!,
-    ]).toEqual([100, 30])
-    expect([
-      arrow.x + (pts[1] as number[])[0]!,
-      arrow.y + (pts[1] as number[])[1]!,
-    ]).toEqual([300, 40])
+    const tip = (i: number) => {
+      const [px, py] = pts[i] as [number, number]
+      return [arrow.x + px, arrow.y + py]
+    }
+    expect(tip(0)).toEqual([100, 30])
+    expect(tip(1)).toEqual([300, 40])
   })
   it('names what is wrong when it cannot connect', async () => {
     const ctx = ctxOf([human('a'), human('b', { x: 200 })])
-    const t = tool('connect')
+    const _t = tool('connect')
     await expect(call('connect', { from: 'a', to: 'zz' }, ctx)).rejects.toThrow(
       /to: no element zz/,
     )
@@ -274,7 +272,7 @@ describe('placement', () => {
     expect(overlaps(el(ctx, out.ids[0] as string), el(ctx, 'blocker'))).toBe(
       false,
     )
-    const t = tool('add_shape')
+    const _t = tool('add_shape')
     await expect(
       call(
         'add_shape',
@@ -419,7 +417,7 @@ describe('delete_elements', () => {
     >
     expect(a.data.end).toBeUndefined()
     expect(a.data.start?.id).toBe('a')
-    const t = tool('delete_elements')
+    const _t = tool('delete_elements')
     await expect(call('delete_elements', { ids: ['a'] }, ctx)).rejects.toThrow(
       /belongs to the student/,
     )
