@@ -78,6 +78,8 @@ export function ChatTab(o: {
   ) => Promise<Preview>
   /** Bumped by the selection toolbar's Ask AI: focus the composer. */
   focusSignal?: number
+  /** "Show in chat" on an AI-drawn element: scroll to that turn's reply. */
+  revealTurn?: { turnId: string; n: number }
   /** Told whenever a turn starts, changes what it is doing, or ends. */
   onTurn?: (t: { running: boolean; state?: string }) => void
   getContext?: () => Partial<ContextDescriptor>
@@ -146,6 +148,18 @@ export function ChatTab(o: {
     [selKey],
   )
   const box = useRef<HTMLTextAreaElement>(null)
+  const log = useRef<HTMLDivElement>(null)
+  const reveal = o.revealTurn
+  useEffect(() => {
+    if (!reveal) return
+    const el = [...(log.current?.querySelectorAll('[data-turn]') ?? [])].find(
+      (x) => x.getAttribute('data-turn') === reveal.turnId,
+    )
+    el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    el?.animate?.([{ background: '#fff3b0' }, { background: 'transparent' }], {
+      duration: 1500,
+    })
+  }, [reveal])
   const { focusSignal } = o
   useEffect(() => {
     if (focusSignal) box.current?.focus()
@@ -272,6 +286,7 @@ export function ChatTab(o: {
       }}
     >
       <div
+        ref={log}
         role="log"
         aria-label="Conversation"
         aria-live="off"

@@ -681,4 +681,79 @@ describe('ChatTab', () => {
       expect(host.querySelector('img[alt="Attached"]')).toBeNull() // used up
     })
   })
+
+  describe('Show in chat', () => {
+    it('scrolls to the reply of the turn that drew the element', async () => {
+      const w = world(
+        () => err(500, 'x', 'x'),
+        [
+          {
+            id: 'u1',
+            turnId: 't1',
+            role: 'user',
+            parts: [{ type: 'text', text: 'first' }],
+            createdAt: 1,
+          },
+          {
+            id: 'a1',
+            turnId: 't1',
+            role: 'assistant',
+            parts: [
+              { type: 'data-turn', data: { turnId: 't1' } },
+              { type: 'text', text: 'one' },
+            ],
+            createdAt: 2,
+          },
+          {
+            id: 'u2',
+            turnId: 't2',
+            role: 'user',
+            parts: [{ type: 'text', text: 'second' }],
+            createdAt: 3,
+          },
+          {
+            id: 'a2',
+            turnId: 't2',
+            role: 'assistant',
+            parts: [
+              { type: 'data-turn', data: { turnId: 't2' } },
+              { type: 'text', text: 'two' },
+            ],
+            createdAt: 4,
+          },
+        ],
+      )
+      const scrolled: string[] = []
+      Element.prototype.scrollIntoView = function (this: Element) {
+        if (this.getAttribute('data-turn'))
+          scrolled.push(this.getAttribute('data-turn') as string)
+      }
+      host = document.createElement('div')
+      document.body.append(host)
+      const root = createRoot(host)
+      const render = (revealTurn?: { turnId: string; n: number }) =>
+        act(async () =>
+          root.render(
+            createElement(ChatTab, {
+              apiBase: 'http://srv',
+              boardId: 'b1',
+              connected: true,
+              fetch: w.fetch,
+              revealTurn,
+            }),
+          ),
+        )
+      await render()
+      await act(async () => {})
+      scrolled.length = 0
+      await render({ turnId: 't1', n: 1 })
+      expect(scrolled).toEqual(['t1'])
+      await render({ turnId: 't2', n: 2 })
+      expect(scrolled).toEqual(['t1', 't2'])
+      unmount = async () => {
+        await act(async () => root.unmount())
+        host.remove()
+      }
+    })
+  })
 })

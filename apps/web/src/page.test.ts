@@ -48,6 +48,13 @@ vi.mock('./editor/editor', () => ({
     }
     selection = new Set<string>()
     scene = { els: new Map() }
+    host = document.createElement('div')
+    index = { pick: () => null }
+    camera = { x: 0, y: 0, zoom: 1 }
+    viewport = { width: 800, height: 600, dpr: 1 }
+    screenToWorldPoint() {
+      return { x: 0, y: 0 }
+    }
     onSelectionChange() {
       return () => {}
     }
@@ -285,14 +292,18 @@ describe('Page', () => {
       await act(async () => {
         syncCtl.onStatus('offline')
       })
-      const alert = page.host.querySelector('[role="alert"]')
+      const alert = page.host.querySelector(
+        '[aria-live="polite"] [role="alert"]',
+      ) // the notices, not a dock panel
       expect(alert?.textContent).toContain('Offline: changes are not saved')
 
       // Back to live clears alert
       await act(async () => {
         syncCtl.onStatus('live')
       })
-      expect(page.host.querySelector('[role="alert"]')).toBeNull()
+      expect(
+        page.host.querySelector('[aria-live="polite"] [role="alert"]'),
+      ).toBeNull()
 
       order.length = 0
       await page.unmount()

@@ -2,7 +2,6 @@
 
 import {
   type CSSProperties,
-  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -23,6 +22,8 @@ import { browserPlatform } from '../editor/platform'
 import { createSyncClient } from '../editor/sync'
 import { createLibraryApi } from '../library/api'
 import { boardBookScope, type Scope } from '../library/scope'
+import { ActivityTab } from '../tutor/ActivityTab'
+import { AiTag } from '../tutor/AiTag'
 import { createEditorBridge } from '../tutor/board-context'
 import { ChatTab } from '../tutor/ChatTab'
 import {
@@ -35,6 +36,7 @@ import {
 import { ScopeChip } from '../tutor/ScopeChip'
 import { SelectionToolbar } from '../tutor/SelectionToolbar'
 import { type SourceRef, SourceTab } from '../tutor/SourceTab'
+import { useActivity } from '../tutor/useActivity'
 import { Dock, TopBar, useDockLayout } from './Dock'
 
 const BOARD = 'local'
@@ -72,6 +74,10 @@ export function Workspace({ boardId }: { boardId?: string }) {
   const [scope, setScope] = useState<Scope | null>(null)
   const [source, setSource] = useState<SourceRef | null>(null)
   const [askSignal, setAskSignal] = useState(0)
+  const [activityKey, setActivityKey] = useState(0)
+  const [reveal, setReveal] = useState<
+    { turnId: string; n: number } | undefined
+  >()
   const syncRef = useRef<ReturnType<typeof createSyncClient> | null>(null)
   const api = useMemo(
     () => (apiBase === undefined ? null : createLibraryApi(apiBase)),
@@ -147,6 +153,9 @@ export function Workspace({ boardId }: { boardId?: string }) {
     onFollowOff: stopFollowing,
     notify: toast,
   })
+  const activity = useActivity(api, boardId, activityKey)
+  const bumpActivity = useRef(() => {})
+  bumpActivity.current = () => setActivityKey((n) => n + 1)
   const jumpRef = useRef(jump)
   jumpRef.current = jump
   const onTurn = useCallback((t: { running: boolean; state?: string }) => {
@@ -228,7 +237,10 @@ export function Workspace({ boardId }: { boardId?: string }) {
           url: wsUrl,
           boardId,
           editor: ed,
-          onServerBatch: (sb) => jumpRef.current.onAgentBatch(sb),
+          onServerBatch: (sb) => {
+            jumpRef.current.onAgentBatch(sb)
+            if (sb.author?.kind === 'agent') bumpActivity.current()
+          },
           onStatus: (status, detail) => {
             if (stop) return
             setLive(status === 'live')
@@ -428,6 +440,17 @@ export function Workspace({ boardId }: { boardId?: string }) {
           )}
         </TopBar>
       )}
+      {serverMode && board && (
+        <AiTag
+          editor={board.editor}
+          labelOf={activity.labelOf}
+          onShow={(turnId) => {
+            dock.setCollapsed(false)
+            dock.setTab('chat')
+            setReveal((r) => ({ turnId, n: (r?.n ?? 0) + 1 }))
+          }}
+        />
+      )}
       {serverMode && board && jump.canBack && (
         <BackChip onBack={() => void jump.back()} />
       )}
@@ -473,6 +496,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
                       ]),
                   }}
                   onTurn={onTurn}
+                  revealTurn={reveal}
                   bridge={bridge}
                   upload={upload}
                   focusSignal={askSignal}
@@ -493,7 +517,21 @@ export function Workspace({ boardId }: { boardId?: string }) {
                 />
               ) : null,
             activity: (
-              <Empty>The tutor's work on this board will be listed here.</Empty>
+              <ActivityTab
+                turns={activity.turns}
+                hasMore={activity.hasMore}
+                loadMore={() => void activity.loadMore()}
+                failed={activity.failed}
+                onLocate={(items) => void jump.locate(items)}
+                undo={
+                  api && boardId !== undefined
+                    ? {
+                        turn: (id) => api.undoTurn(boardId, id),
+                        batch: (id) => api.undoBatch(boardId, id),
+                      }
+                    : undefined
+                }
+              />
             ),
             source: api ? (
               <SourceTab
@@ -508,7 +546,3 @@ export function Workspace({ boardId }: { boardId?: string }) {
     </div>
   )
 }
-
-const Empty = ({ children }: { children: ReactNode }) => (
-  <p style={{ padding: 12, color: '#555', fontSize: 13 }}>{children}</p>
-)

@@ -10,6 +10,7 @@ import {
   isVerifiedCite,
   sourcesOf,
   type TutorMessage,
+  turnIdOf,
   usageOfMessage,
 } from './chat-core'
 import { Markdown } from './Markdown'
@@ -73,6 +74,7 @@ export function MessageView({
   return (
     <article
       aria-label={mine ? 'You' : 'Tutor'}
+      data-turn={mine ? undefined : turnIdOf(message)}
       style={{
         alignSelf: mine ? 'flex-end' : 'stretch',
         maxWidth: mine ? '85%' : '100%',
