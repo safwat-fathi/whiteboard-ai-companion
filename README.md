@@ -16,7 +16,7 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 - **Books with page citations.** Upload a PDF, get hybrid search (keywords + embeddings) scoped to a topic, chapter or the whole book. Answers say what is from your book and what is general explanation.
 - **Jump to the AI's work.** Follow the AI live, get an off-screen indicator, or click any chat chip or activity row to fly to where it drew, now or weeks ago.
 - **A from-scratch canvas.** Freehand, shapes, text (Arabic/RTL), LaTeX math (MathJax), charts, images, select/move/resize.
-- **Simple to run.** No login, no Docker, no database server: Node, one SQLite file, a [Meta Model API](https://api.meta.ai) key (`MODEL_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings. Runs on a laptop and on a small VPS.
+- **Simple to run.** Runs via pnpm scripts or Docker (`compose.yaml`), with no external database server: Node, one SQLite file, a [Meta Model API](https://api.meta.ai) key (`MODEL_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings. Runs on a laptop and on a small VPS.
 
 ## Hackathon & Meta AI Integration
 
@@ -27,7 +27,7 @@ The project re-imagines how learners interact with textbooks and technical subje
 - **AI Tutor with Visual Explanations:** Powered directly by the **Meta Model API** (`https://api.meta.ai/v1`) using Meta's **Muse** series (`muse-spark-1.3`, `muse-wonder-1.0`) for real-time tool orchestration, mathematical reasoning, and textbook diagram/page transcription (with open-weights Llama 4 supported via OpenRouter `meta-llama/llama-4-maverick`).
 - **The Board is the AI's Context:** Instead of text-only conversations, the student and AI share an infinite 2D canvas. The AI can point, draw diagrams, write formatted MathJax equations, and place textbook figures directly into view.
 - **Grounded in Your Books:** Upload any PDF to get hybrid search (dense `baai/bge-m3` embeddings + BM25) with verifiable page citations, distinguishing textbook source material from general explanation.
-- **Local-First & Accessible:** Runs natively without Docker or external DB servers (Node, SQLite in WAL mode) to ensure low latency and easy accessibility for any student or researcher.
+- **Local-First & Accessible:** Runs via pnpm scripts or Docker without external DB servers (Node, SQLite in WAL mode) to ensure low latency and easy accessibility for any student or researcher.
 
 ## How it fits together
 
@@ -50,7 +50,7 @@ Start with the master plan, then the aspect you care about.
 | [`docs/PLAN.md`](docs/PLAN.md)                                     | Validation of the design doc, resolutions, product, milestones, decisions |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md)                               | Phases M0–M7: scope, dependencies, gates, status                          |
 | [`tech-stack`](docs/plans/tech-stack.md)                           | Languages, libraries, versions, repo layout, scripts                      |
-| [`deployment`](docs/plans/deployment.md)                           | Run locally and on a VPS without Docker; config, systemd, Caddy, backups  |
+| [`deployment`](docs/plans/deployment.md)                           | Run locally and on a VPS via pnpm scripts or Docker; config, systemd, Caddy, backups |
 | [`whiteboard-engine`](docs/plans/whiteboard-engine.md)             | Elements, ops, undo, renderer, tools, sync                                |
 | [`math-renderer`](docs/plans/math-renderer.md)                     | LaTeX with MathJax, caching, security, Arabic                             |
 | [`ai-integration`](docs/plans/ai-integration.md)                   | Meta Model API, tutor loop, tool registry, models & S3 benchmarks, caps   |
@@ -127,7 +127,7 @@ pnpm ingest <file.pdf>           # add a PDF to the library from the terminal (-
 pnpm eval:retrieval --book <id|title> --eval eval/<book>.jsonl   # recall@8 and MRR on a real book
 ```
 
-Deploying to a VPS (Node + systemd + Caddy): [`docs/plans/deployment.md`](docs/plans/deployment.md).
+Deploying to a VPS (pnpm scripts or Docker + Caddy): [`docs/plans/deployment.md`](docs/plans/deployment.md).
 
 ## Configuration
 

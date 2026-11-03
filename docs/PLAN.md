@@ -1,7 +1,7 @@
 # Whiteboard AI Companion — Study Companion: Validation and Full Plan
 
 > **Hackathon:** Built for the **[Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)** hosted by **Meta** and **Cerebral Valley**.
-> **Status:** revision 1 approved 2026-11-01 · **revision 2** (same day, approved at Kickoff: ROADMAP K ✔): no Docker, in-app chat, whiteboard as AI context, plan split into one file per aspect, README added.
+> **Status:** revision 1 approved 2026-11-01 · **revision 2** (same day, approved at Kickoff: ROADMAP K ✔): simplified stack (SQLite, no external DB; later added Docker Compose alongside pnpm scripts), in-app chat, whiteboard as AI context, plan split into one file per aspect, README added.
 > **Inputs:** Claude Doc *Whiteboard Engine: Design Doc* (https://claude.ai/artifact/QPPBUq22meEmXKSmJ856qq, rev 11; all text and both diagrams read) · your answers to its 5 open questions · your brief (student companion, books + RAG, OpenRouter key, "jump to where the AI worked") · your revision-2 resolutions (next section).
 > **Conventions:** **[my call]** = a decision I made for you; override any. **[spike]** = I could not verify it from here; M0 settles it with evidence.
 > **How the plan is organised:** this file is the master (resolutions, validation, product, milestones, decisions). Each aspect has its own file in [`plans/`](./plans/). The section for it below summarises it and names the file.
@@ -12,12 +12,12 @@
 
 | # | Resolution | What it means | Details |
 |---|---|---|---|
-| R1 | **No Docker** | Everything runs natively: `pnpm dev` locally; on the VPS, Node + systemd + Caddy. One SQLite file replaces Postgres; blobs live on disk; no Redis, no S3. | [deployment](./plans/deployment.md) · [database](./plans/database.md) · [tech-stack](./plans/tech-stack.md) |
+| R1 | **pnpm scripts & Docker** | Runs via pnpm scripts (`pnpm dev`) or Docker (`compose.yaml`); on the VPS, Node + systemd or Docker Compose + Caddy. One SQLite file replaces Postgres; blobs live on disk; no Redis, no S3. | [deployment](./plans/deployment.md) · [database](./plans/database.md) · [tech-stack](./plans/tech-stack.md) |
 | R2 | **Chat with the AI inside the app** | A chat dock in the board UI is the only way to talk to the tutor in v1 (no external client needed). Streaming replies, tool chips, page citations, Stop, Undo response. | [chat-ui](./plans/chat-ui.md) · [ai-integration](./plans/ai-integration.md) |
 | R3 | **The whiteboard is the AI's context; a selection can be passed in chat** | Every turn carries a compact digest of the board. The student can attach the selection, the viewport or the whole board, as structure, as a picture, or both, and sees exactly what will be sent. | [board-context](./plans/board-context.md) |
 | R4 | **One plan doc per aspect** | 14 files in `docs/plans/`, indexed in the Plan map below. | all |
 
-**Why SQLite (consequence of R1) [my call].** Without Docker, Postgres would be a server you hand-install and keep patched on two machines. A single-owner app does not need one: SQLite in WAL mode gives ordered, transactional op logs; FTS5 gives BM25 keyword search; embeddings sit in a BLOB column and are searched exactly in memory (hundreds of thousands of chunks is tens of milliseconds). Backups become one online-backup call. The revert path to Postgres + pgvector is written down in [database](./plans/database.md) and costs one module.
+**Why SQLite (consequence of R1) [my call].** Even with Docker or pnpm, Postgres would be an extra database server you hand-install, configure, and keep patched across machines. A single-owner app does not need one: SQLite in WAL mode gives ordered, transactional op logs; FTS5 gives BM25 keyword search; embeddings sit in a BLOB column and are searched exactly in memory (hundreds of thousands of chunks is tens of milliseconds). Backups become one online-backup call. The revert path to Postgres + pgvector is written down in [database](./plans/database.md) and costs one module.
 
 ---
 
@@ -26,7 +26,7 @@
 | § | Aspect | File |
 |---|---|---|
 | 4 | Tech stack and repo layout | [plans/tech-stack.md](./plans/tech-stack.md) |
-| 5 | Run and deploy (no Docker) | [plans/deployment.md](./plans/deployment.md) |
+| 5 | Run and deploy (pnpm and Docker) | [plans/deployment.md](./plans/deployment.md) |
 | 6 | Whiteboard engine | [plans/whiteboard-engine.md](./plans/whiteboard-engine.md) |
 | 7 | Math renderer | [plans/math-renderer.md](./plans/math-renderer.md) |
 | 8 | AI integration (tutor agent) | [plans/ai-integration.md](./plans/ai-integration.md) |
@@ -48,7 +48,7 @@
 
 **Context.** The design doc specifies a from-scratch infinite canvas plus 16 MCP tools, and assumes an *external* AI client does the thinking. The product is now a **study companion**: a student uploads books, picks a topic / chapter / whole book, and chats with an AI tutor that explains on a shared whiteboard with page citations. This plan (1) validates the doc against that product and your answers, and (2) adds what is missing.
 
-- **The engine design is sound and mostly stays.** Your answers delete a lot of it: accounts, roles, JWT, OAuth, Redis, S3, multi-instance, and now Docker and Postgres.
+- **The engine design is sound and mostly stays.** Your answers delete a lot of it: accounts, roles, JWT, OAuth, Redis, S3, multi-instance, and Postgres (running via lightweight pnpm scripts or Docker instead).
 - **Biggest gap:** no built-in AI. A tutor needs a chat dock in the UI and a server-side agent loop over the Meta Model API (§8–9), the whiteboard as its context (§10), a book library with hybrid retrieval (§11–12), and jump-to-AI-work (§13).
 - **"No login" is fine on localhost, not on a VPS** that holds your `MODEL_API_KEY` / `OPENROUTER_API_KEY` and your books. One shared-secret gate fixes it (§16).
 - **Re-sequenced** so a usable tutor lands at the end of M5, before pen and charts. The doc's plan covered engine + MCP only (§17).
@@ -97,7 +97,7 @@ Op format (`add`/`patch`/`remove`/`reorder`, atomic batches), conflict rules, ap
 
 ### 1.5 Cut list (your answers or YAGNI)
 
-Docker / Compose · Postgres + pgvector (one SQLite file instead) · Redis pub/sub and presence expiry · S3-compatible storage (blobs on disk) · multi-instance · sessions/JWT and roles · `agent_tokens` and per-token rate limits (until MCP) · OAuth 2.1 · human presence streaming and live-ink broadcast · `add_image` from URLs (removes the SSRF surface) · headless Chromium as *first* snapshot fallback · 30-day op retention · MCP endpoint on the v1 critical path.
+Postgres + pgvector (one SQLite file instead; run via pnpm or Docker) · Redis pub/sub and presence expiry · S3-compatible storage (blobs on disk) · multi-instance · sessions/JWT and roles · `agent_tokens` and per-token rate limits (until MCP) · OAuth 2.1 · human presence streaming and live-ink broadcast · `add_image` from URLs (removes the SSRF surface) · headless Chromium as *first* snapshot fallback · 30-day op retention · MCP endpoint on the v1 critical path.
 
 ---
 
@@ -121,12 +121,12 @@ A personal study companion. Upload a book, choose what to study (a topic, a chap
 - Retrieval that lands on the right page, measured on *your* books (§18).
 - Jump to AI work, live and historical.
 - The doc's engine goals (seven capabilities, one op format, Arabic/RTL), minus what §1.5 cuts.
-- Runs natively on a laptop and on a small VPS; access gate on the VPS.
+- Runs via pnpm scripts or Docker on a laptop and on a small VPS; access gate on the VPS.
 - Predictable cost: per-turn and per-day caps, visible usage.
 
 **Non-goals**
 - Accounts, roles, share links (designed-for, built later); real-time multi-human collaboration.
-- Docker, a database server, queues or caches.
+- External database servers (Postgres/MySQL), queues or caches.
 - Native mobile apps, WebGL, plugin API, audio/video/web embeds, fetching images from URLs.
 - Quizzes, flashcards, spaced repetition (v1.1; the tutor can already "quiz me" in chat).
 - Fine-tuning or self-hosting models; tldraw/Excalidraw/Konva (unchanged from the doc).
@@ -165,12 +165,12 @@ Human ops (WebSocket) and tutor ops (in-process) enter the **same** Board servic
 
 ## 4. Tech stack → [plans/tech-stack.md](./plans/tech-stack.md)
 
-TypeScript + pnpm workspace (`packages/core`, `apps/web`, `apps/server`). Next.js 16 (client-only editor), NestJS 12, SQLite via better-sqlite3, zod 4, AI SDK 7 + `@ai-sdk/openai-compatible` (Meta Model API) + OpenRouter embeddings, MathJax 4, `@napi-rs/canvas`, `pdfjs-dist`, dagre. Versions checked on npm 2026-11-01. pnpm only (no npm/yarn/`npx`). No Docker, no database server, no queue.
+TypeScript + pnpm workspace (`packages/core`, `apps/web`, `apps/server`). Next.js 16 (client-only editor), NestJS 12, SQLite via better-sqlite3, zod 4, AI SDK 7 + `@ai-sdk/openai-compatible` (Meta Model API) + OpenRouter embeddings, MathJax 4, `@napi-rs/canvas`, `pdfjs-dist`, dagre. Versions checked on npm 2026-11-01. pnpm only (no npm/yarn/`npx`) or Docker Compose. No external database server, no queue.
 
-## 5. Run and deploy, no Docker → [plans/deployment.md](./plans/deployment.md)
+## 5. Run and deploy (pnpm and Docker) → [plans/deployment.md](./plans/deployment.md)
 
-- **Local:** Node 22 + pnpm. `pnpm install`, copy `.env.example`, `pnpm dev`. Data in `./data` (SQLite + blobs).
-- **VPS:** Debian/Ubuntu LTS, Node 22, Caddy (TLS + basic auth), two systemd units (server, web). Deploy = `git pull` → `pnpm install --frozen-lockfile` → `pnpm build` → `systemctl restart`.
+- **Local:** pnpm scripts (`pnpm dev`) or Docker (`docker compose up --build`). Data in `./data` or the `whiteboard-data` volume (SQLite + blobs).
+- **VPS:** Debian/Ubuntu LTS, Caddy (TLS + basic auth), using either systemd units (`whiteboard-server`, `whiteboard-web`) or Docker Compose. Deploy = `git pull` followed by rebuild/restart.
 - Migrations run at startup after an automatic DB backup; nightly online backup + blobs sync; one restore drill in M7.
 
 ## 6. Whiteboard engine → [plans/whiteboard-engine.md](./plans/whiteboard-engine.md)
@@ -250,7 +250,7 @@ Five M0 spikes: **S1** canvas performance + Arabic/MathJax on a server canvas; *
 
 **Decisions (override any)**
 1. **SQLite** (better-sqlite3 13, WAL) + FTS5 + exact in-memory cosine search instead of Postgres + pgvector, because of R1. `sqlite-vec` is the upgrade path; the Postgres revert path is in [database](./plans/database.md).
-2. **Native deploy:** systemd + Caddy; deploy by `git pull` + `pnpm build`; automatic DB backup before migrations.
+2. **Deploy:** systemd + Caddy or Docker Compose + Caddy; automatic DB backup before migrations.
 3. Next.js + NestJS kept as in the doc (a static export or Vite SPA served by Caddy is an optional M0 simplification).
 4. In-app tutor via AI SDK 7 + Meta Model API (`@ai-sdk/openai-compatible`, `MODEL_API_KEY`) behind one adapter module (`OPENROUTER_API_KEY` retained strictly for `baai/bge-m3` embeddings and M0 spike benchmarks).
 5. **The chat dock is the only AI entry point in v1;** the MCP endpoint is optional M7 and the tool registry is built for it from day one.
