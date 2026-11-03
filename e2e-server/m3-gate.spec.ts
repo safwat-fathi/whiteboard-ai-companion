@@ -464,9 +464,10 @@ test.describe
       )
       await frames(pageA, 5)
 
-      // the top bar floats over the board's top-left corner; the parity check compares the drawing only
+      // the top bar floats over the board's top-left corner; the parity check compares the drawing only.
+      // display, not visibility: the bar has `transition-all`, which animates visibility for 150 ms, so it was still drawn in the screenshot
       await pageA.addStyleTag({
-        content: 'header { visibility: hidden !important }',
+        content: 'header { display: none !important }',
       })
       const browserScreenshot = await pageA.screenshot({
         clip: { x: 0, y: 0, width: targetWidth, height: targetHeight },
