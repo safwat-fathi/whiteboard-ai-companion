@@ -105,6 +105,20 @@ describe('createLlm', () => {
     ])
   })
 
+  it('sends reasoning_effort only when asked to', async () => {
+    const { seen, llm } = await fake(() => 'ok')
+    const run = (providerOptions?: { meta: { reasoningEffort: string } }) =>
+      streamText({
+        model: llm.model('m1', 'm1'),
+        prompt: 'hi',
+        ...(providerOptions ? { providerOptions } : {}),
+      }).text
+    await run()
+    await run({ meta: { reasoningEffort: 'low' } })
+    expect(seen[0]?.body.reasoning_effort).toBeUndefined()
+    expect(seen[1]?.body.reasoning_effort).toBe('low')
+  })
+
   it('retries once on the fallback model after a 5xx and says so', async () => {
     const { seen, llm } = await fake((m) =>
       m === 'primary' ? 500 : 'from fallback',

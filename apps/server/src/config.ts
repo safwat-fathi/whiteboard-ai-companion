@@ -32,6 +32,8 @@ export type TutorConfig = {
   chapterStuffMaxTokens: number
   /** How a snapshot reaches the model; Meta rejects images inside tool results. */
   snapshotAdapter: 'follow-up-user' | 'tool-result-image'
+  /** Sent as reasoning_effort when set (api.meta.ai accepts it); unset = the model's own default. */
+  reasoningEffort: 'low' | 'medium' | 'high' | null
   /** USD per million tokens; null = unpriced (tokens are still counted). */
   price: { inPerM: number; outPerM: number } | null
 }
@@ -90,6 +92,11 @@ export function loadConfig(
     throw new Error(
       `SNAPSHOT_ADAPTER must be follow-up-user or tool-result-image, got "${adapter}"`,
     )
+  const effort = env.TUTOR_REASONING_EFFORT || ''
+  if (effort !== '' && !['low', 'medium', 'high'].includes(effort))
+    throw new Error(
+      `TUTOR_REASONING_EFFORT must be low, medium or high, got "${effort}"`,
+    )
   const nonNeg = (n: number) => n >= 0
   const priced = env.TUTOR_PRICE_IN_PER_M || env.TUTOR_PRICE_OUT_PER_M
   const tutor: TutorConfig = {
@@ -119,6 +126,7 @@ export function loadConfig(
       'an integer >= 1',
     ),
     snapshotAdapter: adapter,
+    reasoningEffort: (effort || null) as TutorConfig['reasoningEffort'],
     price: priced
       ? {
           inPerM: num(env, 'TUTOR_PRICE_IN_PER_M', 0, nonNeg, 'a number >= 0'),

@@ -93,8 +93,18 @@ describe('loadConfig', () => {
       turnTimeoutMs: 120_000,
       chapterStuffMaxTokens: 60_000,
       snapshotAdapter: 'follow-up-user',
+      reasoningEffort: null,
       price: null,
     })
+  })
+
+  it('reads an optional reasoning effort and refuses an unknown one', () => {
+    expect(
+      loadConfig({ TUTOR_REASONING_EFFORT: 'low' }).tutor.reasoningEffort,
+    ).toBe('low')
+    expect(() => loadConfig({ TUTOR_REASONING_EFFORT: 'max' })).toThrow(
+      /TUTOR_REASONING_EFFORT/,
+    )
   })
 
   it('reads tutor settings, a price only when one is set, and names the key when invalid', () => {

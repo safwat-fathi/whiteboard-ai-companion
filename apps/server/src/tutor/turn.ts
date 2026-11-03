@@ -288,6 +288,13 @@ export function createTutor(deps: TutorDeps) {
             stopWhen: [isStepCount(t.maxSteps), overCost],
             abortSignal: ac.signal,
             maxRetries: 2,
+            ...(t.reasoningEffort
+              ? {
+                  providerOptions: {
+                    meta: { reasoningEffort: t.reasoningEffort },
+                  },
+                }
+              : {}),
             onError: ({ error }) => {
               upstream = error
             },
