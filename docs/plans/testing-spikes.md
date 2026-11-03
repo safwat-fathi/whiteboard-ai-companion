@@ -40,6 +40,8 @@ S4b measured 93.3% hybrid@8 over the same questions on R1/R3 text (Arabic: 80%, 
 
 Run 2026-11-03 with the scripted model (`TUTOR_STUB=1`; deterministic and free) unless stated. In a scratch worktree: `pnpm e2e:server` 8/8 (M3 ×2, M4 ×3, and the three M5 scripts below), `pnpm e2e` 15/15 (editor, local mode), production build clean. Unit: server 415, core 195, web 459 (+1 skipped).
 
+**Re-run at `0bf2509` (after the Tailwind overhaul, _New chat_ and the hidden spend chip), 2026-11-03:** lint 0 errors (10 stale `biome-ignore` warnings), typecheck clean, production build clean with no key name or value in the output, `pnpm e2e:server` 8/8, `pnpm e2e` 15/15 (own port, local mode). Unit: math 20, server 415 (+1 skipped: it needs a real book on disk), web 460 (+1 skipped), core 194 of 195: `text.test.ts` "10,000-char single word" has a 1 s bound that a loaded machine and the GitHub runner exceed (it passes alone), so `pnpm test` can exit 1 there; `contention.test.ts` (M4) also trips on the runner. Two regressions found and fixed: the AI hover tag spawned under the pointer and its hit margin covered *Show in chat* (m5-jump), and the parity script hid the top bar with `visibility`, which the bar's `transition-all` animated (m3-gate).
+
 | Script | Spec | What it proves |
 |---|---|---|
 | Tutor end-to-end (the gate) | `e2e-server/m5-gate.spec.ts` | upload → index → *Study this* a chapter → ask → text, formula and shape on the board with `[p. N]` → the citation opens the Source tab on the right page → Stop mid-answer leaves a consistent board and a ready composer → *Undo this response* removes exactly that response → Arabic composer → reload restores the conversation and the verified citation; no console errors |
