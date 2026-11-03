@@ -46,7 +46,7 @@ export function createSyncClient(o: {
   onServerBatch?: ServerBatchHook
   WebSocketImpl?: new (url: string) => Socket
   backoff?: { minMs: number; maxMs: number }
-}): { start(): void; stop(): void } {
+}): { start(): void; stop(): void; idle(timeoutMs?: number): Promise<void> } {
   const { editor, boardId } = o
   const Impl =
     o.WebSocketImpl ??
@@ -64,6 +64,12 @@ export function createSyncClient(o: {
   let delay = minMs
   let timer: ReturnType<typeof setTimeout> | undefined
 
+  // callers waiting for every local edit to be acknowledged (or refused)
+  const idleWaiters = new Set<() => void>()
+  const maybeIdle = () => {
+    if (pending.length > 0) return
+    for (const fn of [...idleWaiters]) fn()
+  }
   const send = (m: unknown) => ws?.send(JSON.stringify(m))
   const notice = (text: string) => editor.onNotice?.(text)
 
@@ -170,6 +176,7 @@ export function createSyncClient(o: {
       `A change was not accepted: ${m.reason?.message ?? 'unknown reason'}`,
     )
     replay([...pending])
+    maybeIdle()
   }
 
   function onMessage(raw: string) {
@@ -185,6 +192,7 @@ export function createSyncClient(o: {
       const i = pending.findIndex((p) => p.clientSeq === m.clientSeq)
       if (i >= 0) pending.splice(i, 1)
       if (typeof m.seq === 'number') lastSeq = Math.max(lastSeq, m.seq)
+      maybeIdle()
     } else if (m.type === 'reject') onReject(m as never)
   }
 
@@ -220,7 +228,21 @@ export function createSyncClient(o: {
       o.onStatus('connecting')
       connect()
     },
+    /** Resolves when no local edit is waiting for the server, or after `timeoutMs` (default 4 s) whatever the state. */
+    idle(timeoutMs = 4000) {
+      if (pending.length === 0) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(t)
+          idleWaiters.delete(done)
+          resolve()
+        }
+        const t = setTimeout(done, timeoutMs)
+        idleWaiters.add(done)
+      })
+    },
     stop() {
+      for (const fn of [...idleWaiters]) fn()
       stopped = true
       clearTimeout(timer)
       const s = ws

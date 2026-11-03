@@ -2,6 +2,7 @@
 
 import type { ContextDescriptor } from '@whiteboard/core'
 import { useEffect, useRef, useState } from 'react'
+import { type BoardBridge, prepareContext } from './board-context'
 import {
   batchesOf,
   errorNotice,
@@ -11,11 +12,24 @@ import {
   undoNote,
 } from './chat-core'
 import {
+  type Chips,
+  defaultChips,
+  modeWords,
+  type SelMode,
+  selectionChip,
+} from './chips'
+import {
   type MessageActions,
   MessageBoundary,
   MessageView,
 } from './MessageView'
 import { type Mode, useTutorChat } from './useTutorChat'
+
+type Preview = {
+  text: string
+  pictures: { blobId: string; of: string }[]
+  tokens: number
+}
 
 const QUICK: {
   label: string
@@ -53,7 +67,17 @@ export function ChatTab(o: {
   boardId: string
   /** The WebSocket is live: sending needs the board to be reachable. */
   connected: boolean
-  hasSelection?: boolean
+  /** The board: selection, pictures, settling. Absent = a plain chat with no board context. */
+  bridge?: BoardBridge
+  /** Stores a picture or a pasted image on the server and returns its blob id. */
+  upload?: (png: Blob) => Promise<string>
+  /** "What the AI sees": the server's rendering of a context descriptor. */
+  previewContext?: (
+    context: Partial<ContextDescriptor>,
+    images: string[],
+  ) => Promise<Preview>
+  /** Bumped by the selection toolbar's Ask AI: focus the composer. */
+  focusSignal?: number
   getContext?: () => Partial<ContextDescriptor>
   actions?: MessageActions
   /** Undoes the board changes of a whole turn or of one batch; absent = no undo buttons. */
@@ -67,6 +91,22 @@ export function ChatTab(o: {
   const [text, setText] = useState('')
   const [mode, setMode] = useState<Mode>('ask')
   const [heard, setHeard] = useState('')
+  const [sel, setSel] = useState<string[]>([])
+  const [chips, setChips] = useState<Chips>(defaultChips())
+  const [files, setFiles] = useState<{ blobId: string; url: string }[]>([])
+  const [problem, setProblem] = useState<string | null>(null)
+  const [preparing, setPreparing] = useState(false)
+  const [peek, setPeek] = useState<
+    | { state: 'loading' }
+    | { state: 'error'; message: string }
+    | {
+        state: 'ready'
+        preview: Preview
+        thumbs: { of: string; url: string }[]
+      }
+    | null
+  >(null)
+  const hasSelection = sel.length > 0
   const [undoing, setUndoing] = useState<
     Record<string, { busy: boolean; note?: string }>
   >({})
@@ -89,7 +129,41 @@ export function ChatTab(o: {
       }))
     }
   }
+  // follow the board's selection; a new selection brings a removed chip back
+  const bridge = o.bridge
+  useEffect(() => {
+    if (!bridge) return
+    const read = () => setSel(bridge.selection())
+    read()
+    return bridge.subscribe(read)
+  }, [bridge])
+  const selKey = sel.join(',')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of selection resets the chip
+  useEffect(
+    () => setChips((c) => (c.selectionOff ? { ...c, selectionOff: false } : c)),
+    [selKey],
+  )
   const box = useRef<HTMLTextAreaElement>(null)
+  const { focusSignal } = o
+  useEffect(() => {
+    if (focusSignal) box.current?.focus()
+  }, [focusSignal])
+  const attach = async (list: File[]) => {
+    if (!o.upload) return
+    try {
+      for (const f of list) {
+        if (!f.type.startsWith('image/')) continue
+        const blobId = await o.upload(f)
+        setFiles((x) =>
+          [...x, { blobId, url: URL.createObjectURL(f) }].slice(0, 4),
+        )
+      }
+    } catch (e) {
+      setProblem(
+        e instanceof Error ? e.message : 'Could not attach the picture.',
+      )
+    }
+  }
   const end = useRef<HTMLDivElement>(null)
   const streaming = chat.status === 'streaming'
   const dailyOut =
@@ -130,16 +204,66 @@ export function ChatTab(o: {
   const submit = async () => {
     const body = text
     if (!body.trim() || streaming || !o.connected || dailyOut) return
-    setText('')
     const m = mode
+    setProblem(null)
+    let context: Partial<ContextDescriptor> = {}
+    if (o.bridge && o.upload) {
+      setPreparing(true)
+      try {
+        context = (await prepareContext(o.bridge, o.upload, chips, m)).context
+      } catch (e) {
+        setPreparing(false)
+        setProblem(
+          `The board could not be attached: ${e instanceof Error ? e.message : 'unknown error'}`,
+        )
+        return // keep the text; nothing was sent
+      }
+      setPreparing(false)
+    }
+    const images = files.map((f) => f.blobId)
+    setText('')
+    setFiles([])
     setMode('ask')
     box.current?.focus()
-    await chat.send(body, m)
+    await chat.send(body, m, { context, images })
     box.current?.focus()
   }
 
+  const openPeek = async () => {
+    if (!o.bridge || !o.upload || !o.previewContext) return
+    setPeek({ state: 'loading' })
+    try {
+      const p = await prepareContext(o.bridge, o.upload, chips, mode)
+      const preview = await o.previewContext(
+        p.context,
+        files.map((f) => f.blobId),
+      )
+      setPeek({
+        state: 'ready',
+        preview,
+        thumbs: [
+          ...p.thumbs,
+          ...files.map((f) => ({ of: 'attachment', url: f.url })),
+        ],
+      })
+    } catch (e) {
+      setPeek({
+        state: 'error',
+        message:
+          e instanceof Error ? e.message : 'Could not build the preview.',
+      })
+    }
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        position: 'relative',
+      }}
+    >
       <div
         role="log"
         aria-label="Conversation"
@@ -246,9 +370,9 @@ export function ChatTab(o: {
             <button
               key={q.label}
               type="button"
-              disabled={streaming || (q.needsSelection && !o.hasSelection)}
+              disabled={streaming || (q.needsSelection && !hasSelection)}
               title={
-                q.needsSelection && !o.hasSelection
+                q.needsSelection && !hasSelection
                   ? 'Select something on the board first'
                   : undefined
               }
@@ -262,8 +386,138 @@ export function ChatTab(o: {
             </button>
           ))}
         </div>
+        {bridge && (
+          <fieldset
+            aria-label="What goes with your message"
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              fontSize: 13,
+              border: 'none',
+              margin: 0,
+              padding: 0,
+            }}
+          >
+            {selectionChip(chips, sel.length) && (
+              <span
+                title="The AI may edit these"
+                style={{
+                  display: 'inline-flex',
+                  gap: 4,
+                  alignItems: 'center',
+                  border: '1px solid #c9d3ea',
+                  background: '#f1f5ff',
+                  borderRadius: 14,
+                  padding: '1px 8px',
+                }}
+              >
+                Selection ({sel.length}) ·
+                <select
+                  aria-label="How the selection is sent"
+                  value={chips.selection}
+                  onChange={(e) =>
+                    setChips((c) => ({
+                      ...c,
+                      selection: e.target.value as SelMode,
+                    }))
+                  }
+                >
+                  {(['structure', 'picture', 'both'] as const).map((m) => (
+                    <option key={m} value={m}>
+                      {modeWords(m)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  aria-label="Do not send the selection"
+                  onClick={() =>
+                    setChips((c) => ({ ...c, selectionOff: true }))
+                  }
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              aria-pressed={chips.viewport}
+              onClick={() => setChips((c) => ({ ...c, viewport: !c.viewport }))}
+            >
+              Viewport
+            </button>
+            <label>
+              Whole board{' '}
+              <select
+                value={chips.board}
+                onChange={(e) =>
+                  setChips((c) => ({
+                    ...c,
+                    board: e.target.value as Chips['board'],
+                  }))
+                }
+              >
+                <option value="off">off</option>
+                {(['structure', 'picture', 'both'] as const).map((m) => (
+                  <option key={m} value={m}>
+                    {modeWords(m)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {o.previewContext && (
+              <button type="button" onClick={() => void openPeek()}>
+                What the AI sees
+              </button>
+            )}
+          </fieldset>
+        )}
+        {files.length > 0 && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            {files.map((f) => (
+              <span key={f.blobId} style={{ position: 'relative' }}>
+                {/* biome-ignore lint/performance/noImgElement: a local object URL of the pasted image */}
+                <img
+                  src={f.url}
+                  alt="Attached"
+                  style={{ height: 40, borderRadius: 4 }}
+                />
+                <button
+                  type="button"
+                  aria-label="Remove the attached picture"
+                  onClick={() => setFiles((x) => x.filter((y) => y !== f))}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {problem && (
+          <p role="alert" style={{ margin: 0, fontSize: 13, color: '#a33' }}>
+            {problem}
+          </p>
+        )}
         <textarea
           ref={box}
+          onPaste={(e) => {
+            const imgs = [...e.clipboardData.files].filter((f) =>
+              f.type.startsWith('image/'),
+            )
+            if (imgs.length === 0) return
+            e.preventDefault()
+            void attach(imgs)
+          }}
+          onDrop={(e) => {
+            const imgs = [...e.dataTransfer.files].filter((f) =>
+              f.type.startsWith('image/'),
+            )
+            if (imgs.length === 0) return
+            e.preventDefault()
+            void attach(imgs)
+          }}
           dir="auto"
           rows={3}
           aria-label="Message the tutor"
@@ -290,13 +544,57 @@ export function ChatTab(o: {
         ) : (
           <button
             type="button"
-            disabled={!text.trim() || !o.connected || dailyOut}
+            disabled={!text.trim() || !o.connected || dailyOut || preparing}
             onClick={() => void submit()}
           >
-            Send
+            {preparing ? 'Attaching…' : 'Send'}
           </button>
         )}
       </div>
+      {peek && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="What the AI sees"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: '#fff',
+            padding: 10,
+            overflow: 'auto',
+            zIndex: 5,
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>What the AI sees</h3>
+          {peek.state === 'loading' && <p>Preparing…</p>}
+          {peek.state === 'error' && <p role="alert">{peek.message}</p>}
+          {peek.state === 'ready' && (
+            <>
+              <p style={{ fontSize: 13 }}>
+                About {peek.preview.tokens.toLocaleString('en-US')} tokens are
+                added to your message.
+              </p>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {peek.thumbs.map((t) => (
+                  // biome-ignore lint/performance/noImgElement: a local object URL of the picture that will be sent
+                  <img
+                    key={t.url + t.of}
+                    src={t.url}
+                    alt={`The ${t.of}, as the AI will see it`}
+                    style={{ height: 80, border: '1px solid #ccc' }}
+                  />
+                ))}
+              </div>
+              <pre dir="auto" style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>
+                {peek.preview.text}
+              </pre>
+            </>
+          )}
+          <button type="button" onClick={() => setPeek(null)}>
+            Close
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -46,6 +46,17 @@ vi.mock('./editor/editor', () => ({
     onToolChange() {
       return () => {}
     }
+    selection = new Set<string>()
+    scene = { els: new Map() }
+    onSelectionChange() {
+      return () => {}
+    }
+    onChange() {
+      return () => {}
+    }
+    onCameraChange() {
+      return () => {}
+    }
     dispose() {
       order.push('dispose')
     }

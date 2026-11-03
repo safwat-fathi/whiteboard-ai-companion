@@ -199,6 +199,13 @@ export function createLibraryApi(
         `/api/boards/${enc(boardId)}/batches/${enc(batchId)}/undo`,
         {},
       ),
+    /** "What the AI sees" for a context descriptor: the exact text, the pictures and a size estimate. */
+    contextPreview: (boardId: string, context: unknown, images: string[]) =>
+      post<{
+        text: string
+        pictures: { blobId: string; of: string }[]
+        tokens: number
+      }>(`/api/boards/${enc(boardId)}/context-preview`, { context, images }),
     getBoard: (id: string) => request<Board>('GET', `/api/boards/${enc(id)}`),
     /** `{}` clears the scope (no book). */
     setBoardScope: (id: string, scope: Scope | Record<string, never>) =>

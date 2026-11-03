@@ -544,3 +544,44 @@ describe('HANDOFF fixes found while wiring the dock', () => {
     expect(sock().ofType('ops')).toEqual([])
   })
 })
+
+describe('idle(): the chat waits for the board to be saved before it sends', () => {
+  it('resolves at once when nothing is pending, after the ack when something is, and after a timeout when the ack never comes', async () => {
+    const c = start()
+    live()
+    let done = 0
+    await c.idle().then(() => done++)
+    expect(done).toBe(1)
+
+    ed.commit(add('mine'))
+    const waiting = c.idle().then(() => done++)
+    await Promise.resolve()
+    expect(done).toBe(1)
+    const sent = sock().ofType('ops')[0]
+    sock().deliver({ type: 'ack', clientSeq: sent?.clientSeq, seq: 1 })
+    await waiting
+    expect(done).toBe(2)
+
+    ed.commit(add('lost'))
+    const stuck = c.idle(1000).then(() => done++)
+    vi.advanceTimersByTime(1000)
+    await stuck
+    expect(done).toBe(3)
+  })
+  it('a rejected edit also settles it', async () => {
+    const c = start()
+    live()
+    ed.commit(add('bad'))
+    let done = false
+    const waiting = c.idle().then(() => {
+      done = true
+    })
+    sock().deliver({
+      type: 'reject',
+      clientSeq: sock().ofType('ops')[0]?.clientSeq,
+      reason: { message: 'no' },
+    })
+    await waiting
+    expect(done).toBe(true)
+  })
+})

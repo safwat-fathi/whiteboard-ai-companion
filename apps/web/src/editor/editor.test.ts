@@ -175,6 +175,35 @@ describe('Editor', () => {
     expect(ed.selection.size).toBe(0)
   })
 
+  it('announces a selection change once per tick, whoever changed it, and not when nothing changed', async () => {
+    ed.commit(add('a'))
+    ed.commit(add('b'))
+    const seen: string[][] = []
+    const off = ed.onSelectionChange(() => seen.push([...ed.selection]))
+    ed.selection.add('a')
+    ed.selection.add('b') // two changes in one tick: one announcement
+    ed.selection.add('a') // no change
+    await Promise.resolve()
+    expect(seen).toEqual([['a', 'b']])
+    ed.selection.delete('a')
+    await Promise.resolve()
+    ed.selection.clear()
+    ed.selection.clear() // already empty
+    await Promise.resolve()
+    expect(seen).toEqual([['a', 'b'], ['b'], []])
+    // an undo that removes a selected element announces too
+    ed.selection.add('b')
+    await Promise.resolve()
+    seen.length = 0
+    ed.undoOnce()
+    await Promise.resolve()
+    expect(seen).toEqual([[]])
+    off()
+    ed.selection.add('a')
+    await Promise.resolve()
+    expect(seen).toHaveLength(1)
+  })
+
   it('invalidate() x10 in one tick schedules one frame', () => {
     for (const f of frames.splice(0)) f(0) // flush the constructor's frame
     for (let i = 0; i < 10; i++) ed.invalidate()

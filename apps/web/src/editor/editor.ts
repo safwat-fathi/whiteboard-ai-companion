@@ -57,11 +57,45 @@ const canvas = (z: number) => {
   return c
 }
 
+/** A Set of ids that says when it changed (tools mutate the selection directly, so the Set itself must announce it). */
+class SelectionSet extends Set<Id> {
+  constructor(private readonly changed: () => void) {
+    super()
+  }
+  add(id: Id): this {
+    const had = this.has(id)
+    super.add(id)
+    if (!had) this.changed()
+    return this
+  }
+  delete(id: Id): boolean {
+    const had = super.delete(id)
+    if (had) this.changed()
+    return had
+  }
+  clear(): void {
+    const had = this.size > 0
+    super.clear()
+    if (had) this.changed()
+  }
+}
+
 export class Editor {
   scene: Scene
   camera: Camera = { x: 0, y: 0, zoom: 1 }
   undo: UndoManager
-  selection = new Set<Id>()
+  /** Mutate it freely; `onSelectionChange` fires once per tick after any change. */
+  readonly selection: Set<Id> = new SelectionSet(() => this.selectionChanged())
+  private selectionListeners = new Set<() => void>()
+  private selectionPending = false
+  private selectionChanged() {
+    if (this.selectionPending) return
+    this.selectionPending = true
+    queueMicrotask(() => {
+      this.selectionPending = false
+      for (const fn of this.selectionListeners) fn()
+    })
+  }
   readonly tools: Record<string, Tool>
   tool: Tool
   readOnly = false
@@ -492,7 +526,8 @@ export class Editor {
       label: els.length === 1 ? 'Add image' : `Add ${els.length} images`,
       ops: els.map((el) => ({ op: 'add' as const, el })),
     })
-    this.selection = new Set(added)
+    this.selection.clear()
+    for (const id of added) this.selection.add(id)
     this.invalidateOverlay()
     return { added, failed }
   }
@@ -551,6 +586,12 @@ export class Editor {
   onCameraChange(fn: () => void): () => void {
     this.camListeners.add(fn)
     return () => this.camListeners.delete(fn)
+  }
+
+  /** Fires (once per tick) when the set of selected elements changes, however it changed. */
+  onSelectionChange(fn: () => void): () => void {
+    this.selectionListeners.add(fn)
+    return () => this.selectionListeners.delete(fn)
   }
 
   /** Fires when the active tool changes, whoever changed it (a shortcut, a tool finishing, the toolbar). */

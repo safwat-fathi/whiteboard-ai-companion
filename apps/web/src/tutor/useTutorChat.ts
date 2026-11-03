@@ -74,7 +74,10 @@ export function useTutorChat(o: {
         prepareSendMessagesRequest: ({ messages: sent, body }) => ({
           body: {
             boardId,
-            message: { text: textOf(sent.at(-1) as TutorMessage) },
+            message: {
+              text: textOf(sent.at(-1) as TutorMessage),
+              images: (body as { images?: string[] } | undefined)?.images ?? [],
+            },
             context: (body as { context?: unknown } | undefined)?.context ?? {},
           },
         }),
@@ -121,7 +124,12 @@ export function useTutorChat(o: {
   }, [next, page])
 
   const send = useCallback(
-    async (text: string, mode: Mode = 'ask') => {
+    async (
+      text: string,
+      mode: Mode = 'ask',
+      /** What the student attached to this message: the context descriptor and pasted images (blob ids). */
+      extra: { context?: Partial<ContextDescriptor>; images?: string[] } = {},
+    ) => {
       const body = text.trim()
       if (!body || abort.current) return
       const ac = new AbortController()
@@ -146,7 +154,10 @@ export function useTutorChat(o: {
           abortSignal: ac.signal,
           trigger: 'submit-message',
           messageId: undefined,
-          body: { context: { ...getContext.current?.(), mode } },
+          body: {
+            context: { ...getContext.current?.(), ...extra.context, mode },
+            images: extra.images ?? [],
+          },
         })
       } catch (e) {
         // refused before any byte (turn_busy, budget, no key ...): the server stored nothing, so neither do we

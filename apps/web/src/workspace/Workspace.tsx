@@ -22,8 +22,10 @@ import { browserPlatform } from '../editor/platform'
 import { createSyncClient } from '../editor/sync'
 import { createLibraryApi } from '../library/api'
 import { boardBookScope, type Scope } from '../library/scope'
+import { createEditorBridge } from '../tutor/board-context'
 import { ChatTab } from '../tutor/ChatTab'
 import { ScopeChip } from '../tutor/ScopeChip'
+import { SelectionToolbar } from '../tutor/SelectionToolbar'
 import { type SourceRef, SourceTab } from '../tutor/SourceTab'
 import { Dock, TopBar, useDockLayout } from './Dock'
 
@@ -61,6 +63,8 @@ export function Workspace({ boardId }: { boardId?: string }) {
   const [title, setTitle] = useState('Board')
   const [scope, setScope] = useState<Scope | null>(null)
   const [source, setSource] = useState<SourceRef | null>(null)
+  const [askSignal, setAskSignal] = useState(0)
+  const syncRef = useRef<ReturnType<typeof createSyncClient> | null>(null)
   const api = useMemo(
     () => (apiBase === undefined ? null : createLibraryApi(apiBase)),
     [apiBase],
@@ -81,6 +85,15 @@ export function Workspace({ boardId }: { boardId?: string }) {
       on = false
     }
   }, [api, boardId])
+  const upload = useMemo(() => {
+    if (apiBase === undefined) return undefined
+    const store = createHttpBlobStore(apiBase)
+    return async (png: Blob) =>
+      store.put(
+        new Uint8Array(await png.arrayBuffer()),
+        png.type || 'image/png',
+      )
+  }, [apiBase])
   // A verified citation opens the page it names in the Source tab.
   const openSource = (c: SourceRef) => {
     setSource(c)
@@ -92,6 +105,17 @@ export function Workspace({ boardId }: { boardId?: string }) {
     editor: Editor
     readOnly: boolean
   } | null>(null)
+
+  const bridge = useMemo(
+    () =>
+      board
+        ? createEditorBridge(
+            board.editor,
+            () => syncRef.current?.idle() ?? Promise.resolve(),
+          )
+        : undefined,
+    [board],
+  )
 
   useEffect(() => {
     const note = (key: string, n: Omit<Note, 'key'> | null) =>
@@ -161,6 +185,7 @@ export function Workspace({ boardId }: { boardId?: string }) {
             }
           },
         })
+        syncRef.current = syncClient
         syncClient.start()
       })()
 
@@ -302,6 +327,16 @@ export function Workspace({ boardId }: { boardId?: string }) {
         editor={board?.editor ?? null}
         readOnly={board?.readOnly ?? true}
       />
+      {serverMode && board && (
+        <SelectionToolbar
+          editor={board.editor}
+          onAsk={() => {
+            dock.setCollapsed(false)
+            dock.setTab('chat')
+            setAskSignal((n) => n + 1)
+          }}
+        />
+      )}
       {serverMode && (
         <TopBar title={title}>
           {api && boardId !== undefined && (
@@ -325,6 +360,15 @@ export function Workspace({ boardId }: { boardId?: string }) {
                   boardId={boardId}
                   connected={live}
                   actions={{ onCite: openSource }}
+                  bridge={bridge}
+                  upload={upload}
+                  focusSignal={askSignal}
+                  previewContext={
+                    api
+                      ? (context, images) =>
+                          api.contextPreview(boardId, context, images)
+                      : undefined
+                  }
                   undo={
                     api
                       ? {

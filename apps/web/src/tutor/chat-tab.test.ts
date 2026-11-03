@@ -482,4 +482,203 @@ describe('ChatTab', () => {
       expect(btn('Undo this response').disabled).toBe(false)
     })
   })
+
+  describe('board context', () => {
+    const rect = { x: 0, y: 0, w: 10, h: 10 }
+    function fakeBridge(initial: string[]) {
+      let selection = initial
+      const listeners = new Set<() => void>()
+      const pictured: string[] = []
+      const bridge = {
+        selection: () => selection,
+        subscribe: (fn: () => void) => {
+          listeners.add(fn)
+          return () => listeners.delete(fn)
+        },
+        viewport: () => ({ x: 0, y: 0, w: 800, h: 600, zoom: 1 }),
+        picture: async (of: string) => {
+          pictured.push(of)
+          return {
+            png: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }),
+            rect,
+          }
+        },
+        settle: async () => {},
+      }
+      return {
+        bridge,
+        pictured,
+        select: async (ids: string[]) => {
+          selection = ids
+          await act(async () => {
+            for (const fn of listeners) fn()
+          })
+        },
+      }
+    }
+    const uploads: Blob[] = []
+    const upload = async (b: Blob) => {
+      uploads.push(b)
+      return `blob-${uploads.length}`
+    }
+    const ok = () => sse(turn(...text('x', 'ok')))
+    const chipRow = () => q('[aria-label="What goes with your message"]')
+
+    it('sends the selection as data and a picture, and the ids that may be edited', async () => {
+      uploads.length = 0
+      URL.createObjectURL = () => 'blob:local'
+      const b = fakeBridge(['a', 'b'])
+      const w = world(ok)
+      await mount(w, { bridge: b.bridge, upload })
+      expect(chipRow().textContent).toContain('Selection (2)')
+      expect(q('[title="The AI may edit these"]')).not.toBeNull()
+      await type('make these red')
+      await press('Enter')
+      await settle()
+      expect(uploads).toHaveLength(1)
+      expect(w.posted[0]?.body.context).toMatchObject({
+        selection: ['a', 'b'],
+        attach: { selection: 'both', viewport: 'none', board: 'none' },
+        pictures: [{ blobId: 'blob-1', of: 'selection', rect }],
+        viewport: { w: 800 },
+      })
+    })
+
+    it('structure only sends no picture; removing the chip sends no selection at all; a new selection brings it back', async () => {
+      uploads.length = 0
+      URL.createObjectURL = () => 'blob:local'
+      const b = fakeBridge(['a'])
+      const w = world(ok)
+      await mount(w, { bridge: b.bridge, upload })
+      const mode = q<HTMLSelectElement>(
+        'select[aria-label="How the selection is sent"]',
+      )
+      await act(async () => {
+        mode.value = 'structure'
+        mode.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await type('one')
+      await press('Enter')
+      await settle()
+      expect(w.posted[0]?.body.context).toMatchObject({
+        selection: ['a'],
+        attach: { selection: 'structure' },
+        pictures: [],
+      })
+      expect(uploads).toHaveLength(0)
+
+      await act(async () =>
+        (q('[aria-label="Do not send the selection"]') as HTMLElement).click(),
+      )
+      expect(chipRow().textContent).not.toContain('Selection (')
+      await type('two')
+      await press('Enter')
+      await settle()
+      expect(w.posted[1]?.body.context).toMatchObject({
+        selection: [],
+        attach: { selection: 'none' },
+      })
+
+      await b.select(['a', 'c'])
+      expect(chipRow().textContent).toContain('Selection (2)')
+    })
+
+    it('the viewport and whole-board chips add their pictures; Check my work needs a selection', async () => {
+      uploads.length = 0
+      URL.createObjectURL = () => 'blob:local'
+      const b = fakeBridge([])
+      const w = world(ok)
+      await mount(w, { bridge: b.bridge, upload })
+      expect(btn('Check my work').disabled).toBe(true)
+      await b.select(['a'])
+      expect(btn('Check my work').disabled).toBe(false)
+      await b.select([])
+      await act(async () => btn('Viewport').click())
+      const board = [...host.querySelectorAll('label')]
+        .find((l) => l.textContent?.includes('Whole board'))
+        ?.querySelector('select') as HTMLSelectElement
+      await act(async () => {
+        board.value = 'picture'
+        board.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await type('what do you see')
+      await press('Enter')
+      await settle()
+      expect(b.pictured).toEqual(['viewport', 'board'])
+      expect(w.posted[0]?.body.context).toMatchObject({
+        attach: { selection: 'none', viewport: 'picture', board: 'picture' },
+      })
+    })
+
+    it('"What the AI sees" shows the digest text, the pictures and the size, and sends nothing', async () => {
+      uploads.length = 0
+      URL.createObjectURL = () => 'blob:local'
+      const b = fakeBridge(['a'])
+      const w = world(ok)
+      const previewContext = vi.fn(async (_c: unknown, _i: string[]) => ({
+        text: '<board_state>BOARD "B"</board_state>',
+        pictures: [{ blobId: 'blob-1', of: 'selection' }],
+        tokens: 1700,
+      }))
+      await mount(w, { bridge: b.bridge, upload, previewContext })
+      await act(async () => btn('What the AI sees').click())
+      await settle()
+      const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+      expect(dialog.textContent).toContain('BOARD "B"')
+      expect(dialog.textContent).toContain('1,700 tokens')
+      expect(dialog.querySelector('img')).not.toBeNull()
+      expect(previewContext.mock.calls[0]?.[0]).toMatchObject({
+        selection: ['a'],
+        attach: { selection: 'both' },
+      })
+      expect(w.posted).toHaveLength(0)
+    })
+
+    it('a picture that cannot be prepared keeps the text and says why; nothing is sent', async () => {
+      const b = fakeBridge(['a'])
+      const w = world(ok)
+      await mount(w, {
+        bridge: b.bridge,
+        upload: async () => {
+          throw new Error('upload failed')
+        },
+      })
+      await type('hello')
+      await press('Enter')
+      await settle()
+      expect(q('[role="alert"]').textContent).toMatch(
+        /could not be attached: upload failed/,
+      )
+      expect(box().value).toBe('hello')
+      expect(w.posted).toHaveLength(0)
+    })
+
+    it('a pasted image is uploaded and goes along with the message', async () => {
+      uploads.length = 0
+      URL.createObjectURL = () => 'blob:local'
+      const w = world(ok)
+      await mount(w, { upload })
+      const file = new File([new Uint8Array([1, 2, 3])], 'p.png', {
+        type: 'image/png',
+      })
+      await act(async () => {
+        const e = new Event('paste', {
+          bubbles: true,
+          cancelable: true,
+        }) as Event & { clipboardData: unknown }
+        e.clipboardData = { files: [file] }
+        box().dispatchEvent(e)
+      })
+      await settle()
+      expect(host.querySelector('img[alt="Attached"]')).not.toBeNull()
+      await type('what is this')
+      await press('Enter')
+      await settle()
+      expect(w.posted[0]?.body.message).toEqual({
+        text: 'what is this',
+        images: ['blob-1'],
+      })
+      expect(host.querySelector('img[alt="Attached"]')).toBeNull() // used up
+    })
+  })
 })
