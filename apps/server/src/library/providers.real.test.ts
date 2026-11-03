@@ -185,6 +185,23 @@ describe('transcribePage', () => {
       make('http://unused', 'http://unused', {}).transcribePage(png),
     ).rejects.toThrow(/META_API_KEY/)
   })
+
+  it('says which model the Meta Model API does not know and which setting to change on a 404', async () => {
+    const meta = await fake(() => ({
+      status: 404,
+      json: { error: { code: 'model_not_found' } },
+    }))
+    const p = make(meta.url, 'http://unused', undefined, {
+      VISION_MODEL: 'Llama-4-Maverick-17B-128E-Instruct-FP8',
+    })
+    await expect(p.transcribePage(png)).rejects.toMatchObject({
+      code: 'upstream_error',
+      message: expect.stringMatching(/Llama-4-Maverick.*VISION_MODEL/s),
+    })
+    await expect(make(meta.url, 'http://unused').complete('x')).rejects.toThrow(
+      /muse-spark-1\.3.*CHEAP_MODEL/s,
+    )
+  })
 })
 
 describe('ocrPages (R3)', () => {

@@ -188,23 +188,35 @@ export function createProviders(o: {
       )
     }
   }
-  const metaChat = (
+  /** One Meta chat completion. A 404 there is almost always a model name the API does not serve: say which setting holds it. */
+  const metaChat = async (
     key: string,
     model: string,
+    setting: 'VISION_MODEL' | 'CHEAP_MODEL',
     maxTokens: number,
     content: unknown,
-  ) =>
-    post(config.metaBaseUrl, '/chat/completions', key, {
-      model,
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content }],
-    }).then((json) => {
-      const choice = json?.choices?.[0]
-      return {
-        text: String(choice?.message?.content ?? ''),
-        cutOff: choice?.finish_reason === 'length',
-      }
-    })
+  ) => {
+    let json: ProviderJson
+    try {
+      json = await post(config.metaBaseUrl, '/chat/completions', key, {
+        model,
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content }],
+      })
+    } catch (e) {
+      if (e instanceof ApiError && e.message.includes('HTTP 404'))
+        throw new ApiError(
+          'upstream_error',
+          `the Meta Model API has no model "${model}": check ${setting} (api.meta.ai serves muse-spark-1.3 and muse-wonder-1.0)`,
+        )
+      throw e
+    }
+    const choice = json?.choices?.[0]
+    return {
+      text: String(choice?.message?.content ?? ''),
+      cutOff: choice?.finish_reason === 'length',
+    }
+  }
 
   return {
     async embed(texts) {
@@ -252,9 +264,21 @@ export function createProviders(o: {
           },
         },
       ]
-      let r = await metaChat(key, config.visionModel, R4_MAX_TOKENS, content)
+      let r = await metaChat(
+        key,
+        config.visionModel,
+        'VISION_MODEL',
+        R4_MAX_TOKENS,
+        content,
+      )
       if (r.cutOff)
-        r = await metaChat(key, config.visionModel, R4_MAX_TOKENS * 2, content)
+        r = await metaChat(
+          key,
+          config.visionModel,
+          'VISION_MODEL',
+          R4_MAX_TOKENS * 2,
+          content,
+        )
       return { text: cleanText(r.text).trim(), truncated: r.cutOff }
     },
 
@@ -309,6 +333,7 @@ export function createProviders(o: {
       const r = await metaChat(
         key,
         config.cheapModel,
+        'CHEAP_MODEL',
         opts?.maxTokens ?? 6000,
         prompt,
       )
