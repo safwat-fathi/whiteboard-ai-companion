@@ -223,6 +223,7 @@ test('M6 ink: draw, undo, redo, reload, highlight over text, erase, reload, seco
   await expect.poll(() => elements(page)).toEqual([pen, text])
 
   // 7. A second tab in the same browser opens read-only: it cannot draw, and the first tab's board stays as it was.
+  await expect(btn(page, 'Pen')).toBeEnabled() // this tab holds the board again after the reload
   const second = await context.newPage()
   await second.goto('/')
   await expect(

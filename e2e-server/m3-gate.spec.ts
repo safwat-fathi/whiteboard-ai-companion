@@ -73,6 +73,33 @@ async function stroke(page: Page, pts: [number, number][]) {
   await page.mouse.up()
 }
 
+type Box = { x: number; y: number; w: number; h: number }
+
+/** The pixels of a PNG inside `r` (clamped to the picture), as an RGBA array and as a PNG, so two crops can be compared. */
+function crop(png: Buffer, r: Box) {
+  const img = decodePng(png)
+  const x0 = Math.max(0, r.x)
+  const y0 = Math.max(0, r.y)
+  const w = Math.min(img.width, r.x + r.w) - x0
+  const h = Math.min(img.height, r.y + r.h) - y0
+  const rgba = new Uint8Array(w * h * 4)
+  for (let y = 0; y < h; y++) {
+    const from = ((y0 + y) * img.width + x0) * 4
+    rgba.set(img.data.subarray(from, from + w * 4), y * w * 4)
+  }
+  return { png: encodePng(w, h, rgba), rgba }
+}
+
+const countPixels = (
+  rgba: Uint8Array,
+  is: (r: number, g: number, b: number) => boolean,
+) => {
+  let n = 0
+  for (let i = 0; i < rgba.length; i += 4)
+    if (is(rgba[i] ?? 0, rgba[i + 1] ?? 0, rgba[i + 2] ?? 0)) n++
+  return n
+}
+
 async function typeText(page: Page, at: [number, number], text: string) {
   await page.keyboard.press('t')
   await page.mouse.click(...at)
@@ -438,6 +465,18 @@ test.describe
         [hello.x + hello.w + 15, mid],
       ])
       await pageA.keyboard.press('v')
+      // the strokes were drawn at screen coordinates: check the committed boxes landed where meant (the highlight spans the
+      // word's width and sits within its height), or the picture would compare ink that marks nothing
+      const strokes = (await elements(pageA)).filter(
+        (e) => e.type === 'freehand',
+      )
+      const wave = strokes.find((e) => !e.data.highlighter) as El
+      const hl = strokes.find((e) => e.data.highlighter) as El
+      expect(strokes).toHaveLength(2)
+      expect(hl.x).toBeLessThan(hello.x)
+      expect(hl.x + hl.w).toBeGreaterThan(hello.x + hello.w)
+      expect(hl.y).toBeLessThan(hello.y + hello.h)
+      expect(hl.y + hl.h).toBeGreaterThan(hello.y)
 
       await expect
         .poll(
@@ -532,6 +571,88 @@ test.describe
       }
 
       expect(diffResult.ratio).toBeLessThanOrEqual(0.015)
+
+      // The ink is under 1% of that picture, so a server that drew none would still pass it. Compare tight crops of the same
+      // pixels of both pictures (same scale, same origin) where the ink is a large share: the wave, and the highlight's two
+      // tails (the band beyond the word, no glyphs). Each crop must also be one a blank picture fails, and the server's copy
+      // must hold the ink's colour. The band over "Hello" is not compared by ratio (glyph edges differ between Chrome and
+      // @napi-rs/canvas by 3% even without ink, as in the Arabic word); instead the glyph cores must stay dark under it,
+      // which multiply does and plain alpha (a red channel of about 131) does not.
+      const zoom = targetWidth / boardInfo.rect.w
+      const PAD = 12 // world units: more than the widest ink reach (the highlighter's 9) plus anti-aliasing
+      const px = (x0: number, y0: number, x1: number, y1: number): Box => {
+        const x = Math.floor((x0 - boardInfo.rect.x) * zoom)
+        const y = Math.floor((y0 - boardInfo.rect.y) * zoom)
+        return {
+          x,
+          y,
+          w: Math.ceil((x1 - boardInfo.rect.x) * zoom) - x,
+          h: Math.ceil((y1 - boardInfo.rect.y) * zoom) - y,
+        }
+      }
+      const top = hl.y - PAD
+      const bottom = hl.y + hl.h + PAD
+      const isDark = (r: number, g: number, b: number) =>
+        r < 60 && g < 60 && b < 60
+      const isYellow = (r: number, g: number, b: number) =>
+        r > 230 && g > 215 && g < 250 && b > 100 && b < 190 // #ffd400 at 0.45 on white is (255, 235, 140)
+      const regions: [
+        string,
+        Box,
+        (r: number, g: number, b: number) => boolean,
+        number,
+      ][] = [
+        [
+          'wave',
+          px(
+            wave.x - PAD,
+            wave.y - PAD,
+            wave.x + wave.w + PAD,
+            wave.y + wave.h + PAD,
+          ),
+          isDark,
+          400,
+        ],
+        [
+          'highlight left tail',
+          px(hl.x - PAD, top, hello.x, bottom),
+          isYellow,
+          150,
+        ],
+        [
+          'highlight right tail',
+          px(hello.x + hello.w, top, hl.x + hl.w + PAD, bottom),
+          isYellow,
+          150,
+        ],
+      ]
+      for (const [name, r, isInk, least] of regions) {
+        const mine = crop(browserScreenshot, r)
+        const theirs = crop(serverExport, r)
+        const sub = comparePngBuffers(mine.png, theirs.png, 24)
+        const blank = comparePngBuffers(
+          mine.png,
+          encodePng(sub.w, sub.h, new Uint8Array(sub.w * sub.h * 4).fill(255)),
+          24,
+        ) // what a server that drew nothing would score
+        const served = countPixels(theirs.rgba, isInk)
+        test.info().annotations.push({
+          type: `parity ${name}`,
+          description: `${(sub.ratio * 100).toFixed(3)}% of ${sub.total} px differ (a blank picture: ${(blank.ratio * 100).toFixed(1)}%), ${served} ink-coloured px in the server's crop`,
+        })
+        expect(sub.ratio, name).toBeLessThanOrEqual(0.015)
+        expect(blank.ratio, name).toBeGreaterThan(0.015) // a server that drew no ink would fail this crop
+        expect(served, name).toBeGreaterThan(least)
+      }
+      const under = px(hello.x, top, hello.x + hello.w, bottom)
+      const darkMine = countPixels(crop(browserScreenshot, under).rgba, isDark)
+      const darkServer = countPixels(crop(serverExport, under).rgba, isDark)
+      test.info().annotations.push({
+        type: 'parity multiply',
+        description: `dark glyph-core px under the highlight: ${darkMine} in the browser, ${darkServer} on the server`,
+      })
+      expect(darkMine).toBeGreaterThan(100) // the glyphs are there to be darkened
+      expect(darkServer).toBeGreaterThan(0.6 * darkMine)
 
       // 5. No console errors on any page
       expect(errors).toEqual([])
