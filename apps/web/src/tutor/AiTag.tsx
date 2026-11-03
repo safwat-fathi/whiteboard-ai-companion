@@ -50,34 +50,19 @@ export function AiTag({
       aria-label="Made by the AI"
       onPointerEnter={() => clearTimeout(hide.current)}
       onPointerLeave={() => setTag(null)}
+      className="fixed z-20 flex items-center gap-2 rounded-xl border border-blue-500/80 bg-blue-600 px-2.5 py-1 text-xs text-white shadow-md shadow-blue-900/20 backdrop-blur-md"
       style={{
-        position: 'fixed',
         left: tag.x + 12,
         top: tag.y + 12,
-        zIndex: 12,
-        background: '#1a56db',
-        color: '#fff',
-        borderRadius: 8,
-        padding: '3px 8px',
-        font: '12px system-ui, sans-serif',
-        display: 'flex',
-        gap: 8,
-        alignItems: 'center',
       }}
     >
-      <span dir="auto">AI{label ? ` · ${label}` : ''}</span>
+      <span dir="auto" className="font-medium">
+        AI{label ? ` · ${label}` : ''}
+      </span>
       <button
         type="button"
         onClick={() => onShow(tag.turnId)}
-        style={{
-          font: 'inherit',
-          background: '#fff',
-          color: '#1a56db',
-          border: 'none',
-          borderRadius: 6,
-          padding: '1px 6px',
-          cursor: 'pointer',
-        }}
+        className="rounded-lg bg-white/95 px-2 py-0.5 text-xs font-semibold text-blue-700 shadow-xs transition-colors hover:bg-white active:scale-95 cursor-pointer"
       >
         Show in chat
       </button>

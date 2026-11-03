@@ -19,6 +19,7 @@ import {
   r3Cost,
   statusText,
 } from '../../src/library/status'
+import { UploadIcon } from '../../src/ui/icons'
 import { Shell, ui } from './ui'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, '')
@@ -100,6 +101,7 @@ function Library({ api }: { api: LibraryApi }) {
       )}
       <label
         style={{ ...ui.drop, ...(over ? ui.dropOver : {}) }}
+        className="group transition-all"
         onDragOver={(e) => {
           e.preventDefault()
           setOver(true)
@@ -112,10 +114,15 @@ function Library({ api }: { api: LibraryApi }) {
           if (f) void addFile(f)
         }}
       >
-        <style>
-          {'label:focus-within{outline:2px solid #1a56db;outline-offset:2px}'}
-        </style>
-        {busy ?? 'Drop a PDF here, or click to choose one'}
+        <div className="flex flex-col items-center gap-2 pointer-events-none">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 shadow-2xs group-hover:scale-105 transition-transform">
+            <UploadIcon size={24} />
+          </div>
+          <span className="font-semibold text-slate-800 text-sm">
+            {busy ?? 'Drop a PDF here, or click to choose one'}
+          </span>
+          <span className="text-xs text-slate-400">PDFs up to 200 MB</span>
+        </div>
         <input
           type="file"
           accept="application/pdf,.pdf"
@@ -132,16 +139,26 @@ function Library({ api }: { api: LibraryApi }) {
       <ul style={ui.list} aria-label="Books">
         {books.map((b) => (
           <li key={b.id} style={ui.card}>
-            <div>
-              <strong>{b.title}</strong>{' '}
-              <span style={ui.muted}>{b.pages ?? '?'} pages</span>
+            <div className="flex items-center justify-between">
+              <strong className="text-base text-slate-900 font-semibold">
+                {b.title}
+              </strong>{' '}
+              <span
+                style={ui.muted}
+                className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium"
+              >
+                {b.pages ?? '?'} pages
+              </span>
             </div>
-            <div>{statusText(b)}</div>
+            <div className="text-xs text-slate-600 font-medium">
+              {statusText(b)}
+            </div>
             {isInProgress(b.status) && (
               <progress
                 max={1}
                 value={b.progress}
                 aria-label={`${b.title} progress`}
+                className="w-full h-2 rounded-full overflow-hidden accent-blue-600"
               />
             )}
             {methodSummary(b.methods) && (
@@ -160,7 +177,11 @@ function Library({ api }: { api: LibraryApi }) {
             ))}
             <div style={ui.actions}>
               {b.status === 'uploaded' && (
-                <button type="button" onClick={() => setIndexing(b)}>
+                <button
+                  type="button"
+                  onClick={() => setIndexing(b)}
+                  className="rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors cursor-pointer"
+                >
                   Index…
                 </button>
               )}
@@ -169,12 +190,18 @@ function Library({ api }: { api: LibraryApi }) {
                 <button
                   type="button"
                   onClick={() => void act(() => api.retry(b.id))}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   Retry
                 </button>
               )}
               {b.status === 'ready' && (
-                <Link href={`/library/${b.id}`}>Open</Link>
+                <Link
+                  href={`/library/${b.id}`}
+                  className="rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors inline-block"
+                >
+                  Open
+                </Link>
               )}
               {!isInProgress(b.status) && (
                 <button
@@ -187,6 +214,7 @@ function Library({ api }: { api: LibraryApi }) {
                     )
                       void act(() => api.remove(b.id))
                   }}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-2xs hover:text-red-600 hover:border-red-200 transition-colors cursor-pointer ml-auto"
                 >
                   Delete
                 </button>

@@ -3,6 +3,7 @@
 import { bounds } from '@whiteboard/core'
 import { useEffect, useState } from 'react'
 import type { Editor } from '../editor/editor'
+import { SparklesIcon } from '../ui/icons'
 
 type Pos = { left: number; top: number }
 
@@ -66,16 +67,10 @@ export function SelectionToolbar({
     <div
       role="toolbar"
       aria-label="Selection"
+      className="fixed z-20 flex items-center rounded-full border border-slate-200/90 bg-white/95 p-1 shadow-lg shadow-slate-900/10 backdrop-blur-md transition-all duration-150"
       style={{
-        position: 'fixed',
         left: pos.left,
         top: pos.top,
-        zIndex: 12,
-        background: '#fff',
-        border: '1px solid #ccc',
-        borderRadius: 8,
-        padding: 3,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
       }}
     >
       <button
@@ -83,9 +78,10 @@ export function SelectionToolbar({
         // keep the selection and focus on the board while pressing it
         onMouseDown={(e) => e.preventDefault()}
         onClick={onAsk}
-        style={{ font: 'inherit', cursor: 'pointer' }}
+        className="flex items-center gap-1.5 rounded-full bg-blue-50/90 px-3 py-1 text-xs font-semibold text-blue-700 transition-all duration-150 hover:bg-blue-600 hover:text-white active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1"
       >
-        Ask AI
+        <SparklesIcon size={14} className="text-current" />
+        <span>Ask AI</span>
       </button>
     </div>
   )

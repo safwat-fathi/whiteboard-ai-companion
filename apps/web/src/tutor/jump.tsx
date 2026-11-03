@@ -208,26 +208,14 @@ export function useJump(
   }
 }
 
-const chip: React.CSSProperties = {
-  position: 'fixed',
-  zIndex: 11,
-  font: '13px system-ui, sans-serif',
-  background: '#fff',
-  border: '1px solid #1a56db',
-  color: '#1a56db',
-  borderRadius: 14,
-  padding: '2px 10px',
-  cursor: 'pointer',
-}
-
 export function BackChip({ onBack }: { onBack: () => void }) {
   return (
     <button
       type="button"
       onClick={onBack}
-      style={{ ...chip, left: 12, top: 56 }}
+      className="fixed left-3 top-14 z-10 flex items-center gap-1.5 rounded-full border border-blue-500/80 bg-white/95 px-3 py-1 text-xs font-semibold text-blue-600 shadow-md backdrop-blur-md transition-all duration-150 hover:bg-blue-600 hover:text-white active:scale-95 cursor-pointer"
     >
-      ↩ Back
+      <span>↩ Back</span>
     </button>
   )
 }
@@ -245,22 +233,20 @@ export function EdgeIndicator({
       type="button"
       onClick={onJump}
       aria-label={`The AI is working off screen (${at.n} new). Jump there`}
+      className="fixed z-10 flex items-center gap-1.5 rounded-full border border-blue-500/80 bg-white/95 px-3 py-1 text-xs font-semibold text-blue-600 shadow-lg backdrop-blur-md transition-all duration-150 hover:bg-blue-600 hover:text-white active:scale-95 cursor-pointer animate-pulse"
       style={{
-        ...chip,
         left: at.host.left + at.x - 40,
         top: at.host.top + at.y - 14,
-        display: 'flex',
-        gap: 6,
-        alignItems: 'center',
       }}
     >
       <span
         aria-hidden="true"
-        style={{ display: 'inline-block', transform: `rotate(${at.angle}rad)` }}
+        className="inline-block text-blue-600 text-xs"
+        style={{ transform: `rotate(${at.angle}rad)` }}
       >
         ➤
       </span>
-      AI · {at.n} new
+      <span>AI · {at.n} new</span>
     </button>
   )
 }
@@ -280,21 +266,17 @@ export function GhostFrame({
   return (
     <div
       aria-hidden="true"
+      className="fixed z-10 pointer-events-none rounded-lg border-2 border-dashed border-slate-400 font-sans text-xs text-slate-500"
       style={{
-        position: 'fixed',
-        zIndex: 11,
-        pointerEvents: 'none',
         left: a.x,
         top: a.y,
         width: b.x - a.x,
         height: b.y - a.y,
-        border: '2px dashed #888',
-        borderRadius: 4,
-        color: '#666',
-        font: '12px system-ui, sans-serif',
       }}
     >
-      <span style={{ background: '#fff', padding: '0 4px' }}>removed</span>
+      <span className="bg-white/90 px-1.5 py-0.5 text-[11px] font-medium rounded">
+        removed
+      </span>
     </div>
   )
 }
@@ -315,20 +297,14 @@ export function AiPresence({
   return (
     <div
       role="status"
+      className="fixed z-10 pointer-events-none flex items-center gap-1 rounded-full border border-blue-500/80 bg-blue-600 px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-md animate-ai-glow"
       style={{
-        position: 'fixed',
-        zIndex: 11,
-        pointerEvents: 'none',
         left: p.x + 6,
         top: p.y - 22,
-        background: '#1a56db',
-        color: '#fff',
-        borderRadius: 10,
-        padding: '1px 8px',
-        font: '12px system-ui, sans-serif',
       }}
     >
-      AI · {label}
+      <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping" />
+      <span>AI · {label}</span>
     </div>
   )
 }

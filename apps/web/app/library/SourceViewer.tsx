@@ -38,53 +38,55 @@ export function SourceViewer({
   }, [api, bookId, page])
 
   return (
-    <figure style={{ margin: 0 }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
-          marginBottom: 8,
-        }}
-      >
+    <figure className="m-0 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2 shadow-2xs">
         <button
           type="button"
           disabled={page <= 1}
           onClick={() => onPage(clampPage(page - 1, pages))}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-2xs transition-colors hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
         >
           Previous
         </button>
-        <label>
-          Page{' '}
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+          <span>Page</span>
           <input
             type="number"
             min={1}
             max={pages}
             value={page}
-            style={{ width: 70 }}
+            className="w-14 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-center text-xs font-bold text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             onChange={(e) => onPage(clampPage(Number(e.target.value), pages))}
           />
+          <span className="text-slate-400 font-normal">of {pages}</span>
         </label>
         <button
           type="button"
           disabled={page >= pages}
           onClick={() => onPage(clampPage(page + 1, pages))}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-2xs transition-colors hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
         >
           Next
         </button>
       </div>
       {broken ? (
-        <p role="alert">This page could not be shown.</p>
+        <p
+          role="alert"
+          className="p-4 text-center text-xs font-medium text-red-600"
+        >
+          This page could not be shown.
+        </p>
       ) : (
-        // biome-ignore lint/performance/noImgElement: the raster comes from our own server and is cached there
-        <img
-          src={api.pageImageUrl(bookId, page, 1200)}
-          alt={`Page ${label ?? page}`}
-          onError={() => setBroken(true)}
-          style={{ maxWidth: '100%', border: '1px solid #ccc' }}
-        />
+        <div className="flex justify-center rounded-2xl border border-slate-200 bg-white p-2 shadow-xs">
+          <img
+            src={api.pageImageUrl(bookId, page, 1200)}
+            alt={`Page ${label ?? page}`}
+            onError={() => setBroken(true)}
+            className="max-w-full h-auto rounded-xl shadow-2xs object-contain"
+          />
+        </div>
       )}
-      <figcaption style={{ color: '#555', fontSize: 13 }}>
+      <figcaption className="text-center text-xs font-medium text-slate-500">
         {pageCaption({ label, page, pages })}
       </figcaption>
     </figure>

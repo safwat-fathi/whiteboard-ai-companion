@@ -1,7 +1,6 @@
 'use client'
 
 import { Component, type ReactNode } from 'react'
-
 import {
   type BatchChip,
   batchesOf,
@@ -21,27 +20,6 @@ export type MessageActions = {
   /** Chip actions; absent until the board can act on them. */
   onLocateBatch?: (b: BatchChip) => void
   onUndoBatch?: (b: BatchChip) => void
-}
-
-const chip: React.CSSProperties = {
-  display: 'inline-flex',
-  gap: 6,
-  alignItems: 'center',
-  border: '1px solid #c9d3ea',
-  background: '#f1f5ff',
-  borderRadius: 14,
-  padding: '2px 10px',
-  fontSize: 13,
-  margin: '4px 6px 0 0',
-}
-const mini: React.CSSProperties = {
-  font: 'inherit',
-  border: 'none',
-  background: 'none',
-  color: '#1a56db',
-  textDecoration: 'underline',
-  cursor: 'pointer',
-  padding: 0,
 }
 
 /** Per-message undo state, owned by the chat tab. */
@@ -75,20 +53,22 @@ export function MessageView({
     <article
       aria-label={mine ? 'You' : 'Tutor'}
       data-turn={mine ? undefined : turnIdOf(message)}
-      style={{
-        alignSelf: mine ? 'flex-end' : 'stretch',
-        maxWidth: mine ? '85%' : '100%',
-        background: mine ? '#eef3ff' : 'transparent',
-        borderRadius: 10,
-        padding: mine ? '6px 10px' : '2px 2px',
-      }}
+      className={`flex flex-col text-sm transition-all ${
+        mine
+          ? 'self-end max-w-[85%] rounded-2xl rounded-tr-xs bg-blue-50/90 border border-blue-100 text-slate-900 px-3.5 py-2 shadow-2xs'
+          : 'self-stretch max-w-full text-slate-800 py-1'
+      }`}
     >
-      <div dir="auto" style={{ overflowWrap: 'anywhere' }}>
+      <div
+        dir="auto"
+        style={{ overflowWrap: 'anywhere' }}
+        className="leading-relaxed"
+      >
         {message.parts.map((p, i) => {
           if (p.type === 'text')
             return mine ? (
               // biome-ignore lint/suspicious/noArrayIndexKey: parts of one message never reorder
-              <p key={i} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              <p key={i} className="m-0 whitespace-pre-wrap font-sans text-sm">
                 {p.text}
               </p>
             ) : (
@@ -98,14 +78,17 @@ export function MessageView({
           return null
         })}
       </div>
-      <div>
+      <div className="flex flex-wrap gap-1.5 mt-1.5">
         {batchesOf(message).map((b) => (
-          <span key={b.batchId} style={chip}>
-            {chipText(b)}
+          <span
+            key={b.batchId}
+            className="inline-flex items-center gap-2 rounded-full border border-blue-200/90 bg-blue-50/80 px-2.5 py-0.5 text-xs text-blue-800 font-medium shadow-2xs"
+          >
+            <span>{chipText(b)}</span>
             {actions.onLocateBatch && (
               <button
                 type="button"
-                style={mini}
+                className="font-semibold text-blue-600 hover:text-blue-800 underline underline-offset-2 cursor-pointer text-xs"
                 onClick={() => actions.onLocateBatch?.(b)}
               >
                 Locate
@@ -114,7 +97,7 @@ export function MessageView({
             {actions.onUndoBatch && (
               <button
                 type="button"
-                style={mini}
+                className="font-semibold text-blue-600 hover:text-blue-800 underline underline-offset-2 cursor-pointer text-xs"
                 onClick={() => actions.onUndoBatch?.(b)}
               >
                 Undo
@@ -124,19 +107,24 @@ export function MessageView({
         ))}
       </div>
       {undo?.available && (
-        <p style={{ margin: '6px 0 0', fontSize: 13 }}>
-          <button type="button" disabled={undo.busy} onClick={undo.run}>
+        <p className="mt-2 text-xs">
+          <button
+            type="button"
+            disabled={undo.busy}
+            onClick={undo.run}
+            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+          >
             Undo this response
           </button>
         </p>
       )}
       {undo?.note && (
-        <p role="status" style={{ margin: '6px 0 0', fontSize: 13 }}>
+        <p role="status" className="mt-1 text-xs text-slate-600 font-medium">
           {undo.note}
         </p>
       )}
       {usage && (
-        <p style={{ margin: '6px 0 0', fontSize: 12, color: '#666' }}>
+        <p className="mt-1.5 text-[11px] font-medium text-slate-400">
           {footerText(usage)}
         </p>
       )}
@@ -155,7 +143,7 @@ export class MessageBoundary extends Component<
   }
   render() {
     return this.state.failed ? (
-      <p role="note" style={{ color: '#a33', fontSize: 13, margin: 0 }}>
+      <p role="note" className="m-0 text-xs font-medium text-red-600">
         This message could not be shown.
       </p>
     ) : (

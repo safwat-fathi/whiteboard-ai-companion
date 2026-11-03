@@ -17,40 +17,50 @@ export function Outline({
 }) {
   const s = node.section
   return (
-    <li style={{ marginLeft: s.level > 1 ? 16 : 0, marginBottom: 4 }}>
-      <label>
-        <input
-          type="checkbox"
-          checked={ticked.has(s.id)}
-          onChange={() => onTick(s.id)}
-        />{' '}
-        {s.title}
-      </label>{' '}
-      {s.pageStart !== null && (
-        <button
-          type="button"
-          onClick={() => onOpen(s.pageStart as number)}
-          style={{
-            all: 'unset',
-            cursor: 'pointer',
-            color: '#1a56db',
-            fontSize: 13,
-          }}
-        >
-          pp. {s.pageStart}
-          {s.pageEnd !== s.pageStart ? `–${s.pageEnd}` : ''}
-        </button>
-      )}
+    <li
+      className={`py-1 transition-colors ${
+        s.level > 1 ? 'ml-5 border-l-2 border-slate-100 pl-3' : ''
+      }`}
+    >
+      <div className="flex items-center flex-wrap gap-2">
+        <label className="inline-flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-800 hover:text-slate-900 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={ticked.has(s.id)}
+            onChange={() => onTick(s.id)}
+            className="w-4 h-4 rounded text-blue-600 accent-blue-600 cursor-pointer"
+          />
+          <span>{s.title}</span>
+        </label>
+        {s.pageStart !== null && (
+          <button
+            type="button"
+            onClick={() => onOpen(s.pageStart as number)}
+            className="inline-flex items-center rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 px-2 py-0.5 text-xs font-semibold transition-colors cursor-pointer"
+          >
+            pp. {s.pageStart}
+            {s.pageEnd !== s.pageStart ? `–${s.pageEnd}` : ''}
+          </button>
+        )}
+      </div>
       {s.summary && (
-        <details>
-          <summary style={ui.muted}>Summary</summary>
-          <div dir="auto" style={{ fontSize: 13 }}>
+        <details className="group mt-1 ml-6 text-xs">
+          <summary
+            style={ui.muted}
+            className="cursor-pointer font-medium text-slate-400 hover:text-slate-700 transition-colors select-none"
+          >
+            Summary
+          </summary>
+          <div
+            dir="auto"
+            className="mt-1.5 rounded-xl border border-slate-200/80 bg-slate-50 p-2.5 text-xs text-slate-600 leading-relaxed font-sans"
+          >
             {s.summary}
           </div>
         </details>
       )}
       {node.children.length > 0 && (
-        <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
+        <ul className="mt-1 space-y-1 list-none pl-0">
           {node.children.map((c) => (
             <Outline
               key={c.section.id}

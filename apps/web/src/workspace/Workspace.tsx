@@ -424,19 +424,25 @@ export function Workspace({ boardId }: { boardId?: string }) {
               onChange={setScope}
             />
           )}
-          <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-900 select-none">
             <input
               type="checkbox"
               role="switch"
               aria-checked={follow}
               checked={follow}
               onChange={(e) => setFollow(e.target.checked)}
+              className="accent-blue-600 w-3.5 h-3.5 cursor-pointer rounded"
             />
             Follow AI
           </label>
           {api && <SpendChip api={api} refreshKey={activityKey} />}
           {turn.running && (
-            <button type="button" onClick={() => void jump.locateLatest()}>
+            <button
+              type="button"
+              onClick={() => void jump.locateLatest()}
+              className="flex items-center gap-1.5 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-all duration-150 animate-pulse cursor-pointer"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-white" />
               Jump to AI
             </button>
           )}

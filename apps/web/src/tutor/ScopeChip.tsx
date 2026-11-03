@@ -12,6 +12,7 @@ import {
   tickedOf,
   toggle,
 } from '../library/scope'
+import { BookIcon } from '../ui/icons'
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -56,16 +57,10 @@ export function ScopeChip({
         aria-haspopup="dialog"
         title="Change what this board studies"
         onClick={() => setOpen(true)}
-        style={{
-          font: 'inherit',
-          border: '1px solid #ccc',
-          borderRadius: 14,
-          background: '#f6f6f6',
-          padding: '2px 10px',
-          cursor: 'pointer',
-        }}
+        className="flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-50/80 px-2.5 py-0.5 text-xs font-medium text-slate-700 transition-all duration-150 hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 cursor-pointer"
       >
-        {scopeLabel(scope, book?.title, sections)}
+        <BookIcon size={13} className="text-slate-400" />
+        <span>{scopeLabel(scope, book?.title, sections)}</span>
       </button>
       {open && (
         <ScopePicker
@@ -147,7 +142,10 @@ function ScopePicker({
           minWidth: 320,
         }}
       >
-        <h2 style={{ marginTop: 0, fontSize: 18 }}>
+        <h2
+          style={{ marginTop: 0, fontSize: 18 }}
+          className="font-bold text-slate-900"
+        >
           What does this board study?
         </h2>
         {error && (
@@ -156,18 +154,21 @@ function ScopePicker({
           </p>
         )}
         {books === null ? (
-          <p>Loading your books…</p>
+          <p className="text-sm text-slate-500">Loading your books…</p>
         ) : books.length === 0 ? (
-          <p>No indexed books yet. Add one in the library.</p>
+          <p className="text-sm text-slate-500">
+            No indexed books yet. Add one in the library.
+          </p>
         ) : (
-          <label>
-            Book{' '}
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-700">
+            Book
             <select
               value={bookId}
               onChange={(e) => {
                 setBookId(e.target.value)
                 setTicked(new Set())
               }}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all font-sans"
             >
               <option value="">Choose a book…</option>
               {books.map((b) => (
@@ -179,14 +180,14 @@ function ScopePicker({
           </label>
         )}
         {bookId && sections.length > 0 && (
-          <>
-            <p style={ui.muted}>
+          <div className="mt-3">
+            <p style={ui.muted} className="mb-2">
               {ticked.size === 0
                 ? 'The whole book'
                 : `${ticked.size} section${ticked.size === 1 ? '' : 's'} chosen`}
               . Tick sections to focus on them.
             </p>
-            <ul style={{ listStyle: 'none', padding: 0 }}>
+            <ul style={{ listStyle: 'none', padding: 0 }} className="space-y-1">
               {buildTree(sections).map((n) => (
                 <Outline
                   key={n.section.id}
@@ -197,25 +198,31 @@ function ScopePicker({
                 />
               ))}
             </ul>
-          </>
+          </div>
         )}
-        <div style={ui.actions}>
+        <div style={ui.actions} className="mt-6 flex gap-2 justify-end">
           <button
             type="button"
-            disabled={!bookId || busy}
-            onClick={() => void apply(buildScope(bookId, ticked))}
+            className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
+            onClick={onClose}
           >
-            Use this
+            Cancel
           </button>
           <button
             type="button"
             disabled={busy}
             onClick={() => void apply(null)}
+            className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
           >
             No book
           </button>
-          <button type="button" onClick={onClose}>
-            Cancel
+          <button
+            type="button"
+            disabled={!bookId || busy}
+            onClick={() => void apply(buildScope(bookId, ticked))}
+            className="rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            Use this
           </button>
         </div>
       </div>

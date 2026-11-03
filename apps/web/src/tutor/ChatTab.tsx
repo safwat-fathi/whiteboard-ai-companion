@@ -2,6 +2,13 @@
 
 import type { ContextDescriptor } from '@whiteboard/core'
 import { useEffect, useRef, useState } from 'react'
+import {
+  CloseIcon,
+  EyeIcon,
+  SendIcon,
+  SparklesIcon,
+  StopIcon,
+} from '../ui/icons'
 import { type BoardBridge, prepareContext } from './board-context'
 import {
   batchesOf,
@@ -290,25 +297,27 @@ export function ChatTab(o: {
         role="log"
         aria-label="Conversation"
         aria-live="off"
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: 10,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-        }}
+        className="flex-1 overflow-auto p-3 flex flex-col gap-3 min-h-0 bg-white"
       >
         {chat.hasEarlier && (
-          <button type="button" onClick={() => void chat.loadEarlier()}>
+          <button
+            type="button"
+            onClick={() => void chat.loadEarlier()}
+            className="self-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer shadow-2xs"
+          >
             Show earlier messages
           </button>
         )}
         {chat.loaded && chat.messages.length === 0 && (
-          <p style={{ color: '#555', fontSize: 13 }}>
-            Ask a question about your book or your board. The tutor answers here
-            and draws on the board.
-          </p>
+          <div className="my-auto flex flex-col items-center justify-center p-6 text-center">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 shadow-2xs">
+              <SparklesIcon size={20} />
+            </div>
+            <p className="text-xs sm:text-sm font-medium text-slate-600 max-w-[260px] leading-relaxed">
+              Ask a question about your book or your board. The tutor answers
+              here and draws on the board.
+            </p>
+          </div>
         )}
         {chat.messages.map((m) => (
           <MessageBoundary key={m.id}>
@@ -332,9 +341,12 @@ export function ChatTab(o: {
           </MessageBoundary>
         ))}
         {streaming && last?.role === 'assistant' && (
-          <p style={{ color: '#555', fontSize: 13, margin: 0 }}>
-            {WORKING[turnStateOf(last) ?? 'thinking'] ?? 'Working…'}
-          </p>
+          <div className="flex items-center gap-2 text-xs font-medium text-blue-600 bg-blue-50/70 px-3 py-1.5 rounded-full w-fit">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-600 animate-ping" />
+            <span>
+              {WORKING[turnStateOf(last) ?? 'thinking'] ?? 'Working…'}
+            </span>
+          </div>
         )}
         <div ref={end} />
       </div>
@@ -379,15 +391,8 @@ export function ChatTab(o: {
           </button>
         </p>
       )}
-      <div
-        style={{
-          padding: 8,
-          borderTop: '1px solid #ddd',
-          display: 'grid',
-          gap: 6,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div className="border-t border-slate-200/80 bg-slate-50/50 flex flex-col gap-2 p-2">
+        <div className="flex flex-wrap gap-1.5 px-1">
           {QUICK.map((q) => (
             <button
               key={q.label}
@@ -398,6 +403,7 @@ export function ChatTab(o: {
                   ? 'Select something on the board first'
                   : undefined
               }
+              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:bg-white cursor-pointer"
               onClick={() => {
                 setMode(q.mode)
                 setText(q.text)
@@ -411,29 +417,12 @@ export function ChatTab(o: {
         {bridge && (
           <fieldset
             aria-label="What goes with your message"
-            style={{
-              display: 'flex',
-              gap: 6,
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              fontSize: 13,
-              border: 'none',
-              margin: 0,
-              padding: 0,
-            }}
+            className="flex flex-wrap items-center gap-1.5 px-1 text-xs text-slate-600 border-none m-0"
           >
             {selectionChip(chips, sel.length) && (
               <span
                 title="The AI may edit these"
-                style={{
-                  display: 'inline-flex',
-                  gap: 4,
-                  alignItems: 'center',
-                  border: '1px solid #c9d3ea',
-                  background: '#f1f5ff',
-                  borderRadius: 14,
-                  padding: '1px 8px',
-                }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/90 px-2.5 py-0.5 text-xs font-medium text-blue-700 shadow-2xs"
               >
                 Selection ({sel.length}) ·
                 <select
@@ -445,6 +434,7 @@ export function ChatTab(o: {
                       selection: e.target.value as SelMode,
                     }))
                   }
+                  className="bg-transparent text-xs font-semibold text-blue-800 focus:outline-none cursor-pointer"
                 >
                   {(['structure', 'picture', 'both'] as const).map((m) => (
                     <option key={m} value={m}>
@@ -458,6 +448,7 @@ export function ChatTab(o: {
                   onClick={() =>
                     setChips((c) => ({ ...c, selectionOff: true }))
                   }
+                  className="ml-0.5 text-sm font-bold text-blue-500 hover:text-blue-800 cursor-pointer leading-none"
                 >
                   ×
                 </button>
@@ -467,10 +458,15 @@ export function ChatTab(o: {
               type="button"
               aria-pressed={chips.viewport}
               onClick={() => setChips((c) => ({ ...c, viewport: !c.viewport }))}
+              className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors cursor-pointer shadow-2xs ${
+                chips.viewport
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
             >
               Viewport
             </button>
-            <label>
+            <label className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-600 shadow-2xs cursor-pointer">
               Whole board{' '}
               <select
                 value={chips.board}
@@ -480,6 +476,7 @@ export function ChatTab(o: {
                     board: e.target.value as Chips['board'],
                   }))
                 }
+                className="bg-transparent text-xs font-medium text-slate-800 focus:outline-none cursor-pointer"
               >
                 <option value="off">off</option>
                 {(['structure', 'picture', 'both'] as const).map((m) => (
@@ -490,26 +487,31 @@ export function ChatTab(o: {
               </select>
             </label>
             {o.previewContext && (
-              <button type="button" onClick={() => void openPeek()}>
+              <button
+                type="button"
+                onClick={() => void openPeek()}
+                className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
+              >
                 What the AI sees
               </button>
             )}
           </fieldset>
         )}
         {files.length > 0 && (
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="flex flex-wrap gap-2 px-1">
             {files.map((f) => (
-              <span key={f.blobId} style={{ position: 'relative' }}>
+              <span key={f.blobId} className="relative inline-block">
                 {/* biome-ignore lint/performance/noImgElement: a local object URL of the pasted image */}
                 <img
                   src={f.url}
                   alt="Attached"
-                  style={{ height: 40, borderRadius: 4 }}
+                  className="h-10 rounded-lg border border-slate-200 object-cover shadow-2xs"
                 />
                 <button
                   type="button"
                   aria-label="Remove the attached picture"
                   onClick={() => setFiles((x) => x.filter((y) => y !== f))}
+                  className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-white hover:bg-red-600 cursor-pointer"
                 >
                   ×
                 </button>
@@ -518,103 +520,136 @@ export function ChatTab(o: {
           </div>
         )}
         {problem && (
-          <p role="alert" style={{ margin: 0, fontSize: 13, color: '#a33' }}>
+          <p role="alert" className="m-0 px-1 text-xs font-medium text-red-600">
             {problem}
           </p>
         )}
-        <textarea
-          ref={box}
-          onPaste={(e) => {
-            const imgs = [...e.clipboardData.files].filter((f) =>
-              f.type.startsWith('image/'),
-            )
-            if (imgs.length === 0) return
-            e.preventDefault()
-            void attach(imgs)
-          }}
-          onDrop={(e) => {
-            const imgs = [...e.dataTransfer.files].filter((f) =>
-              f.type.startsWith('image/'),
-            )
-            if (imgs.length === 0) return
-            e.preventDefault()
-            void attach(imgs)
-          }}
-          dir="auto"
-          rows={3}
-          aria-label="Message the tutor"
-          placeholder="Ask the tutor…"
-          value={text}
-          disabled={dailyOut}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (
-              e.key === 'Enter' &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
+        <div className="flex flex-col rounded-2xl border border-slate-200/90 bg-white p-2 shadow-xs transition-all focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
+          <textarea
+            ref={box}
+            onPaste={(e) => {
+              const imgs = [...e.clipboardData.files].filter((f) =>
+                f.type.startsWith('image/'),
+              )
+              if (imgs.length === 0) return
               e.preventDefault()
-              void submit()
-            }
-          }}
-          style={{ resize: 'vertical', font: 'inherit' }}
-        />
-        {streaming ? (
-          <button type="button" onClick={chat.stop}>
-            Stop
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled={!text.trim() || !o.connected || dailyOut || preparing}
-            onClick={() => void submit()}
-          >
-            {preparing ? 'Attaching…' : 'Send'}
-          </button>
-        )}
+              void attach(imgs)
+            }}
+            onDrop={(e) => {
+              const imgs = [...e.dataTransfer.files].filter((f) =>
+                f.type.startsWith('image/'),
+              )
+              if (imgs.length === 0) return
+              e.preventDefault()
+              void attach(imgs)
+            }}
+            dir="auto"
+            rows={3}
+            aria-label="Message the tutor"
+            placeholder="Ask the tutor…"
+            value={text}
+            disabled={dailyOut}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                e.key === 'Enter' &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault()
+                void submit()
+              }
+            }}
+            className="w-full resize-none border-none bg-transparent p-1 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none font-sans leading-relaxed min-h-[52px]"
+          />
+          <div className="flex items-center justify-end pt-1">
+            {streaming ? (
+              <button
+                type="button"
+                onClick={chat.stop}
+                className="flex items-center gap-1 rounded-full bg-rose-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 active:scale-95 transition-all cursor-pointer"
+              >
+                <StopIcon size={12} fill="currentColor" /> Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!text.trim() || !o.connected || dailyOut || preparing}
+                onClick={() => void submit()}
+                className="flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-40 disabled:hover:bg-blue-600 cursor-pointer"
+              >
+                <SendIcon size={12} />
+                <span>{preparing ? 'Attaching…' : 'Send'}</span>
+              </button>
+            )}
+          </div>
+        </div>
       </div>
       {peek && (
         <div
           role="dialog"
           aria-modal="true"
           aria-label="What the AI sees"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: '#fff',
-            padding: 10,
-            overflow: 'auto',
-            zIndex: 5,
-          }}
+          className="absolute inset-0 z-30 flex flex-col bg-white/95 p-4 backdrop-blur-md overflow-auto animate-in fade-in"
         >
-          <h3 style={{ marginTop: 0 }}>What the AI sees</h3>
-          {peek.state === 'loading' && <p>Preparing…</p>}
-          {peek.state === 'error' && <p role="alert">{peek.message}</p>}
+          <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+            <h3 className="m-0 text-base font-semibold text-slate-900 flex items-center gap-2">
+              <EyeIcon size={18} className="text-blue-600" />
+              What the AI sees
+            </h3>
+            <button
+              type="button"
+              onClick={() => setPeek(null)}
+              className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+            >
+              <CloseIcon size={16} />
+            </button>
+          </div>
+          {peek.state === 'loading' && (
+            <p className="text-sm text-slate-500">Preparing…</p>
+          )}
+          {peek.state === 'error' && (
+            <p role="alert" className="text-sm text-red-600">
+              {peek.message}
+            </p>
+          )}
           {peek.state === 'ready' && (
-            <>
-              <p style={{ fontSize: 13 }}>
-                About {peek.preview.tokens.toLocaleString('en-US')} tokens are
-                added to your message.
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                About{' '}
+                <strong>{peek.preview.tokens.toLocaleString('en-US')}</strong>{' '}
+                tokens are added to your message.
               </p>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {peek.thumbs.map((t) => (
-                  // biome-ignore lint/performance/noImgElement: a local object URL of the picture that will be sent
-                  <img
-                    key={t.url + t.of}
-                    src={t.url}
-                    alt={`The ${t.of}, as the AI will see it`}
-                    style={{ height: 80, border: '1px solid #ccc' }}
-                  />
-                ))}
-              </div>
-              <pre dir="auto" style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>
+              {peek.thumbs.length > 0 && (
+                <div className="flex gap-2 flex-wrap">
+                  {peek.thumbs.map((t) => (
+                    // biome-ignore lint/performance/noImgElement: a local object URL of the picture that will be sent
+                    <img
+                      key={t.url + t.of}
+                      src={t.url}
+                      alt={`The ${t.of}, as the AI will see it`}
+                      className="h-20 rounded-lg border border-slate-200 shadow-2xs object-cover"
+                    />
+                  ))}
+                </div>
+              )}
+              <pre
+                dir="auto"
+                className="whitespace-pre-wrap text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 text-slate-800 font-mono max-h-[300px] overflow-auto"
+              >
                 {peek.preview.text}
               </pre>
-            </>
+            </div>
           )}
-          <button type="button" onClick={() => setPeek(null)}>
-            Close
-          </button>
+          <div className="mt-auto pt-3">
+            <button
+              type="button"
+              onClick={() => setPeek(null)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-100 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { LibraryApi, UsageSummary } from '../library/api'
+import { CoinsIcon } from '../ui/icons'
 import { spendLabel } from './chat-core'
 import { SettingsDialog } from './SettingsDialog'
 
@@ -35,16 +36,10 @@ export function SpendChip({
         aria-haspopup="dialog"
         title="Settings and usage"
         onClick={() => setOpen(true)}
-        style={{
-          font: 'inherit',
-          border: '1px solid #ccc',
-          borderRadius: 14,
-          background: '#f6f6f6',
-          padding: '2px 10px',
-          cursor: 'pointer',
-        }}
+        className="flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-50/80 px-2.5 py-0.5 text-xs font-medium text-slate-700 transition-all duration-150 hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-700 cursor-pointer"
       >
-        {usage ? spendLabel(usage.today) : 'Usage'}
+        <CoinsIcon size={13} className="text-slate-400" />
+        <span>{usage ? spendLabel(usage.today) : 'Usage'}</span>
       </button>
       {open && (
         <SettingsDialog

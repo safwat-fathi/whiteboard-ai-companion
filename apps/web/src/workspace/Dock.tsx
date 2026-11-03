@@ -9,13 +9,20 @@ import {
   useEffect,
   useState,
 } from 'react'
+import {
+  ActivityIcon,
+  ChatIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  SourceIcon,
+} from '../ui/icons'
 
 // The tutor dock beside the board (chat-ui.md "Layout"): resizable 320-560 px, collapsible, a bottom sheet on narrow screens.
 
 export const DOCK_MIN = 320
 export const DOCK_MAX = 560
 export const DOCK_DEFAULT = 380
-export const STRIP_W = 40 // collapsed: just the open button
+export const STRIP_W = 44 // collapsed: just the open button
 export const SHEET_H = 360 // narrow screens: the sheet's height
 export const SHEET_STRIP_H = 44
 export const NARROW_QUERY = '(max-width: 720px)'
@@ -25,9 +32,9 @@ export const clampDock = (w: number) =>
   Math.min(DOCK_MAX, Math.max(DOCK_MIN, Math.round(w)))
 
 export const TABS = [
-  { id: 'chat', label: 'Chat' },
-  { id: 'activity', label: 'Activity' },
-  { id: 'source', label: 'Source' },
+  { id: 'chat', label: 'Chat', icon: ChatIcon },
+  { id: 'activity', label: 'Activity', icon: ActivityIcon },
+  { id: 'source', label: 'Source', icon: SourceIcon },
 ] as const
 export type DockTab = (typeof TABS)[number]['id']
 
@@ -105,20 +112,9 @@ export type DockLayout = ReturnType<typeof useDockLayout>
 
 const box: CSSProperties = {
   position: 'fixed',
-  background: '#fff',
-  color: '#1e1e1e',
   zIndex: 20,
   display: 'flex',
   flexDirection: 'column',
-  boxShadow: '0 0 12px rgba(0,0,0,0.15)',
-}
-const btn: CSSProperties = {
-  border: '1px solid #ccc',
-  background: '#fff',
-  borderRadius: 6,
-  padding: '4px 10px',
-  cursor: 'pointer',
-  font: 'inherit',
 }
 
 export function Dock({
@@ -135,22 +131,28 @@ export function Dock({
     return (
       <aside
         aria-label="Tutor"
+        className="fixed z-20 flex flex-col items-center justify-center border-l border-slate-200/90 bg-white/95 shadow-lg backdrop-blur-md transition-all duration-150"
         style={{
           ...box,
           ...(narrow
             ? { left: 0, right: 0, bottom: 0, height: SHEET_STRIP_H }
             : { top: 0, right: 0, bottom: 0, width: STRIP_W }),
-          alignItems: 'center',
-          justifyContent: 'center',
         }}
       >
         <button
           type="button"
-          style={btn}
+          className="group flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition-all duration-150 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 active:scale-95 cursor-pointer"
           aria-label="Open the tutor"
           onClick={() => setCollapsed(false)}
         >
-          {narrow ? '▲ Tutor' : '‹'}
+          {narrow ? (
+            <span className="text-xs font-semibold">▲ Tutor</span>
+          ) : (
+            <ChevronLeftIcon
+              size={18}
+              className="transition-transform group-hover:-translate-x-0.5"
+            />
+          )}
         </button>
       </aside>
     )
@@ -180,6 +182,7 @@ export function Dock({
   return (
     <aside
       aria-label="Tutor"
+      className="fixed z-20 flex flex-col border-l border-slate-200 bg-white text-slate-800 shadow-2xl transition-all duration-150"
       style={{
         ...box,
         ...(narrow
@@ -197,15 +200,7 @@ export function Dock({
           aria-valuemax={DOCK_MAX}
           aria-valuenow={width}
           tabIndex={0}
-          style={{
-            position: 'absolute',
-            left: -3,
-            top: 0,
-            bottom: 0,
-            width: 6,
-            cursor: 'col-resize',
-            touchAction: 'none',
-          }}
+          className="group absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize touch-none z-30 flex items-center justify-center"
           onPointerDown={(e) =>
             e.currentTarget.setPointerCapture?.(e.pointerId)
           }
@@ -216,55 +211,56 @@ export function Dock({
             else return
             e.preventDefault()
           }}
-        />
+        >
+          <div className="h-10 w-1 rounded-full bg-slate-300 opacity-0 transition-opacity group-hover:opacity-100 group-active:opacity-100 group-hover:bg-blue-500" />
+        </div>
       )}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '6px 8px',
-          borderBottom: '1px solid #ddd',
-        }}
-      >
+      <div className="flex items-center gap-2 border-b border-slate-200/80 bg-slate-50/70 px-3 py-2">
         <div
           role="tablist"
           aria-label="Tutor panels"
-          style={{ display: 'flex', gap: 4, flex: 1 }}
+          className="flex flex-1 items-center gap-1 rounded-xl bg-slate-200/60 p-0.5"
           onKeyDown={onTabKey}
         >
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              id={`dock-tab-${t.id}`}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              aria-controls={`dock-pane-${t.id}`}
-              tabIndex={tab === t.id ? 0 : -1}
-              style={{
-                ...btn,
-                ...(tab === t.id
-                  ? {
-                      background: '#1a56db',
-                      color: '#fff',
-                      border: '1px solid #1a56db',
-                    }
-                  : {}),
-              }}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const isSelected = tab === t.id
+            const Icon = t.icon
+            return (
+              <button
+                key={t.id}
+                id={`dock-tab-${t.id}`}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                aria-controls={`dock-pane-${t.id}`}
+                tabIndex={isSelected ? 0 : -1}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-150 cursor-pointer ${
+                  isSelected
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                }`}
+                onClick={() => setTab(t.id)}
+              >
+                <Icon
+                  size={13}
+                  className={isSelected ? 'text-blue-600' : 'text-slate-400'}
+                />
+                <span>{t.label}</span>
+              </button>
+            )
+          })}
         </div>
         <button
           type="button"
-          style={btn}
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-slate-900 cursor-pointer"
           aria-label="Collapse the tutor"
           onClick={() => setCollapsed(true)}
         >
-          {narrow ? '▼' : '›'}
+          {narrow ? (
+            <span className="text-xs">▼</span>
+          ) : (
+            <ChevronRightIcon size={16} />
+          )}
         </button>
       </div>
       {TABS.map((t) => (
@@ -274,7 +270,7 @@ export function Dock({
           role="tabpanel"
           aria-labelledby={`dock-tab-${t.id}`}
           hidden={tab !== t.id}
-          style={{ flex: 1, minHeight: 0, overflow: 'auto' }}
+          className="flex-1 min-h-0 overflow-auto bg-white"
         >
           {panes[t.id]}
         </div>
@@ -292,33 +288,15 @@ export function TopBar({
   children?: ReactNode
 }) {
   return (
-    <header
-      style={{
-        position: 'fixed',
-        top: 12,
-        left: 12,
-        zIndex: 10,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        background: '#fff',
-        border: '1px solid #ccc',
-        borderRadius: 8,
-        padding: '4px 10px',
-        font: '14px system-ui, sans-serif',
-        maxWidth: 'calc(100vw - 24px)',
-      }}
-    >
-      <a href="/library" style={{ color: '#1a56db' }}>
-        ‹ Library
-      </a>
-      <strong
-        style={{
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
+    <header className="fixed top-3 left-3 z-10 flex max-w-[calc(100vw-24px)] items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-1.5 shadow-lg shadow-slate-900/5 backdrop-blur-md transition-all duration-150 font-sans text-xs sm:text-sm text-slate-700">
+      <a
+        href="/library"
+        className="flex items-center gap-1 font-semibold text-blue-600 transition-colors hover:text-blue-700"
       >
+        <span className="text-base leading-none">‹</span> Library
+      </a>
+      <div className="h-3.5 w-px bg-slate-200" />
+      <strong className="max-w-[180px] truncate font-semibold text-slate-900">
         {title}
       </strong>
       {children}

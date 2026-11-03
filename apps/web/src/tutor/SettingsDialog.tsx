@@ -82,17 +82,22 @@ export function SettingsDialog({
           maxWidth: 520,
         }}
       >
-        <h2 style={{ marginTop: 0, fontSize: 18 }}>Settings and usage</h2>
+        <h2
+          style={{ marginTop: 0, fontSize: 18 }}
+          className="font-bold text-slate-900"
+        >
+          Settings and usage
+        </h2>
         {error && (
           <p role="alert" style={ui.alert}>
             {error}
           </p>
         )}
         {!loaded ? (
-          <p>Loading…</p>
+          <p className="text-sm text-slate-500">Loading…</p>
         ) : (
           <>
-            <label style={{ display: 'grid', gap: 4 }}>
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-700">
               About you (level, goals, language): the tutor reads this before
               every answer
               <textarea
@@ -101,77 +106,100 @@ export function SettingsDialog({
                 maxLength={2000}
                 value={profile}
                 onChange={(e) => setProfile(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all font-sans"
               />
             </label>
-            <label style={{ display: 'grid', gap: 4, marginTop: 10 }}>
+            <label className="flex flex-col gap-1.5 mt-3 text-xs font-medium text-slate-700">
               Daily budget in dollars (empty = the default
               {usage ? `, $${usage.dailyCapUsd}` : ''})
               <input
                 inputMode="decimal"
                 value={budget}
                 onChange={(e) => setBudget(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all font-sans"
               />
             </label>
             {usage && (
-              <table
-                style={{
-                  width: '100%',
-                  marginTop: 14,
-                  fontSize: 13,
-                  borderCollapse: 'collapse',
-                }}
-              >
-                <caption style={{ textAlign: 'start', fontWeight: 600 }}>
-                  Use by day
-                </caption>
-                <thead>
-                  <tr>
-                    {['Day', 'Replies', 'In', 'Cached', 'Out', 'Spent'].map(
-                      (h) => (
-                        <th key={h} style={{ textAlign: 'start' }}>
-                          {h}
-                        </th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {usage.days.length === 0 && (
+              <div className="mt-4 rounded-xl border border-slate-200 overflow-hidden">
+                <table
+                  style={{
+                    width: '100%',
+                    fontSize: 12,
+                    borderCollapse: 'collapse',
+                  }}
+                  className="divide-y divide-slate-200"
+                >
+                  <caption className="p-2.5 text-start font-semibold text-xs text-slate-700 bg-slate-50/80 border-b border-slate-200">
+                    Use by day
+                  </caption>
+                  <thead className="bg-slate-50/50 text-slate-500">
                     <tr>
-                      <td colSpan={6}>Nothing used yet.</td>
+                      {['Day', 'Replies', 'In', 'Cached', 'Out', 'Spent'].map(
+                        (h) => (
+                          <th key={h} className="p-2 text-start font-semibold">
+                            {h}
+                          </th>
+                        ),
+                      )}
                     </tr>
-                  )}
-                  {usage.days.map((d) => (
-                    <tr key={d.day}>
-                      <td>{d.day}</td>
-                      <td>{d.turns}</td>
-                      <td>{n(d.inputTokens)}</td>
-                      <td>{n(d.cachedTokens)}</td>
-                      <td>{n(d.outputTokens)}</td>
-                      <td
-                        title={Object.entries(d.byKind)
-                          .map(([k, v]) => `${k} ${usd(v)}`)
-                          .join(', ')}
-                      >
-                        {usd(d.costUsd)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {usage.days.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="p-3 text-center text-slate-400"
+                        >
+                          Nothing used yet.
+                        </td>
+                      </tr>
+                    )}
+                    {usage.days.map((d) => (
+                      <tr key={d.day} className="hover:bg-slate-50/60">
+                        <td className="p-2 font-mono text-[11px] text-slate-600">
+                          {d.day}
+                        </td>
+                        <td className="p-2">{d.turns}</td>
+                        <td className="p-2 text-slate-500">
+                          {n(d.inputTokens)}
+                        </td>
+                        <td className="p-2 text-slate-500">
+                          {n(d.cachedTokens)}
+                        </td>
+                        <td className="p-2 text-slate-500">
+                          {n(d.outputTokens)}
+                        </td>
+                        <td
+                          className="p-2 font-semibold text-slate-900"
+                          title={Object.entries(d.byKind)
+                            .map(([k, v]) => `${k} ${usd(v)}`)
+                            .join(', ')}
+                        >
+                          {usd(d.costUsd)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </>
         )}
-        <div style={ui.actions}>
+        <div style={ui.actions} className="mt-4 flex gap-2 justify-end">
+          <button
+            type="button"
+            className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
+            onClick={onClose}
+          >
+            Close
+          </button>
           <button
             type="button"
             disabled={!loaded || saving}
             onClick={() => void save()}
+            className="rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors cursor-pointer disabled:opacity-50"
           >
             Save
-          </button>
-          <button type="button" onClick={onClose}>
-            Close
           </button>
         </div>
       </div>
