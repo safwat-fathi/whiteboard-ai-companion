@@ -21,17 +21,20 @@ The student talks to the AI **inside the app**. There is no external client, no 
 ```
 
 - **Dock:** right side, resizable (320–560 px), collapsible, **open by default** on a board. On narrow screens it becomes a bottom sheet.
-- **Tabs:** *Chat* · *Activity* (AI batches grouped by turn, [jump-to-ai](./jump-to-ai.md)) · *Source* (cited book page, [library-ingestion](./library-ingestion.md)). Clicking a citation switches to *Source*.
-- **Top bar:** board title, scope chip (opens the scope picker), **Follow AI** toggle, today's spend. Routes: `/` boards and library, `/boards/:id` workspace.
+- **Tabs:** _Chat_ · _Activity_ (AI batches grouped by turn, [jump-to-ai](./jump-to-ai.md)) · _Source_ (cited book page, [library-ingestion](./library-ingestion.md)). Clicking a citation switches to _Source_.
+- **Top bar:** board title, scope chip (opens the scope picker), **Follow AI** toggle, today's spend (_temporarily hidden_). Routes: `/` boards and library, `/boards/:id` workspace.
+
+> [!NOTE]
+> **Temporary Decision:** The today's spend badge (`SpendChip`, e.g. `$0.0086 today`) has been temporarily hidden from the top bar in [`Workspace.tsx`](../../apps/web/src/workspace/Workspace.tsx). The component and backend ledger/usage endpoints remain fully functional and tested for future re-enablement.
 
 ## Message list
 
 - User and assistant messages, history loaded from `GET /api/boards/:id/messages` (paged), live via the chat stream.
 - **Assistant message parts:**
-  - *Text:* Markdown (`react-markdown`, GFM) with LaTeX through `remark-math` + our `renderMath()` ([math-renderer](./math-renderer.md)). `dir="auto"` per message so Arabic and English both read correctly.
-  - *Tool chips:* one per board action, e.g. "Added concept map · 12 elements · **Locate**". Click = Locate that batch; secondary action = Undo that batch.
-  - *Links with custom schemes:* `[p. 42](cite:<bookId>#<page>)` opens the Source tab on that page; `[the red arrow](board:<elementId>)` runs Locate on the element.
-  - *Footer:* model, tokens, cost of the turn (hover for cached tokens).
+  - _Text:_ Markdown (`react-markdown`, GFM) with LaTeX through `remark-math` + our `renderMath()` ([math-renderer](./math-renderer.md)). `dir="auto"` per message so Arabic and English both read correctly.
+  - _Tool chips:_ one per board action, e.g. "Added concept map · 12 elements · **Locate**". Click = Locate that batch; secondary action = Undo that batch.
+  - _Links with custom schemes:_ `[p. 42](cite:<bookId>#<page>)` opens the Source tab on that page; `[the red arrow](board:<elementId>)` runs Locate on the element.
+  - _Footer:_ model, tokens, cost of the turn (hover for cached tokens).
 - **User message** shows its attached context as chips (what was sent): "Selection · 3 elements · picture", and a thumbnail when a picture was attached.
 
 ## Composer
@@ -39,28 +42,29 @@ The student talks to the AI **inside the app**. There is no external client, no 
 - Multi-line textarea (`dir="auto"`); **Enter** sends, **Shift+Enter** newline. **Send** becomes **Stop** while a turn runs.
 - **Context chips (R3)** above the input, each removable and each showing what it will send:
 
-  | Chip | Default | Options |
-  |---|---|---|
+  | Chip              | Default                       | Options                                       |
+  | ----------------- | ----------------------------- | --------------------------------------------- |
   | **Selection (n)** | On when something is selected | as: structure · picture · both (default both) |
-  | **Viewport** | Off | picture |
-  | **Whole board** | Off | as: structure · picture · both |
+  | **Viewport**      | Off                           | picture                                       |
+  | **Whole board**   | Off                           | as: structure · picture · both                |
 
   Details and the exact payloads: [board-context](./board-context.md). A **"What the AI sees"** link opens a preview with the exact digest text, thumbnails and a token estimate.
-- **Quick actions** (prefill the input, no new backend): *Explain on the board* · *Summarise this chapter* · *Check my work* (needs a selection) · *Ask*. They set the turn `mode`.
+
+- **Quick actions** (prefill the input, no new backend): _Explain on the board_ · _Summarise this chapter_ · _Check my work_ (needs a selection) · _Ask_. They set the turn `mode`.
 - **Attach images:** paste or drop an image into the composer to include it as an image part (uploaded via `POST /api/blobs`).
 - **Entry from the board:** the selection toolbar's **Ask AI** focuses the composer (the right-click menu is not built) with the Selection chip attached. No keyboard shortcut is assigned until M5 (browser-reserved combos such as Ctrl+L are avoided).
 
 ## States
 
-| State | UI |
-|---|---|
-| Idle | Composer enabled |
-| Streaming | Text appears incrementally; **Stop** shown; chips appear as batches land; top bar shows "Jump to AI" |
-| Tool running | Chip with spinner; AI cursor and status line on the board |
-| Stopped / error | Partial message kept; inline notice; *Undo this response* offered when batches were applied |
-| `turn_busy` | "The AI is still working on this board" with Stop |
-| Budget exceeded | Notice naming the cap, a link to settings, composer disabled for daily cap |
-| Disconnected | Banner "Reconnecting…"; sending is disabled until the WebSocket rejoins |
+| State           | UI                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| Idle            | Composer enabled                                                                                     |
+| Streaming       | Text appears incrementally; **Stop** shown; chips appear as batches land; top bar shows "Jump to AI" |
+| Tool running    | Chip with spinner; AI cursor and status line on the board                                            |
+| Stopped / error | Partial message kept; inline notice; _Undo this response_ offered when batches were applied          |
+| `turn_busy`     | "The AI is still working on this board" with Stop                                                    |
+| Budget exceeded | Notice naming the cap, a link to settings, composer disabled for daily cap                           |
+| Disconnected    | Banner "Reconnecting…"; sending is disabled until the WebSocket rejoins                              |
 
 After each finished turn: **Undo this response** (reverts every batch of the turn, newest first, skipping conflicts) and the turn's cost.
 
