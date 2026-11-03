@@ -132,3 +132,17 @@ export function footerText(u: Usage): string {
 /** Tool-call chip text: "Added concept map · 12 elements". */
 export const chipText = (b: BatchChip): string =>
   `${b.label} · ${b.count} element${b.count === 1 ? '' : 's'}`
+
+export const turnIdOf = (m: TutorMessage): string | undefined =>
+  m.parts.flatMap((p) => (p.type === 'data-turn' ? [p.data.turnId] : [])).at(-1)
+
+/** "Undid 3 changes. 1 change was kept because you edited it afterwards." */
+export function undoNote(r: { undone: number; skipped: number }): string {
+  const n = (k: number) => `${k} change${k === 1 ? '' : 's'}`
+  if (r.undone === 0 && r.skipped === 0) return 'Nothing left to undo.'
+  const kept =
+    r.skipped > 0
+      ? ` ${n(r.skipped)} ${r.skipped === 1 ? 'was' : 'were'} kept because you edited ${r.skipped === 1 ? 'it' : 'them'} afterwards.`
+      : ''
+  return `Undid ${n(r.undone)}.${kept}`
+}

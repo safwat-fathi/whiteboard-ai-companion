@@ -2,7 +2,14 @@
 
 import type { ContextDescriptor } from '@whiteboard/core'
 import { useEffect, useRef, useState } from 'react'
-import { errorNotice, textOf, turnStateOf } from './chat-core'
+import {
+  batchesOf,
+  errorNotice,
+  textOf,
+  turnIdOf,
+  turnStateOf,
+  undoNote,
+} from './chat-core'
 import {
   type MessageActions,
   MessageBoundary,
@@ -49,12 +56,39 @@ export function ChatTab(o: {
   hasSelection?: boolean
   getContext?: () => Partial<ContextDescriptor>
   actions?: MessageActions
+  /** Undoes the board changes of a whole turn or of one batch; absent = no undo buttons. */
+  undo?: {
+    turn: (turnId: string) => Promise<{ undone: number; skipped: number }>
+    batch: (batchId: string) => Promise<{ undone: number; skipped: number }>
+  }
   fetch?: typeof fetch
 }) {
   const chat = useTutorChat(o)
   const [text, setText] = useState('')
   const [mode, setMode] = useState<Mode>('ask')
   const [heard, setHeard] = useState('')
+  const [undoing, setUndoing] = useState<
+    Record<string, { busy: boolean; note?: string }>
+  >({})
+  /** Runs an undo for a turn (`key` = turn id) and shows its outcome under the message. */
+  const runUndo = async (
+    key: string,
+    call: () => Promise<{ undone: number; skipped: number }>,
+  ) => {
+    setUndoing((u) => ({ ...u, [key]: { busy: true } }))
+    try {
+      const note = undoNote(await call())
+      setUndoing((u) => ({ ...u, [key]: { busy: false, note } }))
+    } catch (e) {
+      setUndoing((u) => ({
+        ...u,
+        [key]: {
+          busy: false,
+          note: e instanceof Error ? e.message : 'Could not undo.',
+        },
+      }))
+    }
+  }
   const box = useRef<HTMLTextAreaElement>(null)
   const end = useRef<HTMLDivElement>(null)
   const streaming = chat.status === 'streaming'
@@ -62,6 +96,21 @@ export function ChatTab(o: {
     chat.error?.code === 'budget_exceeded' &&
     chat.error.details?.cap === 'daily'
   const last = chat.messages.at(-1)
+  const undoUi = (m: (typeof chat.messages)[number]) => {
+    const turn = turnIdOf(m)
+    if (!o.undo || !turn || m.role !== 'assistant') return undefined
+    const state = undoing[turn]
+    const running = streaming && m === last
+    return {
+      available: !running && batchesOf(m).length > 0,
+      busy: state?.busy ?? false,
+      note: state?.note,
+      run: () =>
+        void runUndo(turn, () =>
+          (o.undo as NonNullable<typeof o.undo>).turn(turn),
+        ),
+    }
+  }
 
   // keep the newest text in view
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every change of the last message
@@ -117,7 +166,23 @@ export function ChatTab(o: {
         )}
         {chat.messages.map((m) => (
           <MessageBoundary key={m.id}>
-            <MessageView message={m} actions={o.actions ?? {}} />
+            <MessageView
+              message={m}
+              actions={{
+                ...o.actions,
+                ...(o.undo && turnIdOf(m)
+                  ? {
+                      onUndoBatch: (b) =>
+                        void runUndo(`${turnIdOf(m)}`, () =>
+                          (o.undo as NonNullable<typeof o.undo>).batch(
+                            b.batchId,
+                          ),
+                        ),
+                    }
+                  : {}),
+              }}
+              undo={undoUi(m)}
+            />
           </MessageBoundary>
         ))}
         {streaming && last?.role === 'assistant' && (

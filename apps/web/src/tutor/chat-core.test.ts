@@ -10,6 +10,8 @@ import {
   type TutorMessage,
   textOf,
   toMessage,
+  turnIdOf,
+  undoNote,
 } from './chat-core'
 
 const usage = {
@@ -151,5 +153,27 @@ describe('footer and chips', () => {
     expect(chipText({ ...b, count: 12 })).toBe(
       'Added concept map · 12 elements',
     )
+  })
+})
+
+describe('undo wording', () => {
+  it('says what was undone and what was kept', () => {
+    expect(undoNote({ undone: 3, skipped: 0 })).toBe('Undid 3 changes.')
+    expect(undoNote({ undone: 1, skipped: 1 })).toBe(
+      'Undid 1 change. 1 change was kept because you edited it afterwards.',
+    )
+    expect(undoNote({ undone: 0, skipped: 2 })).toBe(
+      'Undid 0 changes. 2 changes were kept because you edited them afterwards.',
+    )
+    expect(undoNote({ undone: 0, skipped: 0 })).toBe('Nothing left to undo.')
+  })
+  it('finds the turn of a message', () => {
+    const m = {
+      id: 'a',
+      role: 'assistant',
+      parts: [{ type: 'data-turn', data: { turnId: 't9' } }],
+    } as TutorMessage
+    expect(turnIdOf(m)).toBe('t9')
+    expect(turnIdOf({ id: 'u', role: 'user', parts: [] })).toBeUndefined()
   })
 })

@@ -376,4 +376,110 @@ describe('ChatTab', () => {
     await settle()
     expect(w.posted[0]?.body.context.mode).toBe('explain')
   })
+
+  describe('undo', () => {
+    const chip = {
+      batchId: 'b1',
+      seq: 3,
+      label: 'Added concept map',
+      bounds: null,
+      count: 12,
+    }
+    const drew = () =>
+      sse(turn(...text('x', 'Here it is.'), { type: 'data-batch', data: chip }))
+    const fakeUndo = (
+      over: Partial<{
+        turn: () => Promise<{ undone: number; skipped: number }>
+      }> = {},
+    ) => ({
+      turn: vi.fn(over.turn ?? (async () => ({ undone: 3, skipped: 1 }))),
+      batch: vi.fn(async () => ({ undone: 1, skipped: 0 })),
+    })
+
+    it('offers Undo this response once the turn that drew is over, and reports what happened', async () => {
+      const w = world(drew)
+      const undo = fakeUndo()
+      await mount(w, { undo })
+      await type('draw it')
+      await press('Enter')
+      await settle()
+      await act(async () => btn('Undo this response').click())
+      expect(undo.turn).toHaveBeenCalledWith('t1')
+      expect(host.textContent).toContain(
+        'Undid 3 changes. 1 change was kept because you edited it afterwards.',
+      )
+    })
+
+    it('a chip has its own Undo', async () => {
+      const w = world(drew)
+      const undo = fakeUndo()
+      await mount(w, { undo })
+      await type('draw it')
+      await press('Enter')
+      await settle()
+      await act(async () => btn('Undo').click())
+      expect(undo.batch).toHaveBeenCalledWith('b1')
+      expect(host.textContent).toContain('Undid 1 change.')
+    })
+
+    it('is not offered for a reply that changed nothing, or while the reply is still streaming', async () => {
+      const plain = world(() => sse(turn(...text('x', 'Just words.'))))
+      await mount(plain, { undo: fakeUndo() })
+      await type('hi')
+      await press('Enter')
+      await settle()
+      expect(btn('Undo this response')).toBeUndefined()
+      await unmount?.()
+      unmount = undefined
+
+      let controller!: ReadableStreamDefaultController<Uint8Array>
+      const body = new ReadableStream<Uint8Array>({
+        start: (c) => {
+          controller = c
+        },
+      })
+      const open = world((init) => {
+        init.signal?.addEventListener('abort', () =>
+          controller.error(new DOMException('Aborted', 'AbortError')),
+        )
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })
+      })
+      await mount(open, { undo: fakeUndo() })
+      await type('draw')
+      await press('Enter')
+      await act(async () => {
+        const enc = new TextEncoder()
+        for (const c of [
+          { type: 'start', messageId: 's' },
+          { type: 'data-turn', data: { turnId: 't2' } },
+          { type: 'data-batch', data: chip },
+        ])
+          controller.enqueue(enc.encode(`data: ${JSON.stringify(c)}\n\n`))
+      })
+      await settle()
+      expect(btn('Undo this response')).toBeUndefined()
+      await act(async () => btn('Stop').click())
+      await settle()
+      expect(btn('Undo this response')).toBeTruthy() // after Stop the batches that landed can be undone
+    })
+
+    it('shows the failure in words and lets the student try again', async () => {
+      const w = world(drew)
+      const undo = fakeUndo({
+        turn: async () => {
+          throw new Error('The server could not be reached.')
+        },
+      })
+      await mount(w, { undo })
+      await type('draw it')
+      await press('Enter')
+      await settle()
+      await act(async () => btn('Undo this response').click())
+      expect(host.textContent).toContain('The server could not be reached.')
+      expect(btn('Undo this response').disabled).toBe(false)
+    })
+  })
 })

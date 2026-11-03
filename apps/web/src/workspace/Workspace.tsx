@@ -325,6 +325,14 @@ export function Workspace({ boardId }: { boardId?: string }) {
                   boardId={boardId}
                   connected={live}
                   actions={{ onCite: openSource }}
+                  undo={
+                    api
+                      ? {
+                          turn: (turnId) => api.undoTurn(boardId, turnId),
+                          batch: (batchId) => api.undoBatch(boardId, batchId),
+                        }
+                      : undefined
+                  }
                 />
               ) : null,
             activity: (

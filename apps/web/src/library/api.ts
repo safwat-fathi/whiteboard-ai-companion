@@ -188,6 +188,17 @@ export function createLibraryApi(
       request<PageText>('GET', `/api/books/${enc(id)}/pages/${page}`),
     createBoard: (title: string, scope: Scope) =>
       post<Board>('/api/boards', { title, scope }),
+    /** "Undo this response": the turn's changes, newest first; `skipped` are steps the student changed since. */
+    undoTurn: (boardId: string, turnId: string) =>
+      post<{ undone: number; skipped: number }>(
+        `/api/boards/${enc(boardId)}/turns/${enc(turnId)}/undo`,
+        {},
+      ),
+    undoBatch: (boardId: string, batchId: string) =>
+      post<{ undone: number; skipped: number }>(
+        `/api/boards/${enc(boardId)}/batches/${enc(batchId)}/undo`,
+        {},
+      ),
     getBoard: (id: string) => request<Board>('GET', `/api/boards/${enc(id)}`),
     /** `{}` clears the scope (no book). */
     setBoardScope: (id: string, scope: Scope | Record<string, never>) =>

@@ -43,12 +43,23 @@ const mini: React.CSSProperties = {
   padding: 0,
 }
 
+/** Per-message undo state, owned by the chat tab. */
+export type TurnUndo = {
+  /** Offer "Undo this response" (the turn is over and changed the board). */
+  available: boolean
+  busy: boolean
+  note?: string
+  run: () => void
+}
+
 export function MessageView({
   message,
   actions,
+  undo,
 }: {
   message: TutorMessage
   actions: MessageActions
+  undo?: TurnUndo
 }) {
   const mine = message.role === 'user'
   const sources = sourcesOf(message)
@@ -110,6 +121,18 @@ export function MessageView({
           </span>
         ))}
       </div>
+      {undo?.available && (
+        <p style={{ margin: '6px 0 0', fontSize: 13 }}>
+          <button type="button" disabled={undo.busy} onClick={undo.run}>
+            Undo this response
+          </button>
+        </p>
+      )}
+      {undo?.note && (
+        <p role="status" style={{ margin: '6px 0 0', fontSize: 13 }}>
+          {undo.note}
+        </p>
+      )}
       {usage && (
         <p style={{ margin: '6px 0 0', fontSize: 12, color: '#666' }}>
           {footerText(usage)}

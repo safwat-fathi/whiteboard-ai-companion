@@ -14,7 +14,6 @@ import {
   buildScope,
   buildTree,
   scopeTitle,
-  type TreeNode,
   toggle,
 } from '../../../src/library/scope'
 import { isInProgress, POLL_MS, statusText } from '../../../src/library/status'
