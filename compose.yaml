@@ -4,8 +4,13 @@ services:
     env_file:
       - path: apps/server/.env
         required: false
+    # environment: wins over env_file, which wins over the image's ENV, so the
+    # container settings below survive a copied apps/server/.env
     environment:
-      PUBLIC_ORIGIN: http://localhost:3000
+      HOST: 0.0.0.0
+      PORT: "4000"
+      DATA_DIR: /data
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
     ports: ["127.0.0.1:4000:4000"]
     volumes: ["whiteboard-data:/data"]
   web:
@@ -13,7 +18,7 @@ services:
       context: .
       target: web
       args:
-        NEXT_PUBLIC_API_BASE: http://localhost:4000
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE-http://localhost:4000}
     ports: ["127.0.0.1:3000:3000"]
     depends_on: [server]
 

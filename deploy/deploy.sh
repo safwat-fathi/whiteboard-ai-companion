@@ -8,5 +8,5 @@ if [[ -z "${TARGET}" ]]; then
 fi
 
 ssh "${TARGET}" 'cd /opt/whiteboard && git pull --ff-only \
-  && pnpm install --frozen-lockfile && pnpm build \
+  && pnpm install --frozen-lockfile && NEXT_PUBLIC_API_BASE= pnpm build \
   && sudo systemctl restart whiteboard-server whiteboard-web'

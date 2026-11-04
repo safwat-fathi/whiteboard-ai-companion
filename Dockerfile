@@ -11,7 +11,7 @@ EXPOSE 4000
 CMD ["pnpm", "--filter", "@whiteboard/server", "start"]
 
 FROM base AS web
-# Inlined into the client bundle at build time; empty = offline mode.
+# Inlined into the client bundle at build time; set to empty for same-origin server mode (behind Caddy).
 ARG NEXT_PUBLIC_API_BASE=http://localhost:4000
 ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
 RUN pnpm --filter @whiteboard/web build

@@ -26,7 +26,7 @@ if [[ -n "${RCLONE_REMOTE:-}" ]]; then
   echo "Syncing backups and blobs to ${RCLONE_REMOTE}..."
   rclone sync "${BACKUP_DIR}" "${RCLONE_REMOTE}/backups"
   if [[ -d "${DATA_DIR}/blobs" ]]; then
-    rclone sync "${DATA_DIR}/blobs" "${RCLONE_REMOTE}/blobs"
+    rclone copy "${DATA_DIR}/blobs" "${RCLONE_REMOTE}/blobs"
   fi
   echo "Remote sync complete."
 fi

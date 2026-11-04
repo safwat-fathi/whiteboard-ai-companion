@@ -6,10 +6,11 @@ After=network.target
 User=whiteboard
 WorkingDirectory=/opt/whiteboard/apps/web
 EnvironmentFile=/etc/whiteboard/env
-ExecStart=/opt/whiteboard/node_modules/.bin/next start -H 127.0.0.1 -p 3000
+ExecStart=/opt/whiteboard/apps/web/node_modules/.bin/next start -H 127.0.0.1 -p 3000
 Restart=on-failure
 NoNewPrivileges=true
 ProtectSystem=strict
+ReadWritePaths=/opt/whiteboard/apps/web/.next
 PrivateTmp=true
 
 [Install]

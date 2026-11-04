@@ -1,0 +1,8 @@
+[Unit]
+Description=Whiteboard AI Companion backup (SQLite VACUUM INTO + optional rclone)
+
+[Service]
+Type=oneshot
+User=whiteboard
+EnvironmentFile=/etc/whiteboard/env
+ExecStart=/opt/whiteboard/deploy/backup.sh
