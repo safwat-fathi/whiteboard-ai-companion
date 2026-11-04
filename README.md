@@ -16,7 +16,7 @@ A personal **study companion**. Upload a book, choose what to study (a topic, a 
 - **Books with page citations.** Upload a PDF, get hybrid search (keywords + embeddings) scoped to a topic, chapter or the whole book. Answers say what is from your book and what is general explanation.
 - **Jump to the AI's work.** Follow the AI live, get an off-screen indicator, or click any chat chip or activity row to fly to where it drew, now or weeks ago.
 - **A from-scratch canvas.** Freehand, shapes, text (Arabic/RTL), LaTeX math (MathJax), charts, images, select/move/resize.
-- **Simple to run.** Runs via pnpm scripts or Docker (`compose.yaml`), with no external database server: Node, one SQLite file, a [Meta Model API](https://api.meta.ai) key (`MODEL_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings. Runs on a laptop and on a small VPS.
+- **Simple to run.** Runs via pnpm scripts or Docker (`compose.yaml`), with no external database server: Node, one SQLite file, a [Meta Model API](https://api.meta.ai) key (`MODEL_API_KEY`) for all LLM/vision calls, and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) for `baai/bge-m3` embeddings and the opt-in R3 OCR rung. Runs on a laptop and on a small VPS.
 
 ## Hackathon & Meta AI Integration
 
@@ -24,7 +24,7 @@ Whiteboard AI Companion is built for the **[Meta AI Developer Hackathon](https:/
 
 The project re-imagines how learners interact with textbooks and technical subjects by uniting Meta foundation models with an interactive visual workspace via the **Meta Model API**:
 
-- **AI Tutor with Visual Explanations:** Powered directly by the **Meta Model API** (`https://api.meta.ai/v1`) using Meta's **Muse** series (`muse-spark-1.3`, `muse-wonder-1.0`) for real-time tool orchestration, mathematical reasoning, and textbook diagram/page transcription (with open-weights Llama 4 supported via OpenRouter `meta-llama/llama-4-maverick`).
+- **AI Tutor with Visual Explanations:** Powered directly by the **Meta Model API** (`https://api.meta.ai/v1`) using Meta's **Muse** series (`muse-spark-1.3` for the tutor, summaries and vision) for real-time tool orchestration, mathematical reasoning, and textbook diagram/page transcription. The server has a single Meta client; other OpenAI-compatible providers (e.g. Llama 4 on OpenRouter) only work by repointing `META_API_BASE_URL` and `MODEL_API_KEY`, and have not been tried.
 - **The Board is the AI's Context:** Instead of text-only conversations, the student and AI share an infinite 2D canvas. The AI can point, draw diagrams, write formatted MathJax equations, and place textbook figures directly into view.
 - **Grounded in Your Books:** Upload any PDF to get hybrid search (dense `baai/bge-m3` embeddings + BM25) with verifiable page citations, distinguishing textbook source material from general explanation.
 - **Local-First & Accessible:** Runs via pnpm scripts or Docker without external DB servers (Node, SQLite in WAL mode) to ensure low latency and easy accessibility for any student or researcher.
@@ -88,18 +88,18 @@ cp apps/web/.env.example apps/web/.env.local
 
 - In `apps/server/.env`, configure your AI credentials:
   - `MODEL_API_KEY`: [Meta Model API](https://api.meta.ai) key (all LLM chat, tool loop, vision, summaries, page OCR).
-  - `OPENROUTER_API_KEY`: [OpenRouter](https://openrouter.ai) key (used exclusively for `baai/bge-m3` embeddings).
-- In `apps/web/.env.local`, `NEXT_PUBLIC_API_BASE=http://localhost:4000` is pre-set to connect the frontend to the backend server. (Leave empty or unset if you wish to run purely in offline browser-only mode using IndexedDB).
+  - `OPENROUTER_API_KEY`: [OpenRouter](https://openrouter.ai) key (`baai/bge-m3` embeddings, and the opt-in R3 OCR rung, `pnpm ingest --r3`).
+- In `apps/web/.env.local`, `NEXT_PUBLIC_API_BASE=http://localhost:4000` is pre-set, which connects the frontend to the backend server (server mode). For the standalone browser-only editor (IndexedDB), comment it out or delete it: only an **unset** variable means offline mode; an empty value means same-origin server mode.
 
 ### 3. Running
 
 - **Collaborative server mode (canvas, AI tutor, library, sync):**
   ```bash
-  pnpm dev                       # web on :3000, server on :4000 (SQLite in ./data, WebSocket sync)
+  pnpm dev                       # web on :3000, server on :4000 (SQLite in ./data, WebSocket sync); needs NEXT_PUBLIC_API_BASE set
   ```
 - **Standalone local editor (browser-only, no server needed):**
   ```bash
-  pnpm dev:web                   # editor at http://localhost:3000 (persists in browser IndexedDB)
+  pnpm dev:web                   # editor at http://localhost:3000 (persists in browser IndexedDB); needs NEXT_PUBLIC_API_BASE unset, so remove it from apps/web/.env.local first
   ```
 - **Backend server only:**
   ```bash
@@ -139,8 +139,8 @@ The server reads its configuration from `apps/server/.env` (see [`apps/server/.e
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `MODEL_API_KEY`                                                   | Meta Model API secret (chat, tool loop, vision, summaries, page OCR). Server-side only                                               |
 | `META_API_BASE_URL`                                               | Meta OpenAI-compatible base URL (`https://api.meta.ai/v1` by default)                                                                |
-| `OPENROUTER_API_KEY`                                              | Used exclusively for `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and historical M0 spike scripts. Server-side only          |
-| `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `CHEAP_MODEL` · `VISION_MODEL` | Meta model IDs (default `muse-spark-1.3`; `REVIEWER_MODEL=muse-wonder-1.0`; open-weights Llama 4 via OpenRouter)                     |
+| `OPENROUTER_API_KEY`                                              | `baai/bge-m3` embeddings (`POST /api/v1/embeddings`) and the opt-in R3 OCR rung (`pnpm ingest --r3`). Server-side only             |
+| `TUTOR_MODEL` · `TUTOR_MODEL_AR` · `CHEAP_MODEL` · `VISION_MODEL` | Meta model IDs (default `muse-spark-1.3`), plus `TUTOR_FALLBACK_MODEL`                     |
 | `SNAPSHOT_ADAPTER`                                                | Canvas snapshot delivery adapter (`follow-up-user` required for Meta Model API; `tool-result-image` supported on OpenRouter)         |
 | `EMBED_MODEL` · `EMBED_DIMS`                                      | Embedding model ID (`baai/bge-m3`, 1024-d via OpenRouter embeddings endpoint)                                                        |
 | `DATA_DIR`                                                        | Where the SQLite file and blobs live (`./data` by default)                                                                           |
@@ -159,7 +159,7 @@ The web app reads its environment variables from `apps/web/.env.local` (see [`ap
 
 | Key                    | Purpose                                                                                                                                                                                |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_API_BASE` | Backend server URL (`http://localhost:4000`). Enables remote boards, WebSocket sync, library book viewer, and AI tutor chat dock. Leave unset for offline local mode (IndexedDB only). |
+| `NEXT_PUBLIC_API_BASE` | Backend server URL (`http://localhost:4000`). Enables remote boards, WebSocket sync, library book viewer, and AI tutor chat dock. Leave **unset** (not empty) for offline local mode (IndexedDB only); an empty value means same-origin server mode. |
 
 ## Repo layout
 

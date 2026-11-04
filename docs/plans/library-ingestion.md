@@ -17,7 +17,7 @@ upload ─▶ uploaded ─▶ estimate + preview ─▶ [Index] ─▶ queued �
                                                                      ─▶ embedding ─▶ summarising ─▶ ready | failed
 ```
 
-1. `POST /api/books` (multipart) stores the file as a blob, creates the row (`uploaded`), reads page count and metadata.
+1. `POST /api/books` (raw `application/pdf` body, `?title=`; not multipart) stores the file as a blob, creates the row (`uploaded`) and reads the page count. Author and language metadata are not read (`books.author` / `books.lang` stay empty).
 2. `GET /api/books/:id/estimate`: pages, text-density histogram, suggested routing, cost per paid rung. `POST /api/books/:id/preview {pages:[1,2,3]}`: original page image next to the extracted text per rung, so the student can compare before paying anything.
 3. `POST /api/books/:id/index` starts the job. Any paid rung shows its estimate first and counts against the daily budget ([auth-security](./auth-security.md)).
 4. Progress is polled from `GET /api/books/:id` (`status`, `progress`). Failed jobs keep their error; **Retry** resumes.
@@ -28,8 +28,8 @@ upload ─▶ uploaded ─▶ estimate + preview ─▶ [Index] ─▶ queued �
 |---|---|---|---|---|
 | R1 | Local: `pdfjs-dist` text + outline + page labels (compare against `pdftotext -layout`) | free | Text PDFs, speed | Equations, scans, multi-column reading order |
 | ~~R2~~ | ~~OpenRouter `file-parser`, engine `cloudflare-ai`~~ **dropped (S2):** only a text dump like R1, no LaTeX, empty pages on scans, and a file-size limit between 2.1 and 5.5 MB | | | |
-| ~~R3~~ *(M0 S2 benchmark baseline)* | OpenRouter `file-parser`, engine `mistral-ocr` | $2 / 1,000 pages (`$0.0205` / 10 pages in S2) | Benchmarked in S2/S4b on scanned, Arabic & math pages | Requires OpenRouter `file-parser` plugin; replaced at runtime by R4 via Meta Model API |
-| R4 *(active fallback after R1)* | `VISION_MODEL` via **Meta Model API** (`muse-spark-1.3`; open-weights `meta-llama/llama-4-maverick` via OpenRouter) transcribes page images → Markdown + LaTeX *(S2 also benchmarked `google/gemini-3.8-flash`)* | ≈ $0.05–0.40 per 400 pages | Scanned pages, Arabic scans, math-dense pages, figures | Slower than R1; check for invented text |
+| ~~R3~~ *(M0 S2 benchmark baseline)* | OpenRouter `file-parser`, engine `mistral-ocr` | $2 / 1,000 pages (`$0.0205` / 10 pages in S2) | Benchmarked in S2/S4b on scanned, Arabic & math pages | Requires OpenRouter `file-parser` plugin; replaced by R4 by default; still reachable as an opt-in for pages the student names (`pnpm ingest --r3`, `POST …/index {methods}`), through `OPENROUTER_API_KEY` and a hard-coded carrier model (`R3_CARRIER_MODEL` in `library/providers.ts`) |
+| R4 *(active fallback after R1)* | `VISION_MODEL` via **Meta Model API** (`muse-spark-1.3`; there is one Meta client, so Llama 4 via OpenRouter is not supported) transcribes page images → Markdown + LaTeX *(S2 also benchmarked `google/gemini-3.8-flash`)* | ≈ $0.05–0.40 per 400 pages | Scanned pages, Arabic scans, math-dense pages, figures | Slower than R1; check for invented text |
 
 - **As built (M4, 2026-11-03):** default per-page routing is R1 for pages with ≥ 50 characters and ≤ 5% math symbols and **R4 (`muse-spark-1.3`) for the rest**; R3 runs only for pages the student names (`POST …/index {methods}`) and is checked against the daily budget first. R4 hardening: 4 pages in flight, `max_tokens` 12,000 (Muse spends reasoning tokens first), one retry at 24,000 when the answer was cut off (a page still cut off is kept and listed in `ingest_method.warnings`), 429/5xx retried with backoff. A scan whose images pdfjs cannot decode renders blank and the model answers nothing: a book whose R4 pages are mostly empty fails (`ingest_failed`) and the empty pages are cleared so a retry reads them again. Real books: Algebra 1 41 of 700 pages go to R4, CK-12 14 of 652, the Arabic scan 383 of 383 (JBIG2 needs pdfjs `wasmUrl`).
 - **Per-page routing:** low text density → scanned → R4 (`VISION_MODEL` via Meta Model API); math-dense pages → R4 for those pages only; everything else R1 (`pdfjs-dist`). Strip raw `\x00–\x1F` control chars and PUA glyphs (`\uE000–\uF8FF`) emitted by `pdfjs-dist` on math fonts before chunking.
@@ -39,7 +39,7 @@ upload ─▶ uploaded ─▶ estimate + preview ─▶ [Index] ─▶ queued �
 ## Arabic and normalisation
 
 - Display copy keeps the original text. The **search copy** (`text_norm`) is: NFKC (folds Arabic presentation forms U+FB50–FEFF), strip tatweel (U+0640) and harakat (U+064B–U+065F, U+0670), fold alef variants (أ إ آ → ا), ya (ى → ي) and ta marbuta (ة → ه), Arabic-Indic digits → ASCII, lower-case Latin. FTS5 would otherwise split words at combining marks.
-- If R1 returns reversed (visual-order) or presentation-form lines, those pages go to R3/R4, unless S2 shows a reliable per-line fix.
+- **Not built:** detecting reversed (visual-order) or presentation-form lines in R1 output. Routing looks only at character count and math-symbol ratio, so such pages stay on R1 (NFKC folds presentation forms only in the search copy).
 - Mixed Arabic/English pages are split into runs for the `dir` of chunks only if S2 shows it matters.
 
 ## Structure
@@ -53,7 +53,7 @@ Heading-aware, 400–800 tokens, ~12% overlap; never split inside an equation, t
 
 ## Embeddings and index
 
-- OpenRouter `POST /api/v1/embeddings` (`OPENROUTER_API_KEY`, used strictly for embeddings since Meta's Llama API does not expose an embeddings endpoint), batched (retry `429`/`5xx` with backoff; S4b saw transient `429` on 5 of 24 batches with `data_collection: 'deny'`, all succeeding on retry 1). **Confirmed in S4b:** default `baai/bge-m3` (`1024-d`, `k = 8`, multilingual, 8k context, `$0.01`/M tokens — `100%` vector@8, `93.3%` hybrid@8, `96.7%` with `±1` neighbours across `ck12`, `alg1` and `arabic`). `qwen/qwen3-embedding-8b` (`4096-d`) and `openai/text-embedding-3-small` (`1536-d`) achieved identical `93.3%` hybrid@8 at higher cost and exceed S4a's `512 MiB` / `100 ms` budget at 100k chunks.
+- OpenRouter `POST /api/v1/embeddings` (`OPENROUTER_API_KEY`, used for embeddings, since Meta's Llama API does not expose an embeddings endpoint, and for the opt-in R3 `mistral-ocr` page OCR), batched (retry `429`/`5xx` with backoff; S4b saw transient `429` on 5 of 24 batches with `data_collection: 'deny'`, all succeeding on retry 1). **Confirmed in S4b:** default `baai/bge-m3` (`1024-d`, `k = 8`, multilingual, 8k context, `$0.01`/M tokens — `100%` vector@8, `93.3%` hybrid@8, `96.7%` with `±1` neighbours across `ck12`, `alg1` and `arabic`). `qwen/qwen3-embedding-8b` (`4096-d`) and `openai/text-embedding-3-small` (`1536-d`) achieved identical `93.3%` hybrid@8 at higher cost and exceed S4a's `512 MiB` / `100 ms` budget at 100k chunks.
 - Vectors are L2-normalised Float32 BLOBs in `book_chunks.embedding`; `books.embed_model` and `dims` record what was used.
 - Keyword index: FTS5 over `text_norm` and `heading_path` ([database](./database.md)). English stemming (a `porter` table) is added only if the eval shows keyword recall problems.
 
@@ -71,12 +71,12 @@ Bottom-up: leaf sections → chapters → book. 150–400 tokens each plus key t
 
 - **Library page:** upload dropzone, book cards (title, pages, status/progress, method used, cost), delete.
 - **Book page:** outline tree (from `book_sections`), per-section page range, summary preview, **Study this** (creates a board with a scope), re-index.
-- **Scope picker** (also reachable from the board's scope chip): *Topic* (free text, optionally across the library) · *Chapter(s)* (tick sections) · *Whole book*.
-- **Source tab:** the browser renders the cited page with `pdfjs-dist` from `GET /api/books/:id/file` (range requests); in-page highlighting is v1.1. If a page is a scan, the cached raster is shown.
+- **Scope picker** (also reachable from the board's scope chip): *Topic* (as built: "No book", i.e. the tutor searches the whole library; a free-text topic is **not built**) · *Chapter(s)* (tick sections) · *Whole book*.
+- **Source tab:** the browser shows the cited page as a server-rendered page image (`<img>` from the page-image route; `pdfjs-dist` is not a web dependency, and nothing in the web calls `GET /api/books/:id/file`); in-page highlighting is v1.1.
 
 ## Deletion and re-embedding
 
-Deleting a book removes rows (cascade), cached rasters and its search vectors from memory; the original blob stays until no book references it. Changing `EMBED_MODEL` offers a per-book **Re-embed**; mixed models across books are fine.
+Deleting a book removes rows (cascade), cached rasters and its search vectors from memory; the original blob stays until no book references it. A per-book **Re-embed** button is **not built**: after changing `EMBED_MODEL`, `POST /api/books/:id/index` on a `ready` book drops and rebuilds sections, chunks and summaries; mixed models across books are fine.
 
 ## Tests
 
