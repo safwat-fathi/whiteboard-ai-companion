@@ -76,6 +76,8 @@ export class BoardService {
   private readonly snapshotAfterMs: number
   private readonly idleEvictMs: number
   private readonly recentBatches: number
+  private readonly maxJoinTail: number
+  private readonly maxSnapshotsPerTick: number
 
   constructor(
     private readonly db: BoardsDb,
@@ -85,6 +87,10 @@ export class BoardService {
       snapshotAfterMs?: number
       idleEvictMs?: number
       recentBatches?: number
+      /** A join further behind than this many batches gets the live scene, not the op tail (bounds the frame size). */
+      maxJoinTail?: number
+      /** Snapshots one tick() may write, so a busy server does not gzip every board back to back on the event loop. */
+      maxSnapshotsPerTick?: number
     } = {},
   ) {
     this.now = o.now ?? Date.now
@@ -92,6 +98,8 @@ export class BoardService {
     this.snapshotAfterMs = o.snapshotAfterMs ?? 5 * 60_000
     this.idleEvictMs = o.idleEvictMs ?? 10 * 60_000
     this.recentBatches = o.recentBatches ?? 1000
+    this.maxJoinTail = o.maxJoinTail ?? 2000
+    this.maxSnapshotsPerTick = o.maxSnapshotsPerTick ?? 4
   }
 
   createBoard(title: string, scope?: Scope): BoardRow {
@@ -248,24 +256,26 @@ export class BoardService {
     const l = this.load(boardId)
     l.lastUsed = this.now()
     const head = l.headSeq
-    const snap = this.db.latestSnapshot(boardId)
-    if (fromSeq > head) {
-      // The client is ahead of this server (its database was replaced): send the whole current scene.
-      return {
-        headSeq: head,
-        snapshot: { seq: head, scene: [...l.scene.els.values()] },
-        ops: [],
-      }
-    }
-    if (snap && fromSeq < snap.seq)
-      return {
-        headSeq: head,
-        snapshot: snap,
-        ops: this.db.opsAfter(boardId, snap.seq).map(fromRow),
-      }
+    const live = (): JoinResult => ({
+      headSeq: head,
+      snapshot: { seq: head, scene: [...l.scene.els.values()] },
+      ops: [],
+    })
+    // The client is ahead of this server (its database was replaced): send the whole current scene.
+    if (fromSeq > head) return live()
+    // Decode the snapshot blob (gunzip + parse) only when this client actually needs it.
+    const snapSeq = this.db.latestSnapshotSeq(boardId)
+    const snap =
+      snapSeq !== undefined && fromSeq < snapSeq
+        ? this.db.latestSnapshot(boardId)
+        : undefined
+    const tailFrom = snap ? snap.seq : fromSeq
+    // Snapshots normally keep the tail under `snapshotEvery`; when they have stalled, ship the scene, not the log.
+    if (head - tailFrom > this.maxJoinTail) return live()
     return {
       headSeq: head,
-      ops: this.db.opsAfter(boardId, fromSeq).map(fromRow),
+      ...(snap ? { snapshot: snap } : {}),
+      ops: this.db.opsAfter(boardId, tailFrom).map(fromRow),
     }
   }
 
@@ -280,14 +290,19 @@ export class BoardService {
   /** Housekeeping the caller runs every so often: time-based snapshots and idle eviction. */
   tick(): void {
     const now = this.now()
+    let left = this.maxSnapshotsPerTick
     for (const [id, l] of this.live) {
-      if (
-        l.headSeq > l.lastSnapshotSeq &&
-        now - l.lastSnapshotAt >= this.snapshotAfterMs
-      )
+      const dirty = l.headSeq > l.lastSnapshotSeq
+      if (dirty && left > 0 && now - l.lastSnapshotAt >= this.snapshotAfterMs) {
         this.trySnapshot(id, l)
+        left--
+      }
       if (l.subs.size === 0 && now - l.lastUsed >= this.idleEvictMs) {
-        if (l.headSeq > l.lastSnapshotSeq) this.trySnapshot(id, l)
+        if (l.headSeq > l.lastSnapshotSeq) {
+          if (left === 0) continue // keep it in memory; the next tick snapshots and evicts it
+          this.trySnapshot(id, l)
+          left--
+        }
         this.live.delete(id)
       }
     }

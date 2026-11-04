@@ -37,7 +37,7 @@ const tables = (db: Database.Database) =>
   ).map((r) => r.name)
 
 /** A migrations dir holding the real migrations up to `upTo` plus the given extra files. */
-function migrationsWith(extra: Record<string, string>, upTo = 2) {
+function migrationsWith(extra: Record<string, string>, upTo = 3) {
   const dir = join(tmp(), 'migrations')
   mkdirSync(dir)
   for (const name of readdirSync(realMigrations))
@@ -49,10 +49,10 @@ function migrationsWith(extra: Record<string, string>, upTo = 2) {
 }
 
 describe('openDatabase and migrations', () => {
-  it('creates every table at user_version 2 with the pragmas set', () => {
+  it('creates every table at user_version 3 with the pragmas set', () => {
     const dataDir = join(tmp(), 'data')
     const db = openDatabase({ dataDir })
-    expect(version(db)).toBe(2)
+    expect(version(db)).toBe(3)
     expect(tables(db)).toEqual(
       expect.arrayContaining([
         'boards',
@@ -79,7 +79,7 @@ describe('openDatabase and migrations', () => {
     const dataDir = join(tmp(), 'data')
     openDatabase({ dataDir }).close()
     const db = openDatabase({ dataDir })
-    expect(version(db)).toBe(2)
+    expect(version(db)).toBe(3)
     expect(existsSync(join(dataDir, 'backups'))).toBe(false)
     db.close()
   })
@@ -129,11 +129,11 @@ describe('openDatabase and migrations', () => {
     mkdirSync(copy)
     cpSync(join(src, 'whiteboard.db'), join(copy, 'whiteboard.db'))
     const migrationsDir = migrationsWith({
-      '0003_note.sql':
+      '0004_note.sql':
         'CREATE TABLE extra (a INTEGER); ALTER TABLE boards ADD COLUMN note TEXT;',
     })
     const db = openDatabase({ dataDir: copy, migrationsDir })
-    expect(version(db)).toBe(3)
+    expect(version(db)).toBe(4)
     expect(tables(db)).toContain('extra')
     expect(
       (db.pragma('table_info(board_ops)') as { name: string }[]).map(
@@ -162,12 +162,12 @@ describe('openDatabase and migrations', () => {
     const dataDir = join(tmp(), 'data')
     openDatabase({ dataDir }).close()
     const migrationsDir = migrationsWith({
-      '0003_bad.sql':
+      '0004_bad.sql':
         'CREATE TABLE ok (a INTEGER); INSERT INTO nope VALUES (1);',
     })
     expect(() => openDatabase({ dataDir, migrationsDir })).toThrow()
     const raw = new Database(join(dataDir, 'whiteboard.db'))
-    expect(version(raw)).toBe(2)
+    expect(version(raw)).toBe(3)
     expect(tables(raw)).not.toContain('ok')
     raw.close()
   })
@@ -178,7 +178,7 @@ describe('openDatabase and migrations', () => {
     const raw = new Database(join(dataDir, 'whiteboard.db'))
     raw.pragma('user_version = 5')
     raw.close()
-    expect(() => openDatabase({ dataDir })).toThrow(/5.*2|2.*5/)
+    expect(() => openDatabase({ dataDir })).toThrow(/5.*3|3.*5/)
   })
 
   it('cascades a board delete to its ops and snapshots with no dangling rows', () => {

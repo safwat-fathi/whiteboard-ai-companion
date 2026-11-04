@@ -214,6 +214,48 @@ describe('snapshots', () => {
     expect(s?.scene).toEqual([el('a'), el('b')])
   })
 
+  it('keeps only the newest snapshot per board, and reports its seq without decoding it', () => {
+    const { boards, db } = open()
+    boards.createBoard({ id: 'b', title: 'B' }, 1)
+    boards.createBoard({ id: 'c', title: 'C' }, 1)
+    expect(boards.latestSnapshotSeq('b')).toBeUndefined()
+    boards.saveSnapshot('b', 10, [el('a')])
+    boards.saveSnapshot('c', 5, [])
+    boards.saveSnapshot('b', 500, [el('a'), el('b')])
+    boards.saveSnapshot('b', 20, []) // a stale write must not displace the newest
+    expect(boards.latestSnapshotSeq('b')).toBe(500)
+    expect(boards.latestSnapshot('b')?.scene).toEqual([el('a'), el('b')])
+    expect(
+      db
+        .prepare(
+          'SELECT seq FROM board_snapshots WHERE board_id = ? ORDER BY seq',
+        )
+        .all('b'),
+    ).toEqual([{ seq: 500 }])
+    expect(boards.latestSnapshotSeq('c')).toBe(5) // the other board is untouched
+  })
+
+  it('looks ops up by batch and messages by turn through indexes, not scans', () => {
+    const { db } = open()
+    const plan = (sql: string) =>
+      (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as { detail: string }[])
+        .map((r) => r.detail)
+        .join(' | ')
+    expect(
+      plan(
+        "SELECT * FROM board_ops INDEXED BY board_ops_batch WHERE board_id = 'b' AND batch_id = 'x'",
+      ),
+    ).toContain('board_ops_batch')
+    expect(
+      plan("SELECT * FROM messages WHERE board_id = 'b' AND turn_id = 't'"),
+    ).toContain('messages_turn')
+    expect(
+      plan(
+        "SELECT * FROM messages WHERE board_id = 'b' AND rowid < 9 ORDER BY rowid DESC LIMIT 5",
+      ),
+    ).not.toContain('TEMP B-TREE')
+  })
+
   it('deleting a board cascades its ops and snapshots', () => {
     const { boards, db } = open()
     boards.createBoard({ id: 'b', title: 'B' }, 1)

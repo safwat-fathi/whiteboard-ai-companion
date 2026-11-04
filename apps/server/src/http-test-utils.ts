@@ -22,6 +22,7 @@ import { serverPlatform } from './export'
 import { createHttpServer } from './http'
 import { createSearcher } from './library/embed-search'
 import { runIngest } from './library/ingest'
+import { createInlinePdfService } from './library/pdf-service'
 import { type Providers, stubProviders } from './library/providers'
 import { createQueue } from './library/queue'
 import { createVectorCache } from './library/search'
@@ -46,6 +47,7 @@ export async function boot(
     providers?: Partial<Providers>
     dailyBudget?: string
     maxPdfBytes?: number
+    maxConcurrentExports?: number
     /** Extra environment for loadConfig (MAX_STEPS, TUTOR_PRICE_IN_PER_M ...). */
     env?: Record<string, string>
     /** Mounts the tutor routes. `fixtures` is the scripted model (omit for "no stub, no key"). */
@@ -84,6 +86,7 @@ export async function boot(
     ...o.providers,
   }
   const cache = createVectorCache(booksDb)
+  const pdf = createInlinePdfService() // same code as the worker thread; the worker itself is covered by pdf-service.test.ts
   const queue = createQueue(
     (id) =>
       runIngest(id, {
@@ -113,7 +116,7 @@ export async function boot(
               tutorToolSet(
                 {
                   board: { boards, blobs, platform: serverPlatform },
-                  figure: { books: booksDb, dataDir, blobs },
+                  figure: { books: booksDb, dataDir, blobs, pdf },
                   book: {
                     books: booksDb,
                     boards,
@@ -135,6 +138,9 @@ export async function boot(
     boards,
     blobs,
     schemaVersion: () => schemaVersion(db),
+    ...(o.maxConcurrentExports === undefined
+      ? {}
+      : { maxConcurrentExports: o.maxConcurrentExports }),
     tutor: tutor && {
       tutor,
       boards,
@@ -152,6 +158,7 @@ export async function boot(
       config,
       providers,
       cache,
+      pdf,
       enqueue: queue.enqueue,
       dailyCap: () => dailyCap(settingsDb, config),
       maxPdfBytes: o.maxPdfBytes,

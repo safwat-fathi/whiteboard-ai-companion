@@ -21,7 +21,7 @@ import {
   openDatabase,
   schemaVersion,
 } from './db'
-import { attachGateway } from './gateway'
+import { attachGateway, sendBounded } from './gateway'
 import { createHttpServer } from './http'
 
 const ORIGIN = 'http://localhost:3000'
@@ -508,5 +508,46 @@ describe('protocol errors', () => {
     expect(boards.subscriberCount(b.id)).toBe(0)
     expect(gateway.clients()).toBe(0)
     expect(boards.submit(b.id, add('after'), OWNER).seq).toBe(1) // no dead subscriber to trip over
+  })
+})
+
+describe('sendBounded', () => {
+  const fake = (bufferedAmount: number, readyState: 0 | 1 | 2 | 3 = 1) => {
+    const sent: string[] = []
+    let terminated = false
+    return {
+      ws: {
+        OPEN: 1 as const,
+        readyState,
+        bufferedAmount,
+        send: (d: string) => void sent.push(d),
+        terminate: () => {
+          terminated = true
+        },
+      },
+      sent,
+      terminated: () => terminated,
+    }
+  }
+
+  it('sends while the backlog is under the limit', () => {
+    const f = fake(10)
+    sendBounded(f.ws, 'x', 100)
+    expect(f.sent).toEqual(['x'])
+    expect(f.terminated()).toBe(false)
+  })
+
+  it('terminates a socket whose backlog is over the limit instead of queueing more', () => {
+    const f = fake(101)
+    sendBounded(f.ws, 'x', 100)
+    expect(f.sent).toEqual([])
+    expect(f.terminated()).toBe(true)
+  })
+
+  it('does nothing on a socket that is not open', () => {
+    const f = fake(0, 3)
+    sendBounded(f.ws, 'x', 100)
+    expect(f.sent).toEqual([])
+    expect(f.terminated()).toBe(false)
   })
 })

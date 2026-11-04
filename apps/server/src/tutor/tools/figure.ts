@@ -16,8 +16,14 @@ import { z } from 'zod'
 import type { BooksDb } from '../../db'
 import { ApiError } from '../../errors'
 import { pageRaster } from '../../library/page-image'
+import type { PdfService } from '../../library/pdf-service'
 
-export type FigureDeps = { books: BooksDb; dataDir: string; blobs: BlobStore }
+export type FigureDeps = {
+  books: BooksDb
+  dataDir: string
+  blobs: BlobStore
+  pdf: PdfService
+}
 
 const frac = (min: number) => z.number().min(min).max(1)
 
@@ -77,6 +83,7 @@ export function figureTool(
           book,
           n: i.page,
           width: 2048,
+          pdf: deps.pdf,
         })
       } catch (e) {
         if (e instanceof ApiError)

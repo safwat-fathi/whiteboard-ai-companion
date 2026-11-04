@@ -147,6 +147,8 @@ The server reads its configuration from `apps/server/.env` (see [`apps/server/.e
 | `PORT` · `HOST`                                                   | Server port and binding address (`4000` / `127.0.0.1` by default)                                                                    |
 | `PUBLIC_ORIGIN`                                                   | Allowed Origin for CORS and WebSocket validation (`http://localhost:3000` by default)                                                |
 | `MAX_STEPS` · `MAX_TURN_COST_USD` · `DAILY_BUDGET_USD`            | Spending and loop caps                                                                                                               |
+| `TUTOR_MAX_OUTPUT_TOKENS`                                         | Output-token ceiling per model call (default 16384); works even while turns are unpriced                                            |
+| `R4_USD_PER_PAGE`                                                 | Estimated USD per vision-read (R4) page (default 0.009); counted in the daily budget and the ledger because Meta returns no cost |
 | `TURN_TIMEOUT_MS`                                                 | Wall clock for one tutor turn (default 120000); raise it if long answers are cut off                                                 |
 | `TUTOR_PRICE_IN_PER_M` · `TUTOR_PRICE_OUT_PER_M`                  | USD per million tokens. Unset = turns are unpriced (tokens are still counted); `MAX_TURN_COST_USD` and the spend ledger need a price |
 | `TUTOR_REASONING_EFFORT`                                          | `low` · `medium` · `high`, sent as `reasoning_effort` (optional; default: the model's own)                                           |

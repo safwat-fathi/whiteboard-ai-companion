@@ -19,6 +19,7 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
   | `budget_exceeded` | 429 | Daily or per-turn cap hit; `details.cap` says which |
   | `payload_too_large` | 413 | Over the size limit ([auth-security](./auth-security.md)) |
   | `upstream_error` | 502 | Meta Model API / OpenRouter provider failure after retries |
+  | `overloaded` | 503 | More than `maxConcurrentExports` (2) board exports are rendering; retry shortly |
   | `ingest_failed` | 422 | Book could not be processed; `details` has the step |
 
 - Pagination: `?before=<cursor>&limit=<n>`; responses carry `next` when more exist.

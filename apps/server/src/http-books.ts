@@ -17,7 +17,7 @@ import { drain, MAX_JSON_BYTES, parse, readBody, send } from './http-util'
 import { createSearcher } from './library/embed-search'
 import { MAX_PDF_BYTES, putPdf } from './library/files'
 import { pageRaster } from './library/page-image'
-import { type OpenPdf, openPdf } from './library/pdf'
+import type { PdfService } from './library/pdf-service'
 import type { Providers } from './library/providers'
 import {
   analyzePdf,
@@ -34,6 +34,8 @@ export type LibraryDeps = {
   config: Config
   providers: Providers
   cache: VectorCache
+  /** PDF parsing and rasterising, off the server's own thread. */
+  pdf: PdfService
   /** Puts a book on the ingest queue. */
   enqueue: (bookId: string) => boolean
   maxPdfBytes?: number
@@ -166,14 +168,6 @@ export function createLibraryRoutes(lib: LibraryDeps) {
     chunks: books.chunkCount(b.id),
   })
   const file = (b: BookRow) => blobPath(lib.dataDir, b.fileBlob)
-  const openBook = (b: BookRow): Promise<OpenPdf> => {
-    try {
-      return openPdf(new Uint8Array(readFileSync(file(b))))
-    } catch (e) {
-      if (e instanceof ApiError) throw e
-      throw notFound('file for this book')
-    }
-  }
   const remaining = () => {
     const dayStart = now() - (now() % DAY_MS)
     return Math.max(0, cap() - books.spentSince(dayStart))
@@ -181,14 +175,9 @@ export function createLibraryRoutes(lib: LibraryDeps) {
   const estimateOf = async (b: BookRow): Promise<Estimate> => {
     const known = estimates.get(b.id)
     if (known) return known
-    const pdf = await openBook(b)
-    try {
-      const e = estimate(await analyzePdf(pdf))
-      estimates.set(b.id, e)
-      return e
-    } finally {
-      await pdf.close()
-    }
+    const e = estimate(await lib.pdf.analyze(file(b)), config.r4UsdPerPage)
+    estimates.set(b.id, e)
+    return e
   }
   const dropBlob = (id: string) => {
     if (books.blobInUse(id)) return
@@ -231,11 +220,7 @@ export function createLibraryRoutes(lib: LibraryDeps) {
     }
     let pages: number
     try {
-      const pdf = await openPdf(
-        new Uint8Array(readFileSync(blobPath(lib.dataDir, stored.id))),
-      )
-      pages = pdf.numPages
-      await pdf.close()
+      pages = await lib.pdf.pageCount(blobPath(lib.dataDir, stored.id))
     } catch (e) {
       dropBlob(stored.id)
       throw e
@@ -253,37 +238,24 @@ export function createLibraryRoutes(lib: LibraryDeps) {
     book: BookRow,
   ) {
     const body = parse(Preview, await readJsonBody(req))
-    const pdf = await openBook(book)
-    try {
-      const bad = body.pages.find((n) => n > pdf.numPages)
-      if (bad !== undefined)
-        throw apiError(
-          'validation_failed',
-          `pages ${bad} is past the last page (${pdf.numPages})`,
-          {
-            field: 'pages',
-          },
-        )
-      const out = []
-      for (const n of body.pages) {
-        let r4: { text: string; truncated: boolean } | { error: string }
-        try {
-          r4 = await lib.providers.transcribePage(await pdf.renderPage(n, 1100))
-        } catch (e) {
-          r4 = { error: e instanceof Error ? e.message : String(e) }
-        }
-        out.push({
-          page: n,
-          label: pdf.labels[n - 1] ?? String(n),
-          imageUrl: `/api/books/${book.id}/pages/${n}/image`,
-          r1: { text: await pdf.pageText(n) },
-          r4,
-        })
+    const read = await lib.pdf.readPages(file(book), body.pages, 1100)
+    const out = []
+    for (const p of read.pages) {
+      let r4: { text: string; truncated: boolean } | { error: string }
+      try {
+        r4 = await lib.providers.transcribePage(p.png)
+      } catch (e) {
+        r4 = { error: e instanceof Error ? e.message : String(e) }
       }
-      send(res, 200, { pages: out })
-    } finally {
-      await pdf.close()
+      out.push({
+        page: p.n,
+        label: p.label,
+        imageUrl: `/api/books/${book.id}/pages/${p.n}/image`,
+        r1: { text: p.text },
+        r4,
+      })
     }
+    send(res, 200, { pages: out })
   }
 
   async function start(
@@ -399,7 +371,13 @@ export function createLibraryRoutes(lib: LibraryDeps) {
       Number.isFinite(q) && q > 0
         ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(q)))
         : DEFAULT_WIDTH
-    const bytes = await pageRaster({ dataDir: lib.dataDir, book, n, width: w })
+    const bytes = await pageRaster({
+      dataDir: lib.dataDir,
+      book,
+      n,
+      width: w,
+      pdf: lib.pdf,
+    })
     sendBytes(res, 200, bytes, {
       'Content-Type': 'image/png',
       'Content-Length': bytes.length,

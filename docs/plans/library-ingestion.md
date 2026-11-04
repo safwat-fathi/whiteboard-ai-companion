@@ -64,6 +64,7 @@ Bottom-up: leaf sections → chapters → book. 150–400 tokens each plus key t
 ## Jobs
 
 - In-process sequential queue; the job runs in a **worker thread** (own SQLite connection, short write transactions) so PDF parsing never blocks the WebSocket. Status lives in `books.status`.
+- The other PDF work the HTTP routes and the tutor need (page count at upload, the routing estimate, the preview, page rasters for the Source tab and `add_book_figure`) runs in a second, long-lived **PDF worker thread** (`library/pdf-service.ts`). Jobs take a file path, so the file is read where it is parsed; they run one at a time; a job over 5 minutes kills the thread (the next call starts a fresh one); concurrent requests for the same page image share one render.
 - Each step is idempotent and resumable: per-page extraction results are cached in `book_pages`, so a restart or retry skips finished pages. No Redis, no BullMQ.
 - A cancelled or failed job leaves usable partial data marked `failed`; deleting the book cascades.
 

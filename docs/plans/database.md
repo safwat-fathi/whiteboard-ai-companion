@@ -46,6 +46,7 @@ CREATE TABLE board_ops (
   PRIMARY KEY (board_id, seq)
 ) WITHOUT ROWID;
 CREATE INDEX board_ops_turn ON board_ops(board_id, turn_id);
+CREATE INDEX board_ops_batch ON board_ops(board_id, batch_id); -- migration 0003; opsByBatch uses INDEXED BY (no ANALYZE stats, so the planner would pick the PK)
 
 CREATE TABLE board_snapshots (
   board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
@@ -131,7 +132,9 @@ CREATE TABLE messages (
   usage      TEXT,                             -- json: tokens, cached tokens, cost
   created_at INTEGER NOT NULL
 );
-CREATE INDEX messages_board ON messages(board_id, created_at);
+CREATE INDEX messages_board ON messages(board_id);          -- migration 0003; was (board_id, created_at)
+CREATE INDEX messages_turn ON messages(board_id, turn_id);   -- migration 0003
+CREATE INDEX messages_created ON messages(created_at);       -- migration 0003 (usage by day)
 
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);   -- student profile, budget overrides
 
@@ -163,7 +166,7 @@ Numbered SQL files in `apps/server/migrations/` (`0001_init.sql`, …) applied i
 
 - **Append batch** (one transaction): `UPDATE boards SET head_seq = head_seq + 1, updated_at = ? WHERE id = ? RETURNING head_seq` → `INSERT INTO board_ops …`. Validation happens before the transaction.
 - **Load board:** latest `board_snapshots` row + `board_ops` with `seq >` it. The server keeps the scene of active boards in memory and evicts after 10 idle minutes.
-- **Snapshots:** every 500 batches or after 5 minutes of activity, whichever is first. Ops are kept forever in v1 (single-owner scale) and snapshots are never pruned either (each snapshot row is a full gzipped scene); `bounds`/`label`/`turn_id` stay queryable for [jump-to-ai](./jump-to-ai.md).
+- **Snapshots:** every 500 batches or after 5 minutes of activity, whichever is first. Ops are kept forever in v1 (single-owner scale) and only the newest snapshot per board is kept (each row is a full gzipped scene; saving one deletes the older ones, and `join` reads just its seq before deciding whether to decode it); `bounds`/`label`/`turn_id` stay queryable for [jump-to-ai](./jump-to-ai.md).
 - **Bounds:** computed by the Board service after applying a batch (after-state bounds of added/patched elements; before-state for removed ones).
 
 ## Sizing (estimates)

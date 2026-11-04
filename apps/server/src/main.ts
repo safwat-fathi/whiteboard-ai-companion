@@ -16,6 +16,7 @@ import { serverPlatform } from './export'
 import { attachGateway } from './gateway'
 import { createHttpServer } from './http'
 import { createSearcher } from './library/embed-search'
+import { createWorkerPdfService } from './library/pdf-service'
 import { createProviders, stubProviders } from './library/providers'
 import { createQueue } from './library/queue'
 import { createVectorCache } from './library/search'
@@ -43,6 +44,7 @@ if (interrupted > 0)
   )
 const stub = process.env.INGEST_STUB === '1'
 const cache = createVectorCache(booksDb)
+const pdf = createWorkerPdfService() // upload, estimate, preview and page images parse PDFs here, not on the server's thread
 const queue = createQueue(
   (bookId) => runInWorker({ bookId, dataDir: config.dataDir, config, stub }),
   {
@@ -99,7 +101,7 @@ const tutor = createTutor({
       {
         board: { boards, blobs, platform: serverPlatform },
         book: { books: booksDb, boards, search: tutorSearch },
-        figure: { books: booksDb, dataDir: config.dataDir, blobs },
+        figure: { books: booksDb, dataDir: config.dataDir, blobs, pdf },
       },
       ctx,
     ),
@@ -128,6 +130,7 @@ const server = createHttpServer({
       ? stubProviders({ dims: config.embedDims })
       : createProviders({ config, env: process.env }),
     cache,
+    pdf,
     enqueue: queue.enqueue,
     dailyCap: () => dailyCap(settingsDb, config),
   },

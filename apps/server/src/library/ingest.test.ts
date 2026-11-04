@@ -105,6 +105,49 @@ describe('runIngest', () => {
     expect(sections.every((s) => s.summary?.startsWith('summary:'))).toBe(true)
   })
 
+  it('counts every vision (R4) page in the daily ledger at the estimated price', async () => {
+    const { books, deps } = await setup(doc, {
+      deps: {
+        config: loadConfig({ EMBED_DIMS: '16', R4_USD_PER_PAGE: '0.01' }),
+      },
+    })
+    await runIngest('b', deps)
+    // two R4 pages (2 and 3); today is DAY, so both count against the cap
+    expect(books.spentSince(DAY - (DAY % 86_400_000))).toBeCloseTo(0.02, 6)
+  })
+
+  it('refuses before the first vision call when the R4 pages would pass the daily budget', async () => {
+    const touched: string[] = []
+    const { books, deps } = await setup(doc, {
+      budget: '0.015',
+      deps: {
+        config: loadConfig({
+          EMBED_DIMS: '16',
+          DAILY_BUDGET_USD: '0.015',
+          R4_USD_PER_PAGE: '0.01',
+        }),
+      },
+      providers: {
+        async transcribePage() {
+          touched.push('r4')
+          return { text: 'x', truncated: false }
+        },
+      },
+    })
+    const err = await fail(runIngest('b', deps))
+    expect(err.code).toBe('budget_exceeded') // two pages x $0.01 > $0.015
+    expect(touched).toEqual([])
+    expect(books.spentSince(0)).toBe(0)
+  })
+
+  it('records nothing for R4 when the price is set to 0', async () => {
+    const { books, deps } = await setup(doc, {
+      deps: { config: loadConfig({ EMBED_DIMS: '16', R4_USD_PER_PAGE: '0' }) },
+    })
+    await runIngest('b', deps)
+    expect(books.spentSince(0)).toBe(0)
+  })
+
   it('after a failure partway through keeps the finished pages and, re-run, asks only for the rest', async () => {
     const blank: TestPdfOptions = { pages: ['', '', '', '', '', ''] }
     let calls = 0

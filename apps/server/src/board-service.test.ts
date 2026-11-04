@@ -290,6 +290,42 @@ describe('submit', () => {
     expect(t.boardsDb.latestSnapshot(good)?.seq).toBe(2)
   })
 
+  it('join sends the live scene instead of a long op tail when snapshots have fallen behind', () => {
+    const t = setup({ snapshotEvery: 1_000_000, maxJoinTail: 3 })
+    const { id } = t.svc.createBoard('B')
+    for (const e of ['a', 'b', 'c', 'd', 'e']) t.svc.submit(id, add(e), OWNER)
+    const long = t.svc.join(id, 0) // 5 batches behind, limit 3
+    expect(long.ops).toEqual([])
+    expect(long.snapshot?.seq).toBe(5)
+    expect(long.snapshot?.scene.map((e) => e.id).sort()).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'e',
+    ])
+    const short = t.svc.join(id, 3) // 2 behind: the plain tail
+    expect(short.snapshot).toBeUndefined()
+    expect(short.ops.map((o) => o.seq)).toEqual([4, 5])
+  })
+
+  it('tick() writes at most maxSnapshotsPerTick snapshots and the rest follow on the next tick', () => {
+    const t = setup({
+      snapshotEvery: 1_000_000,
+      snapshotAfterMs: 1,
+      maxSnapshotsPerTick: 2,
+    })
+    const ids = ['x', 'y', 'z'].map((n) => t.svc.createBoard(n).id)
+    for (const id of ids) t.svc.submit(id, add(`el-${id}`), OWNER)
+    clock += 10
+    const snapped = () =>
+      ids.filter((id) => t.boardsDb.latestSnapshotSeq(id) !== undefined).length
+    t.svc.tick()
+    expect(snapped()).toBe(2)
+    t.svc.tick()
+    expect(snapped()).toBe(3)
+  })
+
   it('a throwing subscriber does not break the write or the other subscribers', () => {
     const t = setup()
     const { id } = t.svc.createBoard('B')
