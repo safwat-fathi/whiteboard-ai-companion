@@ -17,6 +17,7 @@ import {
   toggle,
 } from '../../../src/library/scope'
 import { isInProgress, POLL_MS, statusText } from '../../../src/library/status'
+import { useRefreshLoop } from '../../../src/library/useRefreshLoop'
 import { BookIcon, SearchIcon, SparklesIcon } from '../../../src/ui/icons'
 import { Outline } from '../Outline'
 import { SourceViewer } from '../SourceViewer'
@@ -68,11 +69,7 @@ function BookView({ api, bookId }: { api: LibraryApi; bookId: string }) {
   useEffect(() => {
     void load()
   }, [load])
-  useEffect(() => {
-    if (!book || !isInProgress(book.status)) return
-    const t = setTimeout(() => void load(), POLL_MS)
-    return () => clearTimeout(t)
-  }, [book, load])
+  useRefreshLoop(book && isInProgress(book.status) ? POLL_MS : null, load)
 
   async function runSearch() {
     if (!query.trim()) return

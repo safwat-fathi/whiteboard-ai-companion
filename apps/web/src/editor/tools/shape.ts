@@ -2,10 +2,10 @@ import {
   DEFAULT_STYLE,
   type Element,
   newId,
-  ordered,
   type Point,
   resolveEnd,
   type ShapeData,
+  topZ,
   zBetween,
 } from '@whiteboard/core'
 import type { Editor } from '../editor'
@@ -44,7 +44,7 @@ export const shapeTool =
       s0: Element | null,
       s1: Element | null,
     ) => {
-      const top = ordered(ed.scene).at(-1)?.z ?? null
+      const top = topZ(ed.scene)
       const base = {
         id: newId(),
         type: 'shape' as const,

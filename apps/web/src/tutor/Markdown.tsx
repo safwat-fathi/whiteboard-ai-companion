@@ -1,7 +1,16 @@
 'use client'
 
 import { parseCite } from '@whiteboard/core'
-import { isValidElement, type ReactNode, useEffect, useState } from 'react'
+import {
+  isValidElement,
+  memo,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -98,22 +107,22 @@ function elementId(raw: string): string | null {
 const urlTransform = (url: string) =>
   url.startsWith('cite:') || url.startsWith('board:') ? url : ''
 
-export function Markdown({
-  text,
-  handlers,
-}: {
-  text: string
-  handlers: LinkHandlers
-}) {
-  const components: Components = {
+/**
+ * The renderers for react-markdown. They are built once per Markdown instance and read the latest handlers through a
+ * ref: react-markdown uses each entry as an element type, so a fresh function per render made React unmount and remount
+ * every link, code span and formula on every update (a streamed reply re-rendered, and re-typeset its math, per token).
+ */
+function componentsFor(handlers: RefObject<LinkHandlers>): Components {
+  return {
     a({ href, children }) {
+      const h = handlers.current
       const cite = href ? parseCite(href) : null
       if (cite)
-        return handlers.isVerified(cite) ? (
+        return h.isVerified(cite) ? (
           <button
             type="button"
             style={link}
-            onClick={() => handlers.onCite?.(cite)}
+            onClick={() => handlers.current.onCite?.(cite)}
           >
             {children}
           </button>
@@ -121,12 +130,12 @@ export function Markdown({
           <span title="This citation could not be verified">{children}</span>
         )
       const id = href?.startsWith('board:') ? elementId(href.slice(6)) : null
-      if (id && handlers.onLocate) {
+      if (id && h.onLocate) {
         return (
           <button
             type="button"
             style={link}
-            onClick={() => handlers.onLocate?.(id)}
+            onClick={() => handlers.current.onLocate?.(id)}
           >
             {children}
           </button>
@@ -152,13 +161,28 @@ export function Markdown({
       return /language-math/.test(cls ?? '') ? children : <pre>{children}</pre>
     },
   }
+}
+
+const remarkPlugins = [remarkGfm, remarkMath]
+
+/** Re-parses only when the text or the handlers change; callers keep `handlers` stable (see MessageView). */
+export const Markdown = memo(function Markdown({
+  text,
+  handlers,
+}: {
+  text: string
+  handlers: LinkHandlers
+}) {
+  const latest = useRef(handlers)
+  latest.current = handlers
+  const components = useMemo(() => componentsFor(latest), [])
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
+      remarkPlugins={remarkPlugins}
       components={components}
       urlTransform={urlTransform}
     >
       {text}
     </ReactMarkdown>
   )
-}
+})

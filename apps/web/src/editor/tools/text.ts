@@ -4,9 +4,9 @@ import {
   FONT_STACK,
   layoutText,
   newId,
-  ordered,
   type Point,
   resolveDir,
+  topZ,
   zBetween,
 } from '@whiteboard/core'
 import type { Editor } from '../editor'
@@ -187,7 +187,7 @@ export const textTool = (ed: Editor): TextTool => {
           w: 1,
           h: SIZE * 1.4,
           rotation: 0,
-          z: zBetween(ordered(ed.scene).at(-1)?.z ?? null, null),
+          z: zBetween(topZ(ed.scene), null),
           style: { ...DEFAULT_STYLE },
           locked: false,
           author: { ...ed.author },

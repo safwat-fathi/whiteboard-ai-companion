@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { OpError } from './ops'
-import { applyBatch, createScene, ordered, zBetween } from './scene'
+import { applyBatch, createScene, ordered, topZ, zBetween } from './scene'
 import { type Batch, DEFAULT_STYLE, type Element, type Op } from './schema'
 import { chart } from './test-utils'
 
@@ -213,6 +213,17 @@ describe('scene', () => {
     expect(() =>
       applyBatch(scene, batch({ op: 'patch', id: 'zz', set: { x: 1 } })),
     ).not.toThrow()
+  })
+
+  it('topZ is the last key of ordered(), and null for an empty scene', () => {
+    expect(topZ(createScene())).toBeNull()
+    const scene = createScene([
+      shape('a', 'a1'),
+      shape('b', 'a3'),
+      shape('c', 'a2'),
+    ])
+    expect(topZ(scene)).toBe('a3')
+    expect(topZ(scene)).toBe(ordered(scene).at(-1)?.z)
   })
 
   it('(e) ordered stays sorted and unique after 1000 inserts at one position', () => {

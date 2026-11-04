@@ -26,6 +26,13 @@ export const ordered = (scene: Scene): Element[] =>
     (a, b) => (a.z < b.z ? -1 : a.z > b.z ? 1 : 0) || (a.id < b.id ? -1 : 1),
   )
 
+/** The highest z key, or null for an empty scene: `ordered(scene).at(-1)?.z` without sorting every element. */
+export function topZ(scene: Scene): string | null {
+  let top: string | null = null
+  for (const e of scene.els.values()) if (top === null || e.z > top) top = e.z
+  return top
+}
+
 export const zBetween = (a: string | null, b: string | null): string =>
   generateKeyBetween(a, b)
 

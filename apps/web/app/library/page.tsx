@@ -13,6 +13,7 @@ import {
   pollDelay,
   statusText,
 } from '../../src/library/status'
+import { useRefreshLoop } from '../../src/library/useRefreshLoop'
 import { UploadIcon } from '../../src/ui/icons'
 import { Shell, ui } from './ui'
 
@@ -52,12 +53,8 @@ function Library({ api }: { api: LibraryApi }) {
   useEffect(() => {
     void refresh()
   }, [refresh])
-  useEffect(() => {
-    const delay = pollDelay(books)
-    if (delay === null) return
-    const t = setTimeout(() => void refresh(), delay)
-    return () => clearTimeout(t)
-  }, [books, refresh])
+  const delay = pollDelay(books)
+  useRefreshLoop(delay === null ? null : error ? delay * 4 : delay, refresh) // slower while the server is failing
 
   async function addFile(file: File) {
     if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf')

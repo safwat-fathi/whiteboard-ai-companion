@@ -1,5 +1,5 @@
 import { bounds, type Patch, type Rect } from './geometry'
-import { ordered, type Scene, zBetween } from './scene'
+import { type Scene, topZ, zBetween } from './scene'
 import {
   type Batch,
   DEFAULT_STYLE,
@@ -90,7 +90,7 @@ export function groupBatch(
     w: b.maxX - b.minX,
     h: b.maxY - b.minY,
     rotation: 0,
-    z: zBetween(ordered(scene).at(-1)?.z ?? null, null),
+    z: zBetween(topZ(scene), null),
     style: { ...DEFAULT_STYLE },
     locked: false,
     author,

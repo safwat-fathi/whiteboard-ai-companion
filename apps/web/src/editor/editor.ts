@@ -24,6 +24,7 @@ import {
   type Scene,
   SpatialIndex,
   screenToWorld,
+  topZ,
   type UndoJSON,
   UndoManager,
   type Viewport,
@@ -524,7 +525,7 @@ export class Editor {
     })
 
     const gap = 24
-    let lastZ = ordered(this.scene).at(-1)?.z ?? null
+    let lastZ = topZ(this.scene)
     const added: Id[] = []
     const els: Element[] = succeeded.map((item, i) => {
       const id = newId()
