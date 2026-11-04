@@ -292,7 +292,7 @@ test('M6 gate: handwrite, Ask AI, chart, the picture matches the server, tidy, u
     ed?.commit({
       batchId: 'seed-tidy',
       label: 'Seed',
-      ops: [box('tidy-a', 30, 600, 'b0'), box('tidy-b', 230, 660, 'b1')],
+      ops: [box('tidy-a', 30, 600, 'a8'), box('tidy-b', 230, 660, 'a9')],
     })
     ed?.selection.clear()
     for (const id of ['tidy-a', 'tidy-b']) ed?.selection.add(id)
