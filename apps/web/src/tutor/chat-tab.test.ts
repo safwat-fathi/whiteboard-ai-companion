@@ -320,6 +320,26 @@ describe('ChatTab', () => {
     expect(host.querySelectorAll('article')).toHaveLength(0)
   })
 
+  it('a refused send puts the typed text back', async () => {
+    const w = world(() =>
+      err(409, 'turn_busy', 'The AI is still working on this board.'),
+    )
+    await mount(w)
+    await type('hello')
+    await press('Enter')
+    await settle()
+    expect(box().value).toBe('hello')
+  })
+
+  it('an accepted send clears the composer', async () => {
+    const w = world(() => sse(turn(...text('x', 'Hi'))))
+    await mount(w)
+    await type('hello')
+    await press('Enter')
+    await settle()
+    expect(box().value).toBe('')
+  })
+
   it('the daily budget cap disables the composer and says what to do', async () => {
     const w = world(() =>
       err(429, 'budget_exceeded', 'The daily budget is used up.', {

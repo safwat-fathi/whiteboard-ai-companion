@@ -277,7 +277,13 @@ export function ChatTab(o: {
     setFiles([])
     setMode('ask')
     box.current?.focus()
-    await chat.send(body, m, { context, images })
+    const sent = await chat.send(body, m, { context, images })
+    if (!sent) {
+      // refused before a turn started: give the draft back, unless the student already typed something new
+      setText((t) => t || body)
+      setFiles((f) => (f.length ? f : files))
+      setMode((x) => (x === 'ask' ? m : x))
+    }
     box.current?.focus()
   }
 

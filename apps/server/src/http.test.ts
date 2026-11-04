@@ -252,6 +252,22 @@ describe('Origin gate and CORS (R3)', () => {
     }
   })
 
+  it('sends Vary: Origin on every response, whatever the Origin (shared caches must not reuse a CORS answer)', async () => {
+    const { call } = await boot()
+    for (const o of [undefined, ORIGIN, 'http://evil.test']) {
+      const opts = o ? { origin: o } : {}
+      for (const [m, path] of [
+        ['GET', '/api/health'],
+        ['GET', '/api/nope'],
+        ['OPTIONS', '/api/boards'],
+        ['DELETE', '/api/boards/x'],
+      ] as const) {
+        const r = await call(m, path, opts)
+        expect(r.headers.vary, `${m} ${path} ${o}`).toContain('Origin')
+      }
+    }
+  })
+
   it('answers a preflight from the web origin only', async () => {
     const { call } = await boot()
     const ask = (origin: string) =>

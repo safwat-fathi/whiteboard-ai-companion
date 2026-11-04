@@ -127,13 +127,12 @@ export function createHttpServer(deps: HttpDeps): http.Server {
   const tutor = deps.tutor && createTutorRoutes(deps.tutor)
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
+    res.setHeader('Vary', 'Origin') // the answer depends on Origin, whatever it is
     if (!checkHost(req.headers.host, config))
       throw apiError('forbidden_origin', 'this Host is not allowed')
     const origin = req.headers.origin
-    if (origin === config.publicOrigin) {
+    if (origin === config.publicOrigin)
       res.setHeader('Access-Control-Allow-Origin', origin)
-      res.setHeader('Vary', 'Origin')
-    }
     if (req.method === 'OPTIONS') {
       const cors: Record<string, string> =
         origin === config.publicOrigin

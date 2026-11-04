@@ -127,36 +127,6 @@ export function Dock({
   const { width, setWidth, collapsed, setCollapsed, narrow, tab, setTab } =
     layout
 
-  if (collapsed)
-    return (
-      <aside
-        aria-label="Tutor"
-        className="fixed z-20 flex flex-col items-center justify-center border-l border-slate-200/90 bg-white/95 shadow-lg backdrop-blur-md transition-all duration-150"
-        style={{
-          ...box,
-          ...(narrow
-            ? { left: 0, right: 0, bottom: 0, height: SHEET_STRIP_H }
-            : { top: 0, right: 0, bottom: 0, width: STRIP_W }),
-        }}
-      >
-        <button
-          type="button"
-          className="group flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition-all duration-150 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 active:scale-95 cursor-pointer"
-          aria-label="Open the tutor"
-          onClick={() => setCollapsed(false)}
-        >
-          {narrow ? (
-            <span className="text-xs font-semibold">▲ Tutor</span>
-          ) : (
-            <ChevronLeftIcon
-              size={18}
-              className="transition-transform group-hover:-translate-x-0.5"
-            />
-          )}
-        </button>
-      </aside>
-    )
-
   const onTabKey = (e: KeyboardEvent) => {
     const i = TABS.findIndex((t) => t.id === tab)
     const to =
@@ -179,103 +149,135 @@ export function Dock({
     setWidth(window.innerWidth - e.clientX)
   }
 
+  // Collapsing only hides the panes: unmounting ChatTab would abort a running turn.
   return (
-    <aside
-      aria-label="Tutor"
-      className="fixed z-20 flex flex-col border-l border-slate-200 bg-white text-slate-800 shadow-2xl transition-all duration-150"
-      style={{
-        ...box,
-        ...(narrow
-          ? { left: 0, right: 0, bottom: 0, height: SHEET_H }
-          : { top: 0, right: 0, bottom: 0, width }),
-      }}
-    >
-      {!narrow && (
-        // biome-ignore lint/a11y/useSemanticElements: the WAI-ARIA window splitter is a focusable, draggable separator; <hr> cannot be either
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the tutor"
-          aria-valuemin={DOCK_MIN}
-          aria-valuemax={DOCK_MAX}
-          aria-valuenow={width}
-          tabIndex={0}
-          className="group absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize touch-none z-30 flex items-center justify-center"
-          onPointerDown={(e) =>
-            e.currentTarget.setPointerCapture?.(e.pointerId)
-          }
-          onPointerMove={drag}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft') setWidth(width + 16)
-            else if (e.key === 'ArrowRight') setWidth(width - 16)
-            else return
-            e.preventDefault()
+    <>
+      {collapsed && (
+        <aside
+          aria-label="Tutor"
+          className="fixed z-20 flex flex-col items-center justify-center border-l border-slate-200/90 bg-white/95 shadow-lg backdrop-blur-md transition-all duration-150"
+          style={{
+            ...box,
+            ...(narrow
+              ? { left: 0, right: 0, bottom: 0, height: SHEET_STRIP_H }
+              : { top: 0, right: 0, bottom: 0, width: STRIP_W }),
           }}
         >
-          <div className="h-10 w-1 rounded-full bg-slate-300 opacity-0 transition-opacity group-hover:opacity-100 group-active:opacity-100 group-hover:bg-blue-500" />
-        </div>
+          <button
+            type="button"
+            className="group flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition-all duration-150 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 active:scale-95 cursor-pointer"
+            aria-label="Open the tutor"
+            onClick={() => setCollapsed(false)}
+          >
+            {narrow ? (
+              <span className="text-xs font-semibold">▲ Tutor</span>
+            ) : (
+              <ChevronLeftIcon
+                size={18}
+                className="transition-transform group-hover:-translate-x-0.5"
+              />
+            )}
+          </button>
+        </aside>
       )}
-      <div className="flex items-center gap-2 border-b border-slate-200/80 bg-slate-50/70 px-3 py-2">
-        <div
-          role="tablist"
-          aria-label="Tutor panels"
-          className="flex flex-1 items-center gap-1 rounded-xl bg-slate-200/60 p-0.5"
-          onKeyDown={onTabKey}
-        >
-          {TABS.map((t) => {
-            const isSelected = tab === t.id
-            const Icon = t.icon
-            return (
-              <button
-                key={t.id}
-                id={`dock-tab-${t.id}`}
-                type="button"
-                role="tab"
-                aria-selected={isSelected}
-                aria-controls={`dock-pane-${t.id}`}
-                tabIndex={isSelected ? 0 : -1}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-150 cursor-pointer ${
-                  isSelected
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-                onClick={() => setTab(t.id)}
-              >
-                <Icon
-                  size={13}
-                  className={isSelected ? 'text-blue-600' : 'text-slate-400'}
-                />
-                <span>{t.label}</span>
-              </button>
-            )
-          })}
+      <aside
+        aria-label="Tutor"
+        className="fixed z-20 flex flex-col border-l border-slate-200 bg-white text-slate-800 shadow-2xl transition-all duration-150"
+        style={{
+          ...box,
+          ...(collapsed ? { display: 'none' } : {}),
+          ...(narrow
+            ? { left: 0, right: 0, bottom: 0, height: SHEET_H }
+            : { top: 0, right: 0, bottom: 0, width }),
+        }}
+      >
+        {!narrow && (
+          // biome-ignore lint/a11y/useSemanticElements: the WAI-ARIA window splitter is a focusable, draggable separator; <hr> cannot be either
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the tutor"
+            aria-valuemin={DOCK_MIN}
+            aria-valuemax={DOCK_MAX}
+            aria-valuenow={width}
+            tabIndex={0}
+            className="group absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize touch-none z-30 flex items-center justify-center"
+            onPointerDown={(e) =>
+              e.currentTarget.setPointerCapture?.(e.pointerId)
+            }
+            onPointerMove={drag}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') setWidth(width + 16)
+              else if (e.key === 'ArrowRight') setWidth(width - 16)
+              else return
+              e.preventDefault()
+            }}
+          >
+            <div className="h-10 w-1 rounded-full bg-slate-300 opacity-0 transition-opacity group-hover:opacity-100 group-active:opacity-100 group-hover:bg-blue-500" />
+          </div>
+        )}
+        <div className="flex items-center gap-2 border-b border-slate-200/80 bg-slate-50/70 px-3 py-2">
+          <div
+            role="tablist"
+            aria-label="Tutor panels"
+            className="flex flex-1 items-center gap-1 rounded-xl bg-slate-200/60 p-0.5"
+            onKeyDown={onTabKey}
+          >
+            {TABS.map((t) => {
+              const isSelected = tab === t.id
+              const Icon = t.icon
+              return (
+                <button
+                  key={t.id}
+                  id={`dock-tab-${t.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  aria-controls={`dock-pane-${t.id}`}
+                  tabIndex={isSelected ? 0 : -1}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-150 cursor-pointer ${
+                    isSelected
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                  onClick={() => setTab(t.id)}
+                >
+                  <Icon
+                    size={13}
+                    className={isSelected ? 'text-blue-600' : 'text-slate-400'}
+                  />
+                  <span>{t.label}</span>
+                </button>
+              )
+            })}
+          </div>
+          <button
+            type="button"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-slate-900 cursor-pointer"
+            aria-label="Collapse the tutor"
+            onClick={() => setCollapsed(true)}
+          >
+            {narrow ? (
+              <span className="text-xs">▼</span>
+            ) : (
+              <ChevronRightIcon size={16} />
+            )}
+          </button>
         </div>
-        <button
-          type="button"
-          className="flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-slate-900 cursor-pointer"
-          aria-label="Collapse the tutor"
-          onClick={() => setCollapsed(true)}
-        >
-          {narrow ? (
-            <span className="text-xs">▼</span>
-          ) : (
-            <ChevronRightIcon size={16} />
-          )}
-        </button>
-      </div>
-      {TABS.map((t) => (
-        <div
-          key={t.id}
-          id={`dock-pane-${t.id}`}
-          role="tabpanel"
-          aria-labelledby={`dock-tab-${t.id}`}
-          hidden={tab !== t.id}
-          className="flex-1 min-h-0 overflow-auto bg-white"
-        >
-          {panes[t.id]}
-        </div>
-      ))}
-    </aside>
+        {TABS.map((t) => (
+          <div
+            key={t.id}
+            id={`dock-pane-${t.id}`}
+            role="tabpanel"
+            aria-labelledby={`dock-tab-${t.id}`}
+            hidden={tab !== t.id}
+            className="flex-1 min-h-0 overflow-auto bg-white"
+          >
+            {panes[t.id]}
+          </div>
+        ))}
+      </aside>
+    </>
   )
 }
 

@@ -42,6 +42,8 @@ type Live = {
   subs: Set<(b: Broadcast) => void>
   /** Memory may be ahead of the database (a write failed): reload in place on next use, keeping the subscribers. */
   stale: boolean
+  /** batchId -> seq of the most recent stored batches, so a resend after a lost ack is recognised (insertion order = age). */
+  recent: Map<string, number>
 }
 
 const fromRow = (r: OpRow): Broadcast => ({
@@ -73,6 +75,7 @@ export class BoardService {
   private readonly snapshotEvery: number
   private readonly snapshotAfterMs: number
   private readonly idleEvictMs: number
+  private readonly recentBatches: number
 
   constructor(
     private readonly db: BoardsDb,
@@ -81,12 +84,14 @@ export class BoardService {
       snapshotEvery?: number
       snapshotAfterMs?: number
       idleEvictMs?: number
+      recentBatches?: number
     } = {},
   ) {
     this.now = o.now ?? Date.now
     this.snapshotEvery = o.snapshotEvery ?? 500
     this.snapshotAfterMs = o.snapshotAfterMs ?? 5 * 60_000
     this.idleEvictMs = o.idleEvictMs ?? 10 * 60_000
+    this.recentBatches = o.recentBatches ?? 1000
   }
 
   createBoard(title: string, scope?: Scope): BoardRow {
@@ -131,6 +136,8 @@ export class BoardService {
     } catch (e) {
       throw this.invalid(e)
     }
+    const seen = l.recent.get(batch.batchId)
+    if (seen !== undefined) return { seq: seen, noop: true, broadcast: null } // a resend: already stored, acked like the original
     checkLimits(batch, l.scene.els.size)
     if (author.kind === 'agent') {
       // Edit rights: the tutor may add anything but change only its own work and what the student selected.
@@ -198,6 +205,9 @@ export class BoardService {
       throw e
     }
     l.headSeq = seq
+    l.recent.set(batch.batchId, seq)
+    if (l.recent.size > this.recentBatches)
+      l.recent.delete(l.recent.keys().next().value as string)
     l.lastUsed = this.now()
     const broadcast: Broadcast = {
       seq,
@@ -326,6 +336,11 @@ export class BoardService {
       lastUsed: this.now(),
       subs: cached?.subs ?? new Set(),
       stale: false,
+      recent: new Map(
+        this.db
+          .opsAfter(boardId, Math.max(0, row.headSeq - this.recentBatches))
+          .map((r) => [r.batchId, r.seq]),
+      ),
     }
     if (cached)
       Object.assign(cached, l) // reload in place: closures hold `cached`, so its subscribers stay attached

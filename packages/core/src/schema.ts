@@ -1,3 +1,4 @@
+import { generateKeyBetween } from 'fractional-indexing'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
 
@@ -188,6 +189,16 @@ export const ChartDataSchema = z
   })
 export type ChartData = z.infer<typeof ChartDataSchema>
 
+// Reject keys fractional-indexing cannot extend (it throws on them, poisoning every later add).
+const zKey = z.string().refine((k) => {
+  try {
+    generateKeyBetween(k, null)
+    return true
+  } catch {
+    return false
+  }
+}, 'must be a valid order key')
+
 export const BaseShape = {
   id,
   x: num,
@@ -195,7 +206,7 @@ export const BaseShape = {
   w: size,
   h: size,
   rotation: num,
-  z: z.string().min(1, 'must not be empty'),
+  z: zKey,
   style: StyleSchema,
   parentId: id.optional(),
   locked: z.boolean(),
@@ -265,7 +276,7 @@ export const OpSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('reorder'),
     id,
-    z: z.string().min(1, 'must not be empty'),
+    z: zKey,
   }),
 ])
 export type Op = z.infer<typeof OpSchema>

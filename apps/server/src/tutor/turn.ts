@@ -97,8 +97,8 @@ const wire = (e: unknown): string => {
 }
 
 /** Earlier turns as the model sees them: the text, plus one line per board change (R12). */
-function historyOf(rows: MessageRow[]): ModelMessage[] {
-  return rows.map((m) => {
+export function historyOf(rows: MessageRow[]): ModelMessage[] {
+  return rows.flatMap((m) => {
     const text = m.parts
       .map((p) => {
         const q = p as {
@@ -120,7 +120,9 @@ function historyOf(rows: MessageRow[]): ModelMessage[] {
       m.role === 'user' && shown
         ? `\n(the student attached ${shown} picture${shown === 1 ? '' : 's'} of the board)`
         : ''
-    return { role: m.role, content: text + note } as ModelMessage
+    // a turn stopped before any text has no content; some backends reject an empty assistant message
+    if (m.role === 'assistant' && !text) return []
+    return [{ role: m.role, content: text + note } as ModelMessage]
   })
 }
 

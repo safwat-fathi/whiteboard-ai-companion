@@ -43,7 +43,7 @@ const rect = (id: string, over: Record<string, unknown> = {}): Element =>
     w: 100,
     h: 50,
     rotation: 0,
-    z: `a${String(n++).padStart(6, '0')}`,
+    z: `a${String(n++).padStart(6, '0')}1`, // must not end in 0: core now rejects such order keys
     style: {
       stroke: '#000',
       fill: null,
@@ -311,6 +311,47 @@ describe('submit', () => {
     off()
     t.svc.submit(id, add('b'), OWNER)
     expect(got).toEqual([1])
+  })
+})
+
+describe('resent batches (lost ack)', () => {
+  const batch = (bid: string, elId: string) => ({ ...add(elId), batchId: bid })
+
+  it('applies a resent batchId once: same seq back, no second op, no second broadcast', () => {
+    const t = setup()
+    const { id } = t.svc.createBoard('B')
+    const seen: number[] = []
+    t.svc.subscribe(id, (b) => seen.push(b.seq))
+    const first = t.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    const again = t.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    t.svc.submit(id, batch('other', 'b'), OWNER)
+    const third = t.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    expect(again).toMatchObject({ seq: first.seq, noop: true, broadcast: null })
+    expect(third.seq).toBe(first.seq)
+    expect(seen).toEqual([1, 2])
+    expect(t.svc.scene(id).headSeq).toBe(2)
+    expect(t.boardsDb.opsAfter(id, 0)).toHaveLength(2)
+  })
+
+  it('still dedupes after a reload (seeded from the tail of board_ops)', () => {
+    const a = setup()
+    const { id } = a.svc.createBoard('B')
+    const first = a.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    const b = setup({}, a.dir)
+    const again = b.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    expect(again).toMatchObject({ seq: first.seq, noop: true })
+    expect(b.boardsDb.opsAfter(id, 0)).toHaveLength(1)
+  })
+
+  it('keeps only a bounded window of recent batchIds', () => {
+    const t = setup({ recentBatches: 3 })
+    const { id } = t.svc.createBoard('B')
+    for (let i = 0; i < 5; i++) t.svc.submit(id, batch(`b${i}`, `e${i}`), OWNER)
+    expect(t.svc.submit(id, batch('b4', 'e4'), OWNER).noop).toBe(true) // inside the window
+    // outside the window a resend is applied as a new batch (the add is a no-op change? it re-adds): it must not be deduped
+    const old = t.svc.submit(id, batch('b0', 'z0'), OWNER)
+    expect(old.noop).toBe(false)
+    expect(old.seq).toBe(6)
   })
 })
 

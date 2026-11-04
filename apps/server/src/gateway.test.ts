@@ -164,7 +164,7 @@ const rect = (id: string, over: Record<string, unknown> = {}) => ({
   w: 100,
   h: 50,
   rotation: 0,
-  z: `a${String(n++).padStart(6, '0')}`,
+  z: `a${String(n++).padStart(6, '0')}1`, // must not end in 0: core rejects such order keys
   style: {
     stroke: '#000',
     fill: null,

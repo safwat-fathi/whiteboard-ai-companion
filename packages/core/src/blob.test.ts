@@ -64,6 +64,14 @@ describe('sniffMime', () => {
 })
 
 describe('parseImageHeader', () => {
+  it('treats a truncated JPEG EXIF segment as unreadable, never throws', () => {
+    const t = new Uint8Array([
+      0xff, 0xd8, 0xff, 0xe1, 0, 14, 0x45, 0x78, 0x69, 0x66, 0, 0, 0x49, 0x49,
+      1, 2, 3, 4,
+    ])
+    expect(parseImageHeader(t, 'image/jpeg')).toBeNull()
+  })
+
   it('reads the size of each allowed type from the header alone', () => {
     expect(parseImageHeader(png(120, 80, 10), 'image/png')).toEqual({
       width: 120,

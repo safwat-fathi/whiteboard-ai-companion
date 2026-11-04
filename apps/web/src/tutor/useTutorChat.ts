@@ -131,7 +131,7 @@ export function useTutorChat(o: {
       extra: { context?: Partial<ContextDescriptor>; images?: string[] } = {},
     ) => {
       const body = text.trim()
-      if (!body || abort.current) return
+      if (!body || abort.current) return false
       const ac = new AbortController()
       abort.current = ac
       setError(null)
@@ -163,7 +163,8 @@ export function useTutorChat(o: {
         // refused before any byte (turn_busy, budget, no key ...): the server stored nothing, so neither do we
         setMessages((m) => m.filter((x) => x !== mine))
         if (!ac.signal.aborted) setError(parseChatError(e))
-        return stop()
+        stop()
+        return false // refused: the caller keeps the draft
       }
       try {
         for await (const snap of until(
@@ -182,6 +183,7 @@ export function useTutorChat(o: {
         if (!ac.signal.aborted) setError(parseChatError(e))
       }
       stop()
+      return true
     },
     [boardId, transport],
   )

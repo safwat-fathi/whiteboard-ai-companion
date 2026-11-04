@@ -46,6 +46,13 @@ const cache = createVectorCache(booksDb)
 const queue = createQueue(
   (bookId) => runInWorker({ bookId, dataDir: config.dataDir, config, stub }),
   {
+    // runIngest records its own failures; a worker that died (OOM, native crash) cannot, so the book would stay mid-job until a restart
+    onFail: (bookId, e) => {
+      if (booksDb.getBook(bookId)?.status !== 'failed')
+        booksDb.setStatus(bookId, 'failed', {
+          error: e instanceof Error ? e.message : String(e),
+        })
+    },
     onDone: (bookId) => cache.invalidate(bookId),
     onError: (bookId, e) =>
       console.error(
