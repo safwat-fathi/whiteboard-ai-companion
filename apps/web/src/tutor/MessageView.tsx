@@ -1,6 +1,6 @@
 'use client'
 
-import { Component, type ReactNode } from 'react'
+import { Component, type ReactNode, useMemo } from 'react'
 import {
   type BatchChip,
   batchesOf,
@@ -41,13 +41,17 @@ export function MessageView({
   undo?: TurnUndo
 }) {
   const mine = message.role === 'user'
-  const sources = sourcesOf(message)
-  const handlers = {
-    isVerified: (c: { bookId: string; page: number }) =>
-      isVerifiedCite(c, sources),
-    onCite: actions.onCite,
-    onLocate: actions.onLocate,
-  }
+  const { onCite, onLocate } = actions
+  // Stable while the message and the two callbacks are: Markdown skips its re-parse when its props are unchanged.
+  const handlers = useMemo(() => {
+    const sources = sourcesOf(message)
+    return {
+      isVerified: (c: { bookId: string; page: number }) =>
+        isVerifiedCite(c, sources),
+      onCite,
+      onLocate,
+    }
+  }, [message, onCite, onLocate])
   const usage = usageOfMessage(message)
   return (
     <article

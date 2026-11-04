@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ElementSchema, newId } from './schema'
+import { zBetween } from './scene'
+import { ElementSchema, newId, OpSchema } from './schema'
 
 const base = {
   id: 'a1',
@@ -373,5 +374,22 @@ describe('ElementSchema', () => {
       expect(parse({ palette: ['red'] }).success).toBe(false)
       expect(parse({ palette: Array(9).fill('#000000') }).success).toBe(false)
     })
+  })
+})
+
+describe('z order key', () => {
+  it('rejects keys fractional-indexing cannot extend, accepts its own', () => {
+    expect(ElementSchema.safeParse({ ...rect, z: '~' }).success).toBe(false)
+    expect(
+      OpSchema.safeParse({ op: 'reorder', id: 'a1', z: '~' }).success,
+    ).toBe(false)
+    const a = zBetween(null, null)
+    for (const z of [
+      a,
+      zBetween(a, null),
+      zBetween(null, a),
+      zBetween(a, zBetween(a, null)),
+    ])
+      expect(ElementSchema.safeParse({ ...rect, z }).success).toBe(true)
   })
 })

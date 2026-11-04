@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { R4_USD_PER_PAGE } from './library/route'
 
 export type Config = {
   port: number
@@ -16,6 +17,8 @@ export type Config = {
   embedDims: number
   /** Daily cap in USD for paid OpenRouter calls (embeddings, opt-in R3). */
   dailyBudgetUsd: number
+  /** Estimated USD per page transcribed by the vision model (R4). Meta publishes no price, so this is what the budget counts. */
+  r4UsdPerPage: number
   tutor: TutorConfig
 }
 
@@ -29,6 +32,8 @@ export type TutorConfig = {
   /** Only bites when `price` is set: Meta publishes no price, so turns are unpriced by default. */
   maxTurnCostUsd: number
   turnTimeoutMs: number
+  /** Output-token ceiling for each model call; the only spend bound that works while the model is unpriced. */
+  maxOutputTokens: number
   chapterStuffMaxTokens: number
   /** How a snapshot reaches the model; Meta rejects images inside tool results. */
   snapshotAdapter: 'follow-up-user' | 'tool-result-image'
@@ -87,6 +92,11 @@ export function loadConfig(
     throw new Error(
       `DAILY_BUDGET_USD must be a number >= 0, got "${env.DAILY_BUDGET_USD}"`,
     )
+  const r4UsdPerPage = Number(env.R4_USD_PER_PAGE ?? R4_USD_PER_PAGE)
+  if (!Number.isFinite(r4UsdPerPage) || r4UsdPerPage < 0)
+    throw new Error(
+      `R4_USD_PER_PAGE must be a number >= 0, got "${env.R4_USD_PER_PAGE}"`,
+    )
   const adapter = env.SNAPSHOT_ADAPTER || 'follow-up-user'
   if (adapter !== 'follow-up-user' && adapter !== 'tool-result-image')
     throw new Error(
@@ -115,6 +125,13 @@ export function loadConfig(
       env,
       'TURN_TIMEOUT_MS',
       120_000,
+      (n) => Number.isInteger(n) && n >= 1,
+      'an integer >= 1',
+    ),
+    maxOutputTokens: num(
+      env,
+      'TUTOR_MAX_OUTPUT_TOKENS',
+      16_384,
       (n) => Number.isInteger(n) && n >= 1,
       'an integer >= 1',
     ),
@@ -156,6 +173,7 @@ export function loadConfig(
     embedModel: env.EMBED_MODEL || 'baai/bge-m3',
     embedDims,
     dailyBudgetUsd,
+    r4UsdPerPage,
     tutor,
   }
 }

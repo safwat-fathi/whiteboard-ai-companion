@@ -11,6 +11,7 @@ import {
   EMBED_USD_PER_MTOK,
   pageStats,
   R3_USD_PER_PAGE,
+  R4_USD_PER_PAGE,
   routePage,
 } from './route'
 import { buildSections } from './structure'
@@ -19,7 +20,9 @@ export type IngestDeps = {
   books: BooksDb
   providers: Providers
   dataDir: string
-  config: Pick<Config, 'embedModel' | 'embedDims' | 'dailyBudgetUsd'>
+  config: Pick<Config, 'embedModel' | 'embedDims' | 'dailyBudgetUsd'> & {
+    r4UsdPerPage?: number
+  }
   now?: () => number
   /** Pages in flight at once through R4 and R3 (Muse takes 8 to 13 s a page). */
   r4Concurrency?: number
@@ -120,7 +123,9 @@ export async function runIngest(
       plan.set(n, { rung: override(n) ?? routePage(pageStats(text)), text })
     }
     const r3Pages = [...plan.values()].filter((p) => p.rung === 'R3').length
-    budget(r3Pages * R3_USD_PER_PAGE)
+    const r4Pages = [...plan.values()].filter((p) => p.rung === 'R4').length
+    const r4Usd = config.r4UsdPerPage ?? R4_USD_PER_PAGE
+    budget(r3Pages * R3_USD_PER_PAGE + r4Pages * r4Usd)
 
     let finished = done.size
     const bump = () => {
@@ -157,6 +162,14 @@ export async function runIngest(
           await open.renderPage(n, R4_WIDTH),
         )
         store(n, r.text, 'R4')
+        if (r4Usd > 0)
+          // an estimate, not a bill: Meta returns no cost, but the daily cap has to see these pages
+          books.addSpend({
+            at: now(),
+            kind: 'vision',
+            ref: bookId,
+            costUsd: r4Usd,
+          })
         if (r.truncated) {
           meta.warnings = [...new Set([...(meta.warnings ?? []), n])].sort(
             (a, b) => a - b,

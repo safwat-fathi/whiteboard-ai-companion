@@ -12,7 +12,7 @@ The application can be run and deployed using either **pnpm scripts** (natively 
 | `apps/web` (Next.js)    | 3000          | 127.0.0.1 | Client-only editor                                                                         |
 | Caddy (VPS only)        | 80 / 443      | public    | TLS, basic auth, routes `/ws*` and `/api/*` to :4000, everything else to :3000             |
 
-Dev: the browser at `http://localhost:3000` calls the server at `NEXT_PUBLIC_API_BASE=http://localhost:4000` (cross-origin; the server allows `PUBLIC_ORIGIN`). Production: one origin through Caddy, `NEXT_PUBLIC_API_BASE` empty. In Docker, ports bind loopback only (`127.0.0.1:4000` and `127.0.0.1:3000`), safe behind Caddy or for local use.
+Dev: the browser at `http://localhost:3000` calls the server at `NEXT_PUBLIC_API_BASE=http://localhost:4000` (cross-origin; the server allows `PUBLIC_ORIGIN`). Production: one origin through Caddy, `NEXT_PUBLIC_API_BASE` set to the empty string at build time (`deploy.sh` does this; unset would mean offline mode). In Docker, `compose.yaml` pins `HOST`, `PORT` and `DATA_DIR` for the container (they beat a copied `.env`), and `PUBLIC_ORIGIN` / `NEXT_PUBLIC_API_BASE` can be overridden from the shell for a domain (rebuild after changing the latter). Ports bind loopback only (`127.0.0.1:4000` and `127.0.0.1:3000`), safe behind Caddy or for local use.
 
 ## Configuration (`.env.example` at repo root)
 
@@ -51,7 +51,7 @@ pnpm dev                                         # web :3000, server :4000, data
 Granular pnpm commands:
 - `pnpm dev:web`: editor at `http://localhost:3000` (browser-only, persists in IndexedDB).
 - `pnpm dev:server`: server on `:4000` (REST, WebSocket, SSE).
-- "Prod-like" on the laptop: `pnpm build && pnpm start`. Both processes bind 127.0.0.1; no gate.
+- "Prod-like" on the laptop: `pnpm build && pnpm start` (runs both `start` scripts; the web build needs `NEXT_PUBLIC_API_BASE` set in `apps/web/.env.local`). Both processes bind 127.0.0.1; no gate.
 
 ### Method B: Docker Compose
 
@@ -70,14 +70,14 @@ Size: 1 vCPU / 2 GB is enough for one student; 2 vCPU / 4 GB is comfortable for 
 
 ### Option 1: Native Node + systemd + Caddy
 
-1. **User and dirs:** `adduser --system --group --home /opt/whiteboard whiteboard`; `mkdir -p /var/lib/whiteboard /etc/whiteboard`; `chown whiteboard: /var/lib/whiteboard`.
+1. **User and dirs:** `adduser --system --group --home /opt/whiteboard whiteboard`; `mkdir -p /var/lib/whiteboard /etc/whiteboard`; `apt install sqlite3 rclone` (backup.sh needs the `sqlite3` CLI; `rclone` only for off-box copies); `chown whiteboard: /var/lib/whiteboard`.
 2. **Node + pnpm:** Node 22 LTS (NodeSource apt repo or `fnm`), then `corepack enable` (pnpm version comes from `packageManager`).
-3. **Code:** `git clone` into `/opt/whiteboard`; as the `whiteboard` user `pnpm install --frozen-lockfile && pnpm build`.
+3. **Code:** `git clone` into `/opt/whiteboard`; as the `whiteboard` user `pnpm install --frozen-lockfile && NEXT_PUBLIC_API_BASE= pnpm build` (the empty value makes the web client use the same origin).
 4. **Env:** `/etc/whiteboard/env` (mode 0640, owner root:whiteboard) from `apps/server/.env.example` with `DATA_DIR=/var/lib/whiteboard`, `PUBLIC_ORIGIN=https://<domain>`.
-5. **Units:** copy `deploy/whiteboard-server.service` and `whiteboard-web.service` to `/etc/systemd/system/`; `systemctl enable --now` both.
+5. **Units:** copy `deploy/whiteboard-server.service`, `whiteboard-web.service`, `whiteboard-backup.service` and `whiteboard-backup.timer` to `/etc/systemd/system/`; `systemctl enable --now` the two services and the timer.
 6. **Caddy:** install from Caddy's official apt repository; put the Caddyfile at `/etc/caddy/Caddyfile`; `systemctl reload caddy`.
 7. **Firewall:** `ufw allow 22,80,443/tcp`; nothing else. 3000/4000 stay on loopback.
-8. **Backups:** enable `whiteboard-backup.timer` (below).
+8. **Backups:** `systemctl enable --now whiteboard-backup.timer` (see Backups below).
 
 #### systemd unit (server; the web unit is the same shape)
 
@@ -90,7 +90,7 @@ After=network.target
 User=whiteboard
 WorkingDirectory=/opt/whiteboard/apps/server
 EnvironmentFile=/etc/whiteboard/env
-ExecStart=/usr/bin/node dist/main.js
+ExecStart=/opt/whiteboard/apps/server/node_modules/.bin/tsx src/main.ts
 Restart=on-failure
 NoNewPrivileges=true
 ProtectSystem=strict
@@ -101,13 +101,13 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-Web unit: `WorkingDirectory=/opt/whiteboard/apps/web`, `ExecStart=` runs `next start -H 127.0.0.1 -p 3000` from the workspace's `node_modules/.bin`.
+Web unit: `WorkingDirectory=/opt/whiteboard/apps/web`, `ExecStart=/opt/whiteboard/apps/web/node_modules/.bin/next start -H 127.0.0.1 -p 3000`, plus `ReadWritePaths=/opt/whiteboard/apps/web/.next` (Next writes its cache there). The server runs from TypeScript through `tsx` (there is no `dist/`).
 
 ### Option 2: Docker Compose + Caddy
 
 1. **Docker & Caddy:** Install Docker, Docker Compose, and Caddy via official packages.
 2. **Code:** Clone into `/opt/whiteboard`.
-3. **Env:** Configure `apps/server/.env` with your API keys and `PUBLIC_ORIGIN=https://<domain>`.
+3. **Env:** Configure `apps/server/.env` with your API keys, and export `PUBLIC_ORIGIN=https://<domain>` and `NEXT_PUBLIC_API_BASE=` (empty) in the shell before `docker compose up --build`; compose reads both from the shell.
 4. **Run containers:**
    ```bash
    docker compose up -d --build
@@ -162,7 +162,7 @@ On start the server runs pending migrations after performing an online backup of
 
 ## Backups
 
-- `whiteboard-backup.timer` (daily 03:00) runs `deploy/backup.sh`: an online SQLite backup via `VACUUM INTO` to `DATA_DIR/backups/whiteboard-<date>.db` (keep 14), then `rclone sync` of `blobs/` and `backups/` to an off-box remote (if `RCLONE_REMOTE` is set). For Docker, backup targets the `/data` volume directory or runs against the `whiteboard-data` volume.
+- `whiteboard-backup.timer` (daily 03:00) runs `deploy/backup.sh`: an online SQLite backup via `VACUUM INTO` to `DATA_DIR/backups/whiteboard-<date>.db` (keep 14), then `rclone copy` of `blobs/` (so deletions are not propagated) and `rclone sync` of `backups/` to an off-box remote (if `RCLONE_REMOTE` is set). For Docker, backup targets the `/data` volume directory or runs against the `whiteboard-data` volume.
 - Restore drill (do once in M7): stop both units / containers → replace `whiteboard.db` → restore `blobs/` → start → open an old board and a book.
 - Book originals are in `blobs/`, so extracted text, chunks and summaries can be rebuilt; boards and chats exist only in the DB. The DB backup is the one that matters.
 

@@ -131,7 +131,7 @@ export function useTutorChat(o: {
       extra: { context?: Partial<ContextDescriptor>; images?: string[] } = {},
     ) => {
       const body = text.trim()
-      if (!body || abort.current) return
+      if (!body || abort.current) return false
       const ac = new AbortController()
       abort.current = ac
       setError(null)
@@ -163,25 +163,52 @@ export function useTutorChat(o: {
         // refused before any byte (turn_busy, budget, no key ...): the server stored nothing, so neither do we
         setMessages((m) => m.filter((x) => x !== mine))
         if (!ac.signal.aborted) setError(parseChatError(e))
-        return stop()
+        stop()
+        return false // refused: the caller keeps the draft
       }
       try {
-        for await (const snap of until(
-          ac.signal,
-          readUIMessageStream<TutorMessage>({
-            stream,
-            onError: (e) => setError(parseChatError(e)),
-          }),
-        )) {
+        // One state update per animation frame with the newest snapshot: a snapshot per token re-rendered the chat per token.
+        const latest = new Map<string, TutorMessage>()
+        let frame: number | undefined
+        const flush = () => {
+          frame = undefined
+          const snaps = [...latest.values()]
+          latest.clear()
+          if (snaps.length === 0) return
           setMessages((m) => {
-            const i = m.findIndex((x) => x.id === snap.id)
-            return i >= 0 ? m.map((x, j) => (j === i ? snap : x)) : [...m, snap]
+            let next = m
+            for (const snap of snaps) {
+              const i = next.findIndex((x) => x.id === snap.id)
+              next =
+                i >= 0
+                  ? next.map((x, j) => (j === i ? snap : x))
+                  : [...next, snap]
+            }
+            return next
           })
+        }
+        try {
+          for await (const snap of until(
+            ac.signal,
+            readUIMessageStream<TutorMessage>({
+              stream,
+              onError: (e) => setError(parseChatError(e)),
+            }),
+          )) {
+            latest.set(snap.id, snap)
+            if (typeof requestAnimationFrame !== 'function') flush()
+            else frame ??= requestAnimationFrame(flush)
+          }
+        } finally {
+          if (frame !== undefined && typeof cancelAnimationFrame === 'function')
+            cancelAnimationFrame(frame)
+          flush() // the last snapshot always lands, also after Stop or an error
         }
       } catch (e) {
         if (!ac.signal.aborted) setError(parseChatError(e))
       }
       stop()
+      return true
     },
     [boardId, transport],
   )

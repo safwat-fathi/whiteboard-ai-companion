@@ -558,3 +558,39 @@ describe('select tool', () => {
     check()
   })
 })
+
+describe('large selections (server caps a batch at 500 ops)', () => {
+  const N = 1200
+  const seed = () => {
+    put(
+      ed,
+      ...Array.from({ length: N }, (_, i) => mk(`e${i}`, i * 20, 0, 10, 10)),
+    )
+    const sizes: number[] = []
+    ed.onBatch = (b) => sizes.push(b.ops.length)
+    key(ed.tool, 'a', { ctrlKey: true })
+    return sizes
+  }
+
+  it('Delete is chunked to <= 400 ops, removes all, and undo restores all one chunk at a time', () => {
+    const sizes = seed()
+    key(ed.tool, 'Delete')
+    expect(sizes).toEqual([400, 400, 400])
+    expect(ed.scene.els.size).toBe(0)
+    for (let i = 1; i <= 3; i++) ed.undoOnce()
+    expect(ed.scene.els.size).toBe(N)
+  })
+
+  it('a nudge (move) is chunked, moves all, and undo restores all', () => {
+    const sizes = seed()
+    key(ed.tool, 'ArrowRight')
+    expect(sizes).toEqual([400, 400, 400])
+    expect([...ed.scene.els.values()].every((e, i) => e.x === i * 20 + 1)).toBe(
+      true,
+    )
+    for (let i = 1; i <= 3; i++) ed.undoOnce()
+    expect([...ed.scene.els.values()].every((e, i) => e.x === i * 20)).toBe(
+      true,
+    )
+  })
+})

@@ -89,6 +89,14 @@ describe('loadConfig', () => {
       /META_API_BASE_URL/,
     )
   })
+  it('has an estimated R4 page price, overridable, never negative', () => {
+    expect(loadConfig({}).r4UsdPerPage).toBe(0.009)
+    expect(loadConfig({ R4_USD_PER_PAGE: '0.02' }).r4UsdPerPage).toBe(0.02)
+    expect(() => loadConfig({ R4_USD_PER_PAGE: '-1' })).toThrow(
+      /R4_USD_PER_PAGE/,
+    )
+  })
+
   it('has tutor defaults from .env.example and no price', () => {
     const t = loadConfig({}).tutor
     expect(t).toEqual({
@@ -98,6 +106,7 @@ describe('loadConfig', () => {
       maxSteps: 12,
       maxTurnCostUsd: 0.5,
       turnTimeoutMs: 120_000,
+      maxOutputTokens: 16_384,
       chapterStuffMaxTokens: 60_000,
       snapshotAdapter: 'follow-up-user',
       reasoningEffort: null,
@@ -122,6 +131,7 @@ describe('loadConfig', () => {
       MAX_STEPS: '2',
       MAX_TURN_COST_USD: '0.01',
       TURN_TIMEOUT_MS: '5000',
+      TUTOR_MAX_OUTPUT_TOKENS: '4096',
       CHAPTER_STUFF_MAX_TOKENS: '100',
       SNAPSHOT_ADAPTER: 'tool-result-image',
       TUTOR_PRICE_IN_PER_M: '0.1',
@@ -133,6 +143,7 @@ describe('loadConfig', () => {
       maxSteps: 2,
       maxTurnCostUsd: 0.01,
       turnTimeoutMs: 5000,
+      maxOutputTokens: 4096,
       chapterStuffMaxTokens: 100,
       snapshotAdapter: 'tool-result-image',
       price: { inPerM: 0.1, outPerM: 0 },
@@ -141,6 +152,7 @@ describe('loadConfig', () => {
       'MAX_STEPS',
       'MAX_TURN_COST_USD',
       'TURN_TIMEOUT_MS',
+      'TUTOR_MAX_OUTPUT_TOKENS',
       'CHAPTER_STUFF_MAX_TOKENS',
       'SNAPSHOT_ADAPTER',
       'TUTOR_PRICE_OUT_PER_M',

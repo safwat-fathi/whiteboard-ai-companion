@@ -39,6 +39,28 @@ const isPng = (b: Buffer) =>
     .subarray(0, 8)
     .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
 
+describe('export concurrency', () => {
+  const url = (id: string) =>
+    `/api/boards/${id}/export.png?x=0&y=0&w=200&h=100&width=400`
+
+  it('refuses with 503 when no render slot is free', async () => {
+    const { call, boards } = await boot({ maxConcurrentExports: 0 })
+    const b = boards.createBoard('B')
+    boards.submit(b.id, rectBatch, OWNER)
+    const r = await call('GET', url(b.id))
+    expect(r.status).toBe(503)
+    expect(r.json.error.code).toBe('overloaded')
+  })
+
+  it('frees its slot after every render, so a limit of one still serves a series of requests', async () => {
+    const { call, boards } = await boot({ maxConcurrentExports: 1 })
+    const b = boards.createBoard('B')
+    boards.submit(b.id, rectBatch, OWNER)
+    for (let i = 0; i < 3; i++)
+      expect((await call('GET', url(b.id))).status).toBe(200)
+  })
+})
+
 describe('GET /api/boards/:id/export.png', () => {
   it('renders a rect of the board at the requested width', async () => {
     const { call, boards } = await boot()

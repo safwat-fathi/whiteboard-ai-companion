@@ -25,7 +25,7 @@ Nothing else leaves the machine from the board: not other boards, not book text 
 
 - **Auto-picture rule (as built, M6; PLAN §19 #57):** if the **selection** holds handwriting (a freehand element) and the chip says `structure`, the picture is forced: the composer shows "structure + picture" with "(auto)" beside it and the descriptor says `both`. `picture`, `both` and a text-only selection behave as the student set them. **A viewport that contains ink does not attach a picture by itself:** the Viewport chip stays an explicit opt-in (cost and surprise on a handwritten board). A selection of a group is its members, so handwriting inside a group counts. All candidate models accept images ([ai-integration](./ai-integration.md)).
 - With **nothing selected and no chips**, the turn still carries the digest, so "explain what I have here" works without any attachment.
-- Entry points: the selection toolbar's **Ask AI**, the right-click menu, or simply typing in the dock while a selection exists.
+- Entry points: the selection toolbar's **Ask AI**, or simply typing in the dock while a selection exists.
 
 ## Digest format
 

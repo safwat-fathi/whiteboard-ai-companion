@@ -88,6 +88,17 @@ describe('POST /api/blobs and GET /api/blobs/:id', () => {
     })
   })
 
+  it('refuses a JPEG with a truncated EXIF segment as a 400, not a 500', async () => {
+    const { call } = await boot()
+    const t = Buffer.from([
+      0xff, 0xd8, 0xff, 0xe1, 0, 14, 0x45, 0x78, 0x69, 0x66, 0, 0, 0x49, 0x49,
+      1, 2, 3, 4,
+    ])
+    const r = await upload(call, t, 'image/jpeg')
+    expect(r.status).toBe(400)
+    expect(r.json.error.code).toBe('validation_failed')
+  })
+
   it('refuses an image whose header claims an oversized picture with 413, whatever its byte size', async () => {
     const { call, db } = await boot()
     const r = await upload(call, Buffer.from(corePng(100_000, 100_000, 64)))

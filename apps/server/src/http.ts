@@ -79,6 +79,8 @@ export type HttpDeps = {
   library?: LibraryDeps
   /** The tutor routes (/api/chat, messages, models); without it they are unknown paths. */
   tutor?: TutorRoutesDeps
+  /** Export renders allowed at once (default 2). One is up to ~134 MB of pixels and runs on the thread that serves the sockets. */
+  maxConcurrentExports?: number
 }
 
 /** Image bytes with every header that stops a browser from treating them as anything but an image. */
@@ -125,15 +127,16 @@ export function createHttpServer(deps: HttpDeps): http.Server {
   const { config, boards } = deps
   const library = deps.library && createLibraryRoutes(deps.library)
   const tutor = deps.tutor && createTutorRoutes(deps.tutor)
+  const maxExports = deps.maxConcurrentExports ?? 2
+  let exporting = 0
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
+    res.setHeader('Vary', 'Origin') // the answer depends on Origin, whatever it is
     if (!checkHost(req.headers.host, config))
       throw apiError('forbidden_origin', 'this Host is not allowed')
     const origin = req.headers.origin
-    if (origin === config.publicOrigin) {
+    if (origin === config.publicOrigin)
       res.setHeader('Access-Control-Allow-Origin', origin)
-      res.setHeader('Vary', 'Origin')
-    }
     if (req.method === 'OPTIONS') {
       const cors: Record<string, string> =
         origin === config.publicOrigin
@@ -201,9 +204,20 @@ export function createHttpServer(deps: HttpDeps): http.Server {
           h !== undefined
             ? { x, y, w, h }
             : defaultRect(elements)
-        const png = await renderBoardPng(elements, rect, num('width') ?? 1024, {
-          blobs: deps.blobs,
-        })
+        if (exporting >= maxExports)
+          throw apiError(
+            'overloaded',
+            'Too many exports are running; try again in a moment.',
+          )
+        exporting++
+        let png: Buffer
+        try {
+          png = await renderBoardPng(elements, rect, num('width') ?? 1024, {
+            blobs: deps.blobs,
+          })
+        } finally {
+          exporting--
+        }
         res.writeHead(200, {
           'Content-Type': 'image/png',
           'Content-Length': String(png.length),

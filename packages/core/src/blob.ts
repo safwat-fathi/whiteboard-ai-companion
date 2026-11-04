@@ -248,7 +248,7 @@ export function parseImageHeader(
 
       if (
         marker === 0xe1 &&
-        segLen >= 14 &&
+        segLen >= 16 && // 2 len + 6 'Exif\0\0' + 8 TIFF header
         bytes[offset + 2] === 0x45 &&
         bytes[offset + 3] === 0x78 &&
         bytes[offset + 4] === 0x69 &&

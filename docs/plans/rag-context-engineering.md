@@ -84,7 +84,7 @@ For a 1M-context model we deliberately target ~100k tokens of prompt per step: c
 
 ## Evaluation
 
-`eval/<book>.jsonl` holds `{q, pages: [...]}` (≥ 10 per book, written by the student). `pnpm eval:retrieval` reports recall@8 and MRR per embedding model, vector-only versus hybrid. **Target: the expected page is in the top 8 for ≥ 80% [my call]**; below that, try neighbours, then `qwen3-embedding-8b`, then chunk context, then a reranker.
+`eval/<book>.jsonl` holds `{q, pages: [...]}` (≥ 10 per book, written by the student). `pnpm eval:retrieval` scores the single configured `EMBED_MODEL` (it refuses a book embedded with another model) and reports recall@k for keyword, vector, hybrid and hybrid + neighbours. **Target: the expected page is in the top 8 for ≥ 80% [my call]**; below that, try neighbours, then `qwen3-embedding-8b`, then chunk context, then a reranker.
 
 A second, manual check per scope type: ask three questions that need the book and three that do not, and confirm the answer labels them correctly and the citations open the right page.
 

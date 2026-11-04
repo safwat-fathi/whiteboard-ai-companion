@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react'
+import { act, createElement, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -17,6 +17,17 @@ import {
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true
 
+const probe = { mounts: 0, unmounts: 0 }
+function Probe() {
+  useEffect(() => {
+    probe.mounts++
+    return () => {
+      probe.unmounts++
+    }
+  }, [])
+  return createElement('p', null, 'chat pane')
+}
+
 function Harness({ enabled = true }: { enabled?: boolean }) {
   const layout = useDockLayout(enabled)
   return createElement(
@@ -26,7 +37,7 @@ function Harness({ enabled = true }: { enabled?: boolean }) {
     createElement(Dock, {
       layout,
       panes: {
-        chat: createElement('p', null, 'chat pane'),
+        chat: createElement(Probe),
         activity: createElement('p', null, 'activity pane'),
         source: createElement('p', null, 'source pane'),
       },
@@ -109,10 +120,22 @@ describe('Dock', () => {
     await mount()
     await click(q('[aria-label="Collapse the tutor"]'))
     expect(inset().right).toBe(STRIP_W)
-    expect(host.querySelector('[role="tablist"]')).toBeNull()
+    expect(
+      q<HTMLElement>('[role="tablist"]').closest('aside')?.style.display,
+    ).toBe('none')
     await click(q('[aria-label="Open the tutor"]'))
     expect(inset().right).toBe(DOCK_DEFAULT)
-    expect(host.querySelector('[role="tablist"]')).not.toBeNull()
+    expect(
+      q<HTMLElement>('[role="tablist"]').closest('aside')?.style.display,
+    ).toBe('flex')
+  })
+
+  it('collapsing keeps the panes mounted, so a running turn is not aborted', async () => {
+    probe.mounts = probe.unmounts = 0
+    await mount()
+    await click(q('[aria-label="Collapse the tutor"]'))
+    await click(q('[aria-label="Open the tutor"]'))
+    expect(probe).toEqual({ mounts: 1, unmounts: 0 })
   })
 
   it('resizes with the keyboard, within 320 to 560, and remembers width and collapsed state', async () => {

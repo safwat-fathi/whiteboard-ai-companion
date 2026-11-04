@@ -35,7 +35,7 @@ The student talks to the AI **inside the app**. There is no external client, no 
   - _Tool chips:_ one per board action, e.g. "Added concept map · 12 elements · **Locate**". Click = Locate that batch; secondary action = Undo that batch.
   - _Links with custom schemes:_ `[p. 42](cite:<bookId>#<page>)` opens the Source tab on that page; `[the red arrow](board:<elementId>)` runs Locate on the element.
   - _Footer:_ model, tokens, cost of the turn (hover for cached tokens).
-- **User message** shows its attached context as chips (what was sent): "Selection · 3 elements · picture", and a thumbnail when a picture was attached.
+- **User message** shows only its text. Context chips and a picture thumbnail on the sent message are **not built** (the context is stored server-side in `messages.context`; the "What the AI sees" preview is the only transparency UI).
 
 ## Composer
 

@@ -7,6 +7,8 @@ export function createQueue(
   run: (id: string) => Promise<void>,
   o: {
     onError?: (id: string, error: unknown) => void
+    /** Called first for every failed job, however it died (a worker crash leaves the book mid-job): mark it failed here. */
+    onFail?: (id: string, error: unknown) => void
     onDone?: (id: string) => void
   } = {},
 ) {
@@ -21,6 +23,7 @@ export function createQueue(
       try {
         await run(id)
       } catch (e) {
+        o.onFail?.(id, e)
         o.onError?.(id, e)
       }
       current = null

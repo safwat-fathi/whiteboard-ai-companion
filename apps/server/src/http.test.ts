@@ -122,7 +122,7 @@ describe('health and routing', () => {
     expect(r.status).toBe(200)
     expect(r.json).toEqual({
       ok: true,
-      migrations: 2,
+      migrations: 3,
       keys: { meta: true, model: true, openrouter: false },
     })
     expect(r.text).not.toContain('sk-secret-meta-value')
@@ -249,6 +249,22 @@ describe('Origin gate and CORS (R3)', () => {
       const r = await call('GET', '/api/health', { origin: o })
       expect(r.status).toBe(200)
       expect(r.headers['access-control-allow-origin']).toBeUndefined()
+    }
+  })
+
+  it('sends Vary: Origin on every response, whatever the Origin (shared caches must not reuse a CORS answer)', async () => {
+    const { call } = await boot()
+    for (const o of [undefined, ORIGIN, 'http://evil.test']) {
+      const opts = o ? { origin: o } : {}
+      for (const [m, path] of [
+        ['GET', '/api/health'],
+        ['GET', '/api/nope'],
+        ['OPTIONS', '/api/boards'],
+        ['DELETE', '/api/boards/x'],
+      ] as const) {
+        const r = await call(m, path, opts)
+        expect(r.headers.vary, `${m} ${path} ${o}`).toContain('Origin')
+      }
     }
   })
 

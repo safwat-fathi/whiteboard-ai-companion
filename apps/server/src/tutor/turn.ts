@@ -71,7 +71,11 @@ export type TutorDeps = {
 }
 
 /** What the stub model was asked, for the stub-only test route. Images are reduced to their size. */
-export type RecordedCall = { prompt: unknown[]; tools: string[] }
+export type RecordedCall = {
+  prompt: unknown[]
+  tools: string[]
+  maxOutputTokens?: number
+}
 
 type Part = { type: string; [k: string]: unknown }
 
@@ -97,8 +101,8 @@ const wire = (e: unknown): string => {
 }
 
 /** Earlier turns as the model sees them: the text, plus one line per board change (R12). */
-function historyOf(rows: MessageRow[]): ModelMessage[] {
-  return rows.map((m) => {
+export function historyOf(rows: MessageRow[]): ModelMessage[] {
+  return rows.flatMap((m) => {
     const text = m.parts
       .map((p) => {
         const q = p as {
@@ -120,7 +124,9 @@ function historyOf(rows: MessageRow[]): ModelMessage[] {
       m.role === 'user' && shown
         ? `\n(the student attached ${shown} picture${shown === 1 ? '' : 's'} of the board)`
         : ''
-    return { role: m.role, content: text + note } as ModelMessage
+    // a turn stopped before any text has no content; some backends reject an empty assistant message
+    if (m.role === 'assistant' && !text) return []
+    return [{ role: m.role, content: text + note } as ModelMessage]
   })
 }
 
@@ -169,19 +175,19 @@ export function createTutor(deps: TutorDeps) {
         context: req.context,
         images: req.message.images,
       })
+      messages.append({
+        id: `${turnId}:u`,
+        boardId,
+        turnId,
+        role: 'user',
+        parts: [{ type: 'text', text: req.message.text }],
+        context: context.stored,
+        createdAt: now(),
+      })
     } catch (e) {
-      active.delete(boardId)
+      active.delete(boardId) // any failure before the stream exists must not leave the board locked
       throw e
     }
-    messages.append({
-      id: `${turnId}:u`,
-      boardId,
-      turnId,
-      role: 'user',
-      parts: [{ type: 'text', text: req.message.text }],
-      context: context.stored,
-      createdAt: now(),
-    })
 
     const stream = createUIMessageStream({
       onError: wire,
@@ -288,6 +294,10 @@ export function createTutor(deps: TutorDeps) {
             stopWhen: [isStepCount(t.maxSteps), overCost],
             abortSignal: ac.signal,
             maxRetries: 2,
+            maxOutputTokens: t.maxOutputTokens, // a hard ceiling per model call that does not depend on a price being configured
+            onStepEnd: (s) => {
+              usage = addUsage(usage, usageOf(s.usage)) // kept as steps finish: an abort or error mid-turn loses nothing already spent
+            },
             ...(t.reasoningEffort
               ? {
                   providerOptions: {
@@ -306,10 +316,6 @@ export function createTutor(deps: TutorDeps) {
           }))
             emit(c)
           const steps = await Promise.resolve(result.steps).catch(() => [])
-          usage = steps.reduce(
-            (a, s) => addUsage(a, usageOf(s.usage)),
-            noUsage(),
-          )
           const last = steps.at(-1)
           if (timedOut)
             say(
@@ -333,24 +339,24 @@ export function createTutor(deps: TutorDeps) {
           clearTimeout(timer)
           signal.removeEventListener('abort', onAbort)
         }
-        let unverified = 0
-        for (const p of parts)
-          if (p.type === 'text') {
-            const r = sanitizeCites(p.text as string, sources)
-            p.text = r.text
-            unverified += r.stripped
-          }
-        const cost = costOf(t.price, usage)
-        const u: Usage = {
-          ...usage,
-          costUsd: cost,
-          model: modelId,
-          ...(fellBack ? { fallback: true } : {}),
-          ...(unverified ? { unverifiedCites: unverified } : {}),
-        }
-        emit({ type: 'data-usage', data: u })
-        emit({ type: 'data-status', data: { state: status } })
         try {
+          let unverified = 0
+          for (const p of parts)
+            if (p.type === 'text') {
+              const r = sanitizeCites(p.text as string, sources)
+              p.text = r.text
+              unverified += r.stripped
+            }
+          const cost = costOf(t.price, usage)
+          const u: Usage = {
+            ...usage,
+            costUsd: cost,
+            model: modelId,
+            ...(fellBack ? { fallback: true } : {}),
+            ...(unverified ? { unverifiedCites: unverified } : {}),
+          }
+          emit({ type: 'data-usage', data: u })
+          emit({ type: 'data-status', data: { state: status } })
           if (cost !== null && cost > 0)
             books.addSpend({
               at: now(),
@@ -379,6 +385,9 @@ export function createTutor(deps: TutorDeps) {
                   }),
                 ),
                 tools: (c.tools ?? []).map((x) => x.name),
+                ...(c.maxOutputTokens === undefined
+                  ? {}
+                  : { maxOutputTokens: c.maxOutputTokens }),
               })),
             )
         } finally {

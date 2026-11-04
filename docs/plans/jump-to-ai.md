@@ -38,8 +38,8 @@ Default **off** (the camera moving unasked is an anti-goal). A top-bar toggle.
 
 | State | Behaviour |
 |---|---|
-| Off | `agent_focus` events only drive the edge indicator and the "Jump to AI" button |
-| On | On `agent_focus`, if ≥ 600 ms since the last move, `flyTo` the batch bounds, keeping the current zoom unless the target does not fit the viewport |
+| Off | agent-authored `ops` broadcasts only drive the edge indicator and the "Jump to AI" button |
+| On | On an agent-authored batch, if ≥ 600 ms since the last move, `flyTo` the batch bounds, keeping the current zoom unless the target does not fit the viewport |
 | Auto-off | Any wheel, pan, zoom or pointer-down on the canvas turns Follow off and shows a toast "Follow AI off (you moved the canvas)" |
 
 ## Off-screen indicator
@@ -48,7 +48,7 @@ When the target rect is entirely outside the viewport and Follow is off: an arro
 
 ## AI presence
 
-An "AI" cursor moves to each batch's centre with a status line ("drawing…", "reading page 42…") driven by `agent_focus` / `agent_status` ([api](./api.md)). No human cursors exist in v1 (single user).
+An "AI" cursor moves to each batch's centre with a status line ("drawing…", "reading page 42…") driven by agent-authored `ops` and the `data-status` stream part ([api](./api.md)). No human cursors exist in v1 (single user).
 
 ## Undo
 

@@ -1,8 +1,10 @@
 import type { Element } from '@whiteboard/core'
 import { describe, expect, it } from 'vitest'
 import type { Broadcast } from '../../board-service'
+import { serverPlatform } from '../../export'
 import { boot, ORIGIN, sseChunks } from '../../http-test-utils'
 import type { StubFixture } from '../stub'
+import { boardToolSet } from './board-tools'
 
 const OWNER = { kind: 'human' as const, id: 'owner' }
 const stuShape = (id: string, x: number) => ({
@@ -456,5 +458,39 @@ describe('the board tools inside a turn', () => {
     expect(JSON.stringify((await t.recorded()).at(-1)?.prompt)).toContain(
       'belongs to the student and was not selected',
     )
+  })
+
+  it('a write tool called after Stop writes nothing and says why', async () => {
+    const t = await boot()
+    const board = t.boards.createBoard('B')
+    const { tools } = boardToolSet(
+      { boards: t.boards, blobs: t.blobs, platform: serverPlatform },
+      {
+        boardId: board.id,
+        turnId: 'turn-stopped',
+        request: { context: { selection: [] } } as never,
+        emit: () => {},
+      },
+    )
+    const call = (signal: AbortSignal) =>
+      (
+        tools.add_text?.execute as (
+          i: unknown,
+          o: unknown,
+        ) => Promise<{ ok?: boolean; error?: string }>
+      )(
+        { text: 'late', placement: { x: 0, y: 0 } },
+        { toolCallId: 'c', messages: [], abortSignal: signal },
+      )
+    const stop = new AbortController()
+    stop.abort()
+    expect(await call(stop.signal)).toEqual({
+      ok: false,
+      error: 'Stopped by the student.',
+    })
+    expect(t.boards.scene(board.id).elements).toHaveLength(0)
+    // the same call with a live signal still draws
+    await call(new AbortController().signal)
+    expect(t.boards.scene(board.id).elements).toHaveLength(1)
   })
 })

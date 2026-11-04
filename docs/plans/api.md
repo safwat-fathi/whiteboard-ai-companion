@@ -13,12 +13,13 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
   |---|---|---|
   | `validation_failed` | 400 | Body does not match the schema; `details` names the field and allowed range |
   | `not_found` | 404 | Unknown board/book/blob |
-  | `forbidden_origin` | 403 | Origin check failed |
+  | `forbidden_origin` | 403 | Origin check failed, or unknown `Host` |
   | `turn_busy` | 409 | A tutor turn is already running on this board |
   | `conflict` | 409 | The book is queued or being indexed (index, retry, delete), or its state does not allow the call |
   | `budget_exceeded` | 429 | Daily or per-turn cap hit; `details.cap` says which |
   | `payload_too_large` | 413 | Over the size limit ([auth-security](./auth-security.md)) |
   | `upstream_error` | 502 | Meta Model API / OpenRouter provider failure after retries |
+  | `overloaded` | 503 | More than `maxConcurrentExports` (2) board exports are rendering; retry shortly |
   | `ingest_failed` | 422 | Book could not be processed; `details` has the step |
 
 - Pagination: `?before=<cursor>&limit=<n>`; responses carry `next` when more exist.
@@ -34,7 +35,7 @@ Three channels, one server: **REST** (`/api/*`), **WebSocket** (`/ws`, board ops
 | `POST /api/boards/:id/chat/reset` | _New chat_: hides the board's messages so far (they stay in the database) and drops its rolling summary; the board is untouched. `{}` body, returns `{ok: true}`; `turn_busy` (409) while a turn runs; `not_found` for an unknown board; the usual `Origin` check applies |
 | `POST /api/boards/:id/context-preview` | Exact digest text, thumbnails and token estimate for a context descriptor ([board-context](./board-context.md)) |
 | `GET /api/boards/:id/export.png?x=&y=&w=&h=&width=` | Server render of a region (used by tests and the snapshot fallback) |
-| `POST /api/blobs` (raw body, ≤ 10 MB) · `GET /api/blobs/:id` | Image/picture upload and fetch (raw stream with `Content-Type: image/png\|jpeg\|webp\|gif`, header-verified size/dimensions; returns `{id, byteLength, mediaType, width, height}`; `nosniff`) |
+| `POST /api/blobs` (raw body, ≤ 10 MB) · `GET /api/blobs/:id` | Image/picture upload and fetch (raw body, buffered; the claimed `Content-Type` is ignored and the real type is sniffed, header-verified size/dimensions; returns `{id, mime, bytes}` with 201 (new) or 200 (already stored); `nosniff`) |
 | `POST /api/books?title=` (raw body, `Content-Type: application/pdf`, ≤ 200 MB, ≤ 2,000 pages) | Upload (streamed to disk while hashed); `201` with the book (`id`, `title`, `pages`, `status: uploaded`, …). A body that is not a PDF is `400`, one that cannot be read or has too many pages `422 ingest_failed`, over the limit `413`; a refused file is not kept |
 | `GET /api/books` · `GET /api/books/:id` | `{books}` / one book: `status`, `progress`, `error`, `methods` (pages read per rung), `chunks`, `ingestMethod` (`ranges`, `warnings`: pages the model cut off, `notes`) |
 | `GET /api/books/:id/estimate` | `{pages, r1, r4, scanned, mathDense, embedUsd, r3Usd, dailyRemainingUsd}`: what default routing will do and cost. Free |
@@ -76,7 +77,7 @@ Response: the AI SDK **UI message stream** over SSE (`createUIMessageStreamRespo
 | `data-usage` | `{costUsd \| null, inputTokens, cachedTokens, outputTokens, model, fallback?, unverifiedCites?}` | Message footer, top-bar spend (`costUsd` is null while the model is unpriced) |
 | `data-status` | `{state: thinking \| reading \| drawing \| done \| stopped}` | "Working…" line, AI presence |
 | `data-source` | `{bookId, pageStart, pageEnd, label?}` | The only pages a `cite:<bookId>#<page>` link may name this turn |
-| `data-focus` | `{bounds, note?}` | `focus_region` pointed at something |
+| `data-focus` | `{bounds, note?}` | `focus_region` pointed at something (emitted by the server; the web app does not consume it) |
 
 The stream opens with `start` (`messageId: <turnId>:a`) before any data part. `data-batch` also carries `touchedIds`. Request: `message.images` are pasted-image blob ids; `context.pictures` are the browser-rendered pictures (blob ids from `POST /api/blobs`).
 

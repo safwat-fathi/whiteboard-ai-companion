@@ -42,6 +42,8 @@ type Live = {
   subs: Set<(b: Broadcast) => void>
   /** Memory may be ahead of the database (a write failed): reload in place on next use, keeping the subscribers. */
   stale: boolean
+  /** batchId -> seq of the most recent stored batches, so a resend after a lost ack is recognised (insertion order = age). */
+  recent: Map<string, number>
 }
 
 const fromRow = (r: OpRow): Broadcast => ({
@@ -73,6 +75,9 @@ export class BoardService {
   private readonly snapshotEvery: number
   private readonly snapshotAfterMs: number
   private readonly idleEvictMs: number
+  private readonly recentBatches: number
+  private readonly maxJoinTail: number
+  private readonly maxSnapshotsPerTick: number
 
   constructor(
     private readonly db: BoardsDb,
@@ -81,12 +86,20 @@ export class BoardService {
       snapshotEvery?: number
       snapshotAfterMs?: number
       idleEvictMs?: number
+      recentBatches?: number
+      /** A join further behind than this many batches gets the live scene, not the op tail (bounds the frame size). */
+      maxJoinTail?: number
+      /** Snapshots one tick() may write, so a busy server does not gzip every board back to back on the event loop. */
+      maxSnapshotsPerTick?: number
     } = {},
   ) {
     this.now = o.now ?? Date.now
     this.snapshotEvery = o.snapshotEvery ?? 500
     this.snapshotAfterMs = o.snapshotAfterMs ?? 5 * 60_000
     this.idleEvictMs = o.idleEvictMs ?? 10 * 60_000
+    this.recentBatches = o.recentBatches ?? 1000
+    this.maxJoinTail = o.maxJoinTail ?? 2000
+    this.maxSnapshotsPerTick = o.maxSnapshotsPerTick ?? 4
   }
 
   createBoard(title: string, scope?: Scope): BoardRow {
@@ -131,6 +144,8 @@ export class BoardService {
     } catch (e) {
       throw this.invalid(e)
     }
+    const seen = l.recent.get(batch.batchId)
+    if (seen !== undefined) return { seq: seen, noop: true, broadcast: null } // a resend: already stored, acked like the original
     checkLimits(batch, l.scene.els.size)
     if (author.kind === 'agent') {
       // Edit rights: the tutor may add anything but change only its own work and what the student selected.
@@ -198,6 +213,9 @@ export class BoardService {
       throw e
     }
     l.headSeq = seq
+    l.recent.set(batch.batchId, seq)
+    if (l.recent.size > this.recentBatches)
+      l.recent.delete(l.recent.keys().next().value as string)
     l.lastUsed = this.now()
     const broadcast: Broadcast = {
       seq,
@@ -238,24 +256,26 @@ export class BoardService {
     const l = this.load(boardId)
     l.lastUsed = this.now()
     const head = l.headSeq
-    const snap = this.db.latestSnapshot(boardId)
-    if (fromSeq > head) {
-      // The client is ahead of this server (its database was replaced): send the whole current scene.
-      return {
-        headSeq: head,
-        snapshot: { seq: head, scene: [...l.scene.els.values()] },
-        ops: [],
-      }
-    }
-    if (snap && fromSeq < snap.seq)
-      return {
-        headSeq: head,
-        snapshot: snap,
-        ops: this.db.opsAfter(boardId, snap.seq).map(fromRow),
-      }
+    const live = (): JoinResult => ({
+      headSeq: head,
+      snapshot: { seq: head, scene: [...l.scene.els.values()] },
+      ops: [],
+    })
+    // The client is ahead of this server (its database was replaced): send the whole current scene.
+    if (fromSeq > head) return live()
+    // Decode the snapshot blob (gunzip + parse) only when this client actually needs it.
+    const snapSeq = this.db.latestSnapshotSeq(boardId)
+    const snap =
+      snapSeq !== undefined && fromSeq < snapSeq
+        ? this.db.latestSnapshot(boardId)
+        : undefined
+    const tailFrom = snap ? snap.seq : fromSeq
+    // Snapshots normally keep the tail under `snapshotEvery`; when they have stalled, ship the scene, not the log.
+    if (head - tailFrom > this.maxJoinTail) return live()
     return {
       headSeq: head,
-      ops: this.db.opsAfter(boardId, fromSeq).map(fromRow),
+      ...(snap ? { snapshot: snap } : {}),
+      ops: this.db.opsAfter(boardId, tailFrom).map(fromRow),
     }
   }
 
@@ -270,14 +290,19 @@ export class BoardService {
   /** Housekeeping the caller runs every so often: time-based snapshots and idle eviction. */
   tick(): void {
     const now = this.now()
+    let left = this.maxSnapshotsPerTick
     for (const [id, l] of this.live) {
-      if (
-        l.headSeq > l.lastSnapshotSeq &&
-        now - l.lastSnapshotAt >= this.snapshotAfterMs
-      )
+      const dirty = l.headSeq > l.lastSnapshotSeq
+      if (dirty && left > 0 && now - l.lastSnapshotAt >= this.snapshotAfterMs) {
         this.trySnapshot(id, l)
+        left--
+      }
       if (l.subs.size === 0 && now - l.lastUsed >= this.idleEvictMs) {
-        if (l.headSeq > l.lastSnapshotSeq) this.trySnapshot(id, l)
+        if (l.headSeq > l.lastSnapshotSeq) {
+          if (left === 0) continue // keep it in memory; the next tick snapshots and evicts it
+          this.trySnapshot(id, l)
+          left--
+        }
         this.live.delete(id)
       }
     }
@@ -326,6 +351,11 @@ export class BoardService {
       lastUsed: this.now(),
       subs: cached?.subs ?? new Set(),
       stale: false,
+      recent: new Map(
+        this.db
+          .opsAfter(boardId, Math.max(0, row.headSeq - this.recentBatches))
+          .map((r) => [r.batchId, r.seq]),
+      ),
     }
     if (cached)
       Object.assign(cached, l) // reload in place: closures hold `cached`, so its subscribers stay attached

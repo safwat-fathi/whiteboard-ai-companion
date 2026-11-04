@@ -121,10 +121,19 @@ export function createBoardsDb(db: Database.Database) {
      GROUP BY turn_id HAVING MIN(seq) < ? ORDER BY firstSeq DESC LIMIT ?`,
   )
   const selectBatch = db.prepare(
-    'SELECT * FROM board_ops WHERE board_id = ? AND batch_id = ? ORDER BY seq',
+    // INDEXED BY: without ANALYZE stats the planner ties this with the (board_id, seq) primary key and picks the scan
+    'SELECT * FROM board_ops INDEXED BY board_ops_batch WHERE board_id = ? AND batch_id = ? ORDER BY seq',
   )
   const putSnapshot = db.prepare(
     'INSERT OR REPLACE INTO board_snapshots (board_id, seq, scene) VALUES (?, ?, ?)',
+  )
+  // Only the newest snapshot is ever read; the op log is never pruned, so a lost snapshot costs a replay, not data.
+  const pruneSnapshots = db.prepare(
+    `DELETE FROM board_snapshots WHERE board_id = @id
+       AND seq < (SELECT MAX(seq) FROM board_snapshots WHERE board_id = @id)`,
+  )
+  const selectSnapshotSeq = db.prepare(
+    'SELECT MAX(seq) AS seq FROM board_snapshots WHERE board_id = ?',
   )
   const selectSnapshot = db.prepare(
     'SELECT seq, scene FROM board_snapshots WHERE board_id = ? ORDER BY seq DESC LIMIT 1',
@@ -211,7 +220,16 @@ export function createBoardsDb(db: Database.Database) {
       (selectOps.all(boardId, seq, limit) as RawOp[]).map(toOp),
 
     saveSnapshot(boardId: string, seq: number, scene: Element[]): void {
-      putSnapshot.run(boardId, seq, gzipSync(JSON.stringify(scene)))
+      const blob = gzipSync(JSON.stringify(scene))
+      db.transaction(() => {
+        putSnapshot.run(boardId, seq, blob)
+        pruneSnapshots.run({ id: boardId })
+      })()
+    },
+    /** The newest snapshot's seq without reading or decoding its blob. */
+    latestSnapshotSeq(boardId: string): number | undefined {
+      const r = selectSnapshotSeq.get(boardId) as { seq: number | null }
+      return r.seq ?? undefined
     },
     latestSnapshot(
       boardId: string,

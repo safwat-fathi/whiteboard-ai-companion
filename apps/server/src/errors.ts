@@ -9,6 +9,7 @@ const STATUS = {
   ingest_failed: 422,
   budget_exceeded: 429,
   upstream_error: 502,
+  overloaded: 503,
   internal_error: 500,
 } as const
 export type ErrorCode = keyof typeof STATUS

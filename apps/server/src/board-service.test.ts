@@ -43,7 +43,7 @@ const rect = (id: string, over: Record<string, unknown> = {}): Element =>
     w: 100,
     h: 50,
     rotation: 0,
-    z: `a${String(n++).padStart(6, '0')}`,
+    z: `a${String(n++).padStart(6, '0')}1`, // must not end in 0: core now rejects such order keys
     style: {
       stroke: '#000',
       fill: null,
@@ -290,6 +290,42 @@ describe('submit', () => {
     expect(t.boardsDb.latestSnapshot(good)?.seq).toBe(2)
   })
 
+  it('join sends the live scene instead of a long op tail when snapshots have fallen behind', () => {
+    const t = setup({ snapshotEvery: 1_000_000, maxJoinTail: 3 })
+    const { id } = t.svc.createBoard('B')
+    for (const e of ['a', 'b', 'c', 'd', 'e']) t.svc.submit(id, add(e), OWNER)
+    const long = t.svc.join(id, 0) // 5 batches behind, limit 3
+    expect(long.ops).toEqual([])
+    expect(long.snapshot?.seq).toBe(5)
+    expect(long.snapshot?.scene.map((e) => e.id).sort()).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'e',
+    ])
+    const short = t.svc.join(id, 3) // 2 behind: the plain tail
+    expect(short.snapshot).toBeUndefined()
+    expect(short.ops.map((o) => o.seq)).toEqual([4, 5])
+  })
+
+  it('tick() writes at most maxSnapshotsPerTick snapshots and the rest follow on the next tick', () => {
+    const t = setup({
+      snapshotEvery: 1_000_000,
+      snapshotAfterMs: 1,
+      maxSnapshotsPerTick: 2,
+    })
+    const ids = ['x', 'y', 'z'].map((n) => t.svc.createBoard(n).id)
+    for (const id of ids) t.svc.submit(id, add(`el-${id}`), OWNER)
+    clock += 10
+    const snapped = () =>
+      ids.filter((id) => t.boardsDb.latestSnapshotSeq(id) !== undefined).length
+    t.svc.tick()
+    expect(snapped()).toBe(2)
+    t.svc.tick()
+    expect(snapped()).toBe(3)
+  })
+
   it('a throwing subscriber does not break the write or the other subscribers', () => {
     const t = setup()
     const { id } = t.svc.createBoard('B')
@@ -311,6 +347,47 @@ describe('submit', () => {
     off()
     t.svc.submit(id, add('b'), OWNER)
     expect(got).toEqual([1])
+  })
+})
+
+describe('resent batches (lost ack)', () => {
+  const batch = (bid: string, elId: string) => ({ ...add(elId), batchId: bid })
+
+  it('applies a resent batchId once: same seq back, no second op, no second broadcast', () => {
+    const t = setup()
+    const { id } = t.svc.createBoard('B')
+    const seen: number[] = []
+    t.svc.subscribe(id, (b) => seen.push(b.seq))
+    const first = t.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    const again = t.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    t.svc.submit(id, batch('other', 'b'), OWNER)
+    const third = t.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    expect(again).toMatchObject({ seq: first.seq, noop: true, broadcast: null })
+    expect(third.seq).toBe(first.seq)
+    expect(seen).toEqual([1, 2])
+    expect(t.svc.scene(id).headSeq).toBe(2)
+    expect(t.boardsDb.opsAfter(id, 0)).toHaveLength(2)
+  })
+
+  it('still dedupes after a reload (seeded from the tail of board_ops)', () => {
+    const a = setup()
+    const { id } = a.svc.createBoard('B')
+    const first = a.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    const b = setup({}, a.dir)
+    const again = b.svc.submit(id, batch('dup-1', 'a'), OWNER)
+    expect(again).toMatchObject({ seq: first.seq, noop: true })
+    expect(b.boardsDb.opsAfter(id, 0)).toHaveLength(1)
+  })
+
+  it('keeps only a bounded window of recent batchIds', () => {
+    const t = setup({ recentBatches: 3 })
+    const { id } = t.svc.createBoard('B')
+    for (let i = 0; i < 5; i++) t.svc.submit(id, batch(`b${i}`, `e${i}`), OWNER)
+    expect(t.svc.submit(id, batch('b4', 'e4'), OWNER).noop).toBe(true) // inside the window
+    // outside the window a resend is applied as a new batch (the add is a no-op change? it re-adds): it must not be deduped
+    const old = t.svc.submit(id, batch('b0', 'z0'), OWNER)
+    expect(old.noop).toBe(false)
+    expect(old.seq).toBe(6)
   })
 })
 

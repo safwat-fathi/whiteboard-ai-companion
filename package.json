@@ -6,6 +6,7 @@
     "dev:web": "pnpm --filter @whiteboard/web dev",
     "dev:server": "pnpm --filter @whiteboard/server dev",
     "build": "pnpm --filter @whiteboard/web build",
+    "start": "pnpm --parallel --filter @whiteboard/web --filter @whiteboard/server start",
     "test": "pnpm -r --if-present test",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/math && tsc --noEmit -p apps/web && tsc --noEmit -p apps/server",

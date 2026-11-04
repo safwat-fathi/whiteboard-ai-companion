@@ -22,7 +22,7 @@
 | Alternatives | Tailscale-only access (no public port at all), or Cloudflare Access. Pick one in the VPS-plan input. |
 | Fallback if basic auth breaks WebSockets | Tailscale, or a signed cookie issued after the basic-auth page load (**spike S5**). |
 
-**Origin and Host checks (required with cached credentials and against DNS rebinding).** Browsers resend cached basic-auth credentials, so another website could try to drive your session. The server rejects WebSocket upgrades and every non-GET request whose `Origin` is not `PUBLIC_ORIGIN` (or the dev origin) with `forbidden_origin`. JSON endpoints also require `Content-Type: application/json`, which cross-site forms cannot send. Furthermore, every incoming HTTP request and WebSocket handshake validates the `Host` header against loopback names, the public origin host, and optional bind address (`checkHost`), rejecting unknown hosts with 400 and blocking DNS rebinding attacks. URL-encoded host spoofing (e.g. `evil.test@localhost`) is refused before hostname extraction.
+**Origin and Host checks (required with cached credentials and against DNS rebinding).** Browsers resend cached basic-auth credentials, so another website could try to drive your session. The server rejects WebSocket upgrades and every non-GET request whose `Origin` is not `PUBLIC_ORIGIN` (or the dev origin) with `forbidden_origin`. JSON endpoints also require `Content-Type: application/json`, which cross-site forms cannot send. Furthermore, every incoming HTTP request and WebSocket handshake validates the `Host` header against loopback names, the public origin host, and optional bind address (`checkHost`), rejecting unknown hosts with 403 (`forbidden_origin`) and blocking DNS rebinding attacks. URL-encoded host spoofing (e.g. `evil.test@localhost`) is refused before hostname extraction.
 
 ## Identity inside the app
 
@@ -42,9 +42,9 @@ Per turn: `MAX_STEPS`, `MAX_TURN_COST_USD`, 120 s. Per day: `DAILY_BUDGET_USD` s
 ## Content safety
 
 - **LaTeX:** MathJax with an explicit package allowlist; no `\href`, `\url`, `\require`, `\class`, `\style`; security tests in M2 ([math-renderer](./math-renderer.md)).
-- **Uploads:** PDF magic bytes, size/page caps, stored by hash, served with the correct `Content-Type` and `X-Content-Type-Options: nosniff`. Image uploads: PNG, JPEG, WebP, GIF (first frame); re-encoded; EXIF stripped; **SVG refused**.
+- **Uploads:** PDF magic bytes, size/page caps, stored by hash, served with the correct `Content-Type` and `X-Content-Type-Options: nosniff`. Image uploads: PNG, JPEG, WebP, GIF (first frame); **SVG refused**. The browser re-encodes an image only when it downscales it, rotates it (EXIF orientation) or converts a GIF to its first frame; the server stores the received bytes verbatim, so **EXIF/metadata (e.g. GPS) is NOT stripped** from an ordinary JPEG/PNG/WebP.
 - **No outbound fetch** anywhere in the tutor: `add_image` from URLs was dropped, which removes the SSRF surface.
-- **Web:** a Content-Security-Policy (self + blob/data images; MathJax SVG is inlined); chat Markdown renders without raw HTML.
+- **Web:** **no Content-Security-Policy is set on the web app** (`apps/web` has no `next.config`, proxy or CSP header; only the API server sets one, `default-src 'none'` on blob responses); a web CSP is planned (M7). Chat Markdown renders without raw HTML.
 - **Process:** systemd units run as the non-root `whiteboard` user with `NoNewPrivileges`, `ProtectSystem=strict`, `ReadWritePaths=/var/lib/whiteboard`.
 
 ## Prompt injection

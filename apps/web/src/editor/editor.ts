@@ -24,6 +24,7 @@ import {
   type Scene,
   SpatialIndex,
   screenToWorld,
+  topZ,
   type UndoJSON,
   UndoManager,
   type Viewport,
@@ -47,6 +48,8 @@ import type { MathTool } from './tools/math'
 import type { TextTool } from './tools/text'
 
 export type Snapshot = { elements: Element[]; camera: Camera; undo: UndoJSON }
+
+const CHUNK = 400 // ops per local batch: the server caps a batch at 500 (limits.ts opsPerBatch); same as the eraser
 
 const typing = (t: EventTarget | null) =>
   t instanceof HTMLElement &&
@@ -301,7 +304,28 @@ export class Editor {
     this.watchDpr()
   }
 
+  /**
+   * Applies a local edit. A batch over CHUNK ops (the server caps a batch at 500, PLAN #54d) is split in order into
+   * consecutive batches, each its own undo entry and onBatch call, exactly as the eraser does: undo takes one step per chunk.
+   * Chunks are not atomic: an invalid op in a later chunk leaves the earlier ones applied.
+   */
   commit(batch: Batch, kind: 'edit' | 'undo' | 'redo' = 'edit'): void {
+    if (kind !== 'edit' || batch.ops.length <= CHUNK) {
+      this.commitOne(batch, kind)
+      return
+    }
+    for (let i = 0; i < batch.ops.length; i += CHUNK)
+      this.commitOne(
+        {
+          ...batch,
+          batchId: i ? newId() : batch.batchId,
+          ops: batch.ops.slice(i, i + CHUNK),
+        },
+        kind,
+      )
+  }
+
+  private commitOne(batch: Batch, kind: 'edit' | 'undo' | 'redo'): void {
     if (this.readOnly) throw new Error('editor is read-only')
     const applied = applyBatch(this.scene, batch) // validates; throws OpError and changes nothing
     for (const id of applied.touched) {
@@ -501,7 +525,7 @@ export class Editor {
     })
 
     const gap = 24
-    let lastZ = ordered(this.scene).at(-1)?.z ?? null
+    let lastZ = topZ(this.scene)
     const added: Id[] = []
     const els: Element[] = succeeded.map((item, i) => {
       const id = newId()

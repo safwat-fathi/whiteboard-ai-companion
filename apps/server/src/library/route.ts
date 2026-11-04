@@ -33,6 +33,8 @@ export async function analyzePdf(pdf: OpenPdf): Promise<PageStats[]> {
 const R4_TOKENS_PER_PAGE = 800 // a guess for pages we have not read yet (embedding cost only)
 export const EMBED_USD_PER_MTOK = 0.01 // baai/bge-m3 via OpenRouter
 export const R3_USD_PER_PAGE = 0.00205 // S2: $0.0205 per 10 pages of mistral-ocr
+/** R4 (the vision model) has no published price on Meta, so this is an estimate: S2 measured gemini-3.8-flash at $0.07 to $0.09 per 10 pages. Override with R4_USD_PER_PAGE. */
+export const R4_USD_PER_PAGE = 0.009
 
 export type Estimate = {
   pages: number
@@ -42,11 +44,16 @@ export type Estimate = {
   mathDense: number
   /** What embedding the whole book will cost (OpenRouter). */
   embedUsd: number
-  /** What the R4 pages would cost if run through the opt-in R3 instead. R4 itself (Meta) is not priced. */
+  /** What the R4 pages would cost if run through the opt-in R3 instead. */
   r3Usd: number
+  /** What the R4 pages cost at the estimated per-page price (see R4_USD_PER_PAGE). */
+  r4Usd: number
 }
 
-export function estimate(stats: PageStats[]): Estimate {
+export function estimate(
+  stats: PageStats[],
+  r4UsdPerPage = R4_USD_PER_PAGE,
+): Estimate {
   let r4 = 0
   let scanned = 0
   let mathDense = 0
@@ -67,5 +74,6 @@ export function estimate(stats: PageStats[]): Estimate {
     mathDense,
     embedUsd: (tokens * EMBED_USD_PER_MTOK) / 1e6,
     r3Usd: r4 * R3_USD_PER_PAGE,
+    r4Usd: r4 * r4UsdPerPage,
   }
 }

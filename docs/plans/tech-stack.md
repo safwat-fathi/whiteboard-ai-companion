@@ -2,7 +2,7 @@
 
 > Part of [PLAN.md](../PLAN.md) §4 · Related: [deployment](./deployment.md) · [database](./database.md) · [ai-integration](./ai-integration.md) · [math-renderer](./math-renderer.md)
 
-Versions are the latest seen on npm on **2026-11-01**. Pin exact versions at install time. The fast-moving majors (`ai`, `@ai-sdk/openai-compatible`, `next`, `@nestjs/*`) get re-checked in M0.
+Versions are the latest seen on npm on **2026-11-01**. Pin exact versions at install time. The fast-moving majors (`ai`, `@ai-sdk/openai-compatible`, `next`) get re-checked in M0.
 
 ## Principles
 
@@ -31,16 +31,16 @@ Versions are the latest seen on npm on **2026-11-01**. Pin exact versions at ins
 | Server             | Node.js (`node:http` + `ws`)                                        | Minimal HTTP router and WebSocket gateway; no NestJS (ruling R1); REST, SSE, services                                                                                                            |
 | Database           | SQLite via `better-sqlite3` 13.0 (WAL) + FTS5                       | [database](./database.md). `node:sqlite` (stdlib, FTS5 works on this Node 22.21) is a verified fallback if the native build ever bites; DB access lives in one module                            |
 | Vector search      | Float32 BLOB column + exact cosine in memory                        | `sqlite-vec` 0.1.9 is the upgrade path (still 0.x)                                                                                                                                               |
-| AI                 | `ai` 7.0 · `@ai-sdk/react` 4.0 · `@ai-sdk/openai-compatible` 2.0 *(+ `@openrouter/ai-sdk-provider` 3.1 in M0 spikes)* | Hidden behind one adapter module (`apps/server/src/tutor/llm.ts`); targets the **Meta Model API** (`https://api.meta.ai/v1`) for Meta models (`muse-spark-1.3`, `muse-wonder-1.0`; open-weights Llama 4 via OpenRouter) for the [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon) |
+| AI                 | `ai` 7.0 · `@ai-sdk/openai-compatible` 3.0.82 *(+ `@openrouter/ai-sdk-provider` 3.1 in M0 spikes)* | Hidden behind one adapter module (`apps/server/src/tutor/llm.ts`); targets the **Meta Model API** (`https://api.meta.ai/v1`) for Meta models (`muse-spark-1.3`; `muse-wonder-1.0` is an unused optional ID; there is one Meta client, so Llama 4 via OpenRouter is not supported) for the [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon) |
 | Chat rendering     | `react-markdown` 10.1 · `remark-gfm` 4.0 · `remark-math` 6.0        | Math nodes are rendered by our own `renderMath()`, so there is one math engine                                                                                                                   |
 | Styling            | `tailwindcss` 4.3.3 · `@tailwindcss/postcss` 4.3.3 · `postcss` 8.5.32 | Utility classes for the toolbar, dock, chat and library (adopted after the M5 gate, PLAN §19 #53); the canvas draws through core `render()`, not CSS                                             |
 | Math               | `@mathjax/src` 4.1 (v4), TeX in, SVG out                            | `mathjax-full` 3.2 is the older v3 line. [math-renderer](./math-renderer.md)                                                                                                                     |
 | Server canvas      | `@napi-rs/canvas` 1.1                                               | **[spike S1]** Arabic shaping; alternative `skia-canvas`                                                                                                                                         |
-| PDF                | `pdfjs-dist` 6.4 (text, outline, page labels, viewer, page rasters) | Node uses its legacy build. `pdftotext` (poppler, installed here) is only a baseline for comparison                                                                                              |
-| Diagram layout     | `@dagrejs/dagre` 3.1                                                | Powers `add_diagram`; leaf library                                                                                                                                                               |
+| PDF                | `pdfjs-dist` 5.7.284 (text, outline, page labels, page rasters; server only) | Node uses its legacy build. `pdftotext` (poppler, installed here) is only a baseline for comparison                                                                                              |
+| Diagram layout     | none (hand-written layered layout)                                  | `add_diagram` (`packages/core/src/tools/diagram.ts`); no dagre dependency                                  |
 | Z-order            | `fractional-indexing` 4.0                                           | Instead of a hand-rolled fractional index                                                                                                                                                        |
 | IDs                | `nanoid` 6.0                                                        | Elements, batches, turns                                                                                                                                                                         |
-| Optional leaf libs | `rbush` 4.0 (R-tree), `perfect-freehand` 1.2                        | Decide in M0 (finding F12)                                                                                                                                                                       |
+| Leaf libs          | `rbush` 4.0 (R-tree), `perfect-freehand` 1.2                        | Adopted (finding F12)                                                                                                                                                                          |
 | MCP (M7, optional) | `@modelcontextprotocol/sdk` 1.32                                    | Adapter over the same tool registry                                                                                                                                                              |
 
 ## Repo layout (pnpm workspace)
@@ -76,6 +76,6 @@ data/            (gitignored) whiteboard.db · blobs/ · backups/   ← DATA_DIR
 
 ## Version and compatibility risks
 
-- `ai` and its provider ship majors quickly: keep all AI SDK imports inside `apps/server/src/tutor/llm.ts` (server) and the chat dock (web). Nothing else imports `ai`.
+- `ai` and its provider ship majors quickly: the provider is created only in `apps/server/src/tutor/llm.ts`; AI SDK types and helpers are imported only in `apps/server/src/tutor/**`, `http-tutor.ts` and the chat dock (web).
 - Native modules (`better-sqlite3`, `@napi-rs/canvas`) ship prebuilt binaries for macOS and glibc Linux; Alpine/musl is not supported in this plan.
-- Next 16, NestJS 12 and TypeScript 7 are new majors: scaffold in M0/M1 with whatever the generators emit, then pin.
+- Next 16 and TypeScript 7 are new majors: scaffold in M0/M1 with whatever the generators emit, then pin.

@@ -8,6 +8,7 @@ import { ApiError } from './errors'
 import { checkHost } from './http'
 
 const MAX_MESSAGE_BYTES = 1024 * 1024 // 1 MB; a bigger frame closes the socket with 1009
+const MAX_BUFFERED_BYTES = 8 * 1024 * 1024 // a socket that falls this far behind is dropped; it resyncs by `join`
 const OWNER: Author = { kind: 'human', id: 'owner' } // the author of everything that arrives on a socket (never the client's claim)
 
 const ClientMessage = z.discriminatedUnion('type', [
@@ -37,6 +38,27 @@ function refuse(socket: Duplex, status: number, text: string) {
     `HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
   )
   socket.destroy()
+}
+
+/**
+ * Sends one frame. `ws` queues everything in memory for a client that reads slowly, and the ping/pong heartbeat only
+ * catches clients that stopped answering; so a socket whose unsent backlog passes `max` is terminated instead of fed.
+ * Its client reconnects and `join`s from its last seq, which costs far less than an unbounded buffer.
+ */
+export function sendBounded(
+  ws: Pick<
+    WebSocket,
+    'readyState' | 'OPEN' | 'send' | 'bufferedAmount' | 'terminate'
+  >,
+  data: string,
+  max: number = MAX_BUFFERED_BYTES,
+): void {
+  if (ws.readyState !== ws.OPEN) return
+  if (ws.bufferedAmount > max) {
+    ws.terminate()
+    return
+  }
+  ws.send(data)
 }
 
 function reasonOf(e: unknown) {
@@ -91,9 +113,7 @@ export function attachGateway(
     ws.on('pong', () => alive.set(ws, true))
     let unsubscribe: (() => void) | undefined
     ws.on('close', () => unsubscribe?.())
-    const send = (m: unknown) => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m))
-    }
+    const send = (m: unknown) => sendBounded(ws, JSON.stringify(m))
 
     ws.on('message', (data, isBinary) => {
       if (isBinary) return ws.close(4400, 'text frames only')

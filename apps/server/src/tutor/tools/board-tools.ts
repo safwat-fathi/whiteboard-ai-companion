@@ -133,9 +133,11 @@ export function boardToolSet(
               ),
           })
         : base,
-      execute: (input: Record<string, unknown>) =>
+      execute: (input: Record<string, unknown>, { abortSignal }) =>
         inTurn(async () => {
           const { returnSnapshot, ...rest } = input
+          if (abortSignal?.aborted)
+            return { ok: false, error: 'Stopped by the student.' }
           try {
             status(writes ? 'drawing' : 'reading')
             const out = await def.execute(rest, await toolCtx())
@@ -147,6 +149,9 @@ export function boardToolSet(
               } as UIMessageChunk)
               return { ok: true, pointedAt: out.bounds }
             }
+            // a slow tool (a book figure, a render) can finish after Stop: the student stopped it, so nothing is written
+            if (abortSignal?.aborted)
+              return { ok: false, error: 'Stopped by the student.' }
             const res = deps.boards.submit(
               ctx.boardId,
               out.batch,

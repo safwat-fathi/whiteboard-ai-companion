@@ -75,4 +75,21 @@ describe('createQueue', () => {
     expect(q.size()).toBe(0)
     expect(done).toEqual(['x'])
   })
+
+  it('reports a crashed job through onFail and goes on with the next one', async () => {
+    const failed: string[] = []
+    const ran: string[] = []
+    const q = createQueue(
+      async (id) => {
+        ran.push(id)
+        if (id === 'a') throw new Error('ingest worker exited with code 1')
+      },
+      { onFail: (id, e) => failed.push(`${id}: ${(e as Error).message}`) },
+    )
+    q.enqueue('a')
+    q.enqueue('b')
+    await q.whenIdle()
+    expect(failed).toEqual(['a: ingest worker exited with code 1'])
+    expect(ran).toEqual(['a', 'b'])
+  })
 })

@@ -125,6 +125,17 @@ describe('POST /api/chat', () => {
     expect((await t.chat('hello again')).status).toBe(200)
   })
 
+  it('does not lock the board when storing the question fails', async () => {
+    const t = await setup()
+    t.db.exec(
+      "CREATE TRIGGER no_messages BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    )
+    expect((await t.chat('hello')).status).toBe(500)
+    t.db.exec('DROP TRIGGER no_messages')
+    const again = await t.chat('hello')
+    expect(again.status).toBe(200) // not 409 turn_busy
+  })
+
   it('MAX_STEPS stops a runaway tool loop with a plain note, stored with the message', async () => {
     const t = await setup({ env: { MAX_STEPS: '2' } })
     const r = await t.chat('loop forever')
@@ -268,11 +279,16 @@ describe('history and models', () => {
     const rec = (
       await t.call('GET', `/api/_test/last-request?boardId=${t.board.id}`)
     ).json as {
-      calls: { prompt: { role: string; content: unknown }[]; tools: string[] }[]
+      calls: {
+        prompt: { role: string; content: unknown }[]
+        tools: string[]
+        maxOutputTokens?: number
+      }[]
     }
     expect(rec.calls).toHaveLength(1)
     expect(JSON.stringify(rec.calls[0]?.prompt)).toContain('hello recorder')
     expect(rec.calls[0]?.prompt[0]?.role).toBe('system')
     expect(rec.calls[0]?.tools).toEqual(['ping'])
+    expect(rec.calls[0]?.maxOutputTokens).toBe(16_384) // the ceiling is sent even though the model is unpriced
   })
 })
